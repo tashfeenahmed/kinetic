@@ -26,7 +26,7 @@ export async function webSearch(query: string, ctx: Ctx, count = 8, opts: { empt
   let lastError: unknown = null;
   for (const engine of engines) {
     try {
-      const results = await searchWith(engine, query, ctx, count);
+      const results = await throttled(engine, () => searchWith(engine, query, ctx, count));
       // Exact-phrase lookups are often legitimately empty; those callers don't pay for a second engine.
       if (results.length || opts.emptyIsAnswer || engine === engines.at(-1)) return { engine, results };
     } catch (e) {
@@ -43,6 +43,10 @@ async function searchWith(engine: Engine, query: string, ctx: Ctx, count: number
     case 'searxng': {
       // SearXNG needs `json` enabled under search.formats in its settings.yml.
       const d = await getJson(`${s.get('SEARXNG_URL')!.replace(/\/$/, '')}/search`, { query: { q: query, format: 'json', language: 'en' }, headers: { accept: 'application/json' } });
+      // No results because every upstream engine is rate-limited/CAPTCHA'd isn't "nothing found": let the next engine answer.
+      if (!d.results?.length && d.unresponsive_engines?.length) {
+        throw new Error(`SearXNG engines unavailable (${d.unresponsive_engines.map((e: any) => `${e[0]}: ${e[1]}`).join(', ')})`);
+      }
       return (d.results ?? []).slice(0, count).map((r: any) => ({ title: r.title ?? '', url: r.url, snippet: r.content ?? '' }));
     }
     case 'serper': {
@@ -62,18 +66,22 @@ async function searchWith(engine: Engine, query: string, ctx: Ctx, count: number
       return (d.results ?? []).map((r: any) => ({ title: r.title ?? '', url: r.url, snippet: (r.highlights ?? []).join(' … ') }));
     }
     case 'duckduckgo':
-      return throttled(() => duckduckgo(query, count).catch(async (e) => {
+      return duckduckgo(query, count).catch(async (e) => {
         await sleep(4000); // one polite retry: DDG rate-limits bursts
         return duckduckgo(query, count).catch(() => { throw e; });
-      }));
+      });
   }
 }
 
-// DuckDuckGo blocks bursts, so free searches run one at a time, ~1.5s apart.
-let ddgChain: Promise<unknown> = Promise.resolve();
-function throttled<T>(fn: () => Promise<T>): Promise<T> {
-  const next = ddgChain.then(fn, fn);
-  ddgChain = next.then(() => sleep(1500), () => sleep(1500));
+// Free engines block bursts (SearXNG's upstreams start CAPTCHAs, Brave's free plan allows 1 query/s,
+// DuckDuckGo rate-limits), so each engine's queries run one at a time with a gap between them.
+const GAP_MS: Partial<Record<Engine, number>> = { searxng: 1000, brave: 1100, duckduckgo: 1500 };
+const chains = new Map<Engine, Promise<unknown>>();
+function throttled<T>(engine: Engine, fn: () => Promise<T>): Promise<T> {
+  const gap = GAP_MS[engine] ?? 0;
+  const prev = chains.get(engine) ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  chains.set(engine, next.then(() => sleep(gap), () => sleep(gap)));
   return next;
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

@@ -36,6 +36,15 @@ describe('web search engine order', () => {
     expect((await webSearch('acme', ctx)).engine).toBe('serper');
   });
 
+  it('treats SearXNG with every engine blocked as a failure, even for exact-phrase lookups', async () => {
+    const { ctx } = setup({ SEARXNG_URL: 'http://127.0.0.1:8888', BRAVE_API_KEY: 'k' });
+    vi.stubGlobal('fetch', async (url: URL | string) => String(url).includes('8888')
+      ? Response.json({ results: [], unresponsive_engines: [['brave', 'too many requests'], ['startpage', 'CAPTCHA']] })
+      : Response.json({ web: { results: [{ title: 'Acme', url: 'https://acme.com', description: 'x' }] } }));
+    const r = await webSearch('"Peter Greaney" "@acme.ie"', ctx, 8, { emptyIsAnswer: true });
+    expect(r.engine).toBe('brave');
+  });
+
   it('honours SEARCH_ENGINE', async () => {
     const { ctx } = setup({ SEARXNG_URL: 'http://127.0.0.1:8888', SERPER_API_KEY: 'k', SEARCH_ENGINE: 'serper' });
     vi.stubGlobal('fetch', async (url: URL | string) => String(url).includes('8888') ? Response.json(searx) : Response.json(serper));
