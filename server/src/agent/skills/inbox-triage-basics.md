@@ -7,6 +7,7 @@ description: Use to review and triage the master inbox — list unread or intere
 ## List and read
 - `GET /api/replies?folder=inbox&status=unread&per_page=25` → `{ data: [...], meta, counts: { unread_inbox, unread_interested } }`
   - `folder`: inbox | spam | bounced | all. `status`: interested | not_interested | automated | not_automated | unread | unsubscribe. Also `campaign_id`, `sender_email_id`, `lead_id`, `search`.
+- Fetch new email first when the user wants the latest: `POST /api/replies/sync` `{}` syncs every Connected mailbox now (up to ~25s per mailbox; no email is sent) → `{ data: { totals: { mailboxes, synced, new_messages, errors }, mailboxes: [{ email, status: synced|error|timeout, new_messages, error }], last_synced_at } }`. Mention any mailbox errors. `GET /api/replies/sync-status` → `{ last_synced_at, mailboxes, syncing }` (the background job also syncs every ~2 min).
 - `GET /api/replies/{id}` → one message. `GET /api/replies/{id}/conversation-thread` → the whole thread with what we sent.
 - Each reply has an automatic `category` (interested, not_interested, unsubscribe, auto_reply, bounce, reply) — check it rather than trusting it blindly.
 

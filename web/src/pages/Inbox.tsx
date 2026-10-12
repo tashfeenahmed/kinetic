@@ -9,6 +9,7 @@ import { Resizer, usePaneWidth } from '../components/Resizer.tsx';
 import { REPLY_LABELS, ReplyCategory } from '../components/status.tsx';
 import { Conversation, SentDetail } from './inbox/Conversation.tsx';
 import { ComposeModal } from './inbox/ComposeModal.tsx';
+import { SyncButton } from './inbox/SyncButton.tsx';
 
 type Folder = 'inbox' | 'sent' | 'spam' | 'bounced';
 
@@ -179,6 +180,7 @@ export function InboxPage() {
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={folder === 'sent' ? 'Search sent' : 'Search threads'}
               className="h-8 w-full rounded-md bg-transparent pl-7 pr-2 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-400 hover:bg-zinc-50 focus:bg-zinc-50" />
           </div>
+          <SyncButton />
           {checked.size > 0 && <span className="shrink-0 text-[12px] text-zinc-600">{checked.size} selected</span>}
           {checked.size > 0 && aiStatus.data?.active && (
             <button onClick={() => resort.mutate([...checked])} disabled={resort.isPending} title="Classify the selected conversations again with AI (your manual labels are kept)"

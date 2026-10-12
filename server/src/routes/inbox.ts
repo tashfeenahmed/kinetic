@@ -7,7 +7,8 @@ import { auth, bool, canWrite, defineRoutes, HttpError, idParam, notFound, pageQ
 import { emit } from '../events.ts';
 import { newMessageId, referenceChain } from '../engine/compose.ts';
 import { ensureThread } from '../engine/threads.ts';
-import { unsubscribeLead } from '../engine/inbox.ts';
+import { isSyncing, unsubscribeLead } from '../engine/inbox.ts';
+import { lastSyncedAt, syncWorkspace } from '../engine/syncAll.ts';
 import { cancelScheduled } from '../engine/sequencer.ts';
 import { escapeHtml, htmlToText, looksLikeHtml, stripQuoted, textToHtml } from '../lib/html.ts';
 import { attachLeads } from './leads.ts';
@@ -89,6 +90,17 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
       FROM replies WHERE workspace_id = ?`, [a.workspaceId]);
     return { ...result, counts };
   }, { query: listQ });
+
+  r.post('/api/replies/sync', 'Sync all connected mailboxes now (fetch new email)', async (req) => {
+    const a = auth(req);
+    return { data: await syncWorkspace(ctx, a.workspaceId) };
+  });
+
+  r.get('/api/replies/sync-status', 'When the inbox mailboxes were last synced', (req) => {
+    const a = auth(req);
+    const ids = db.all(`SELECT id FROM sender_emails WHERE workspace_id = ? AND status = 'Connected'`, [a.workspaceId]).map((x) => x.id as number);
+    return { data: { last_synced_at: lastSyncedAt(ctx, a.workspaceId), mailboxes: ids.length, syncing: ids.some((id) => isSyncing(ctx, id)) } };
+  });
 
   r.get('/api/replies/:id', 'Get reply', (req) => {
     const row = getReply(auth(req).workspaceId, idParam(req));
