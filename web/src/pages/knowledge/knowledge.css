@@ -1,0 +1,57 @@
+/* Knowledge Hub: document editor typography and the loading shimmer. */
+
+.kn-prose {
+  color: #27272a;
+  font-size: 15px;
+  line-height: 1.7;
+}
+.kn-prose .ProseMirror {
+  outline: none;
+  min-height: 40vh;
+  padding-bottom: 30vh;
+}
+.kn-prose .ProseMirror > * + * { margin-top: 0.6em; }
+.kn-prose h1, .kn-prose h2, .kn-prose h3 { color: #18181b; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; }
+.kn-prose h1 { font-size: 1.75em; margin-top: 1.4em; }
+.kn-prose h2 { font-size: 1.35em; margin-top: 1.3em; }
+.kn-prose h3 { font-size: 1.1em; margin-top: 1.1em; }
+.kn-prose .ProseMirror > :first-child { margin-top: 0; }
+.kn-prose p { margin: 0; }
+.kn-prose ul, .kn-prose ol { padding-left: 1.5em; }
+.kn-prose ul { list-style: disc; }
+.kn-prose ol { list-style: decimal; }
+.kn-prose ul ul { list-style: circle; }
+.kn-prose li { margin: 0.15em 0; }
+.kn-prose li::marker { color: #a1a1aa; }
+.kn-prose li > p { margin: 0; }
+.kn-prose ul[data-type='taskList'] { list-style: none; padding-left: 0.15em; }
+.kn-prose ul[data-type='taskList'] li { display: flex; align-items: flex-start; gap: 0.55em; }
+.kn-prose ul[data-type='taskList'] li > label { flex: none; margin-top: 0.3em; user-select: none; }
+.kn-prose ul[data-type='taskList'] li > label input { width: 15px; height: 15px; accent-color: #18181b; cursor: pointer; }
+.kn-prose ul[data-type='taskList'] li > div { flex: 1; min-width: 0; }
+.kn-prose ul[data-type='taskList'] li[data-checked='true'] > div { color: #a1a1aa; text-decoration: line-through; }
+.kn-prose blockquote { border-left: 3px solid #e4e4e7; padding-left: 1em; color: #52525b; }
+.kn-prose a { color: #18181b; text-decoration: underline; text-decoration-color: #a1a1aa; text-underline-offset: 2px; cursor: pointer; }
+.kn-prose code { background: #f4f4f5; border-radius: 4px; padding: 0.1em 0.35em; font-size: 0.88em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.kn-prose pre { background: #f4f4f5; border-radius: 8px; padding: 0.8em 1em; overflow-x: auto; font-size: 13px; line-height: 1.55; }
+.kn-prose pre code { background: none; padding: 0; font-size: inherit; }
+.kn-prose hr { border: none; border-top: 1px solid #e4e4e7; margin: 1.6em 0; }
+.kn-prose strong { font-weight: 600; color: #18181b; }
+.kn-prose .ProseMirror p.is-editor-empty:first-child::before,
+.kn-prose .ProseMirror .is-empty.is-editor-empty::before {
+  content: attr(data-placeholder);
+  color: #a1a1aa;
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+.kn-prose .ProseMirror-selectednode { outline: 2px solid #d4d4d8; border-radius: 4px; }
+
+/* Read-only previews (autofill review) are a bit smaller. */
+.kn-prose.kn-preview { font-size: 13px; line-height: 1.6; }
+.kn-prose.kn-preview .ProseMirror { min-height: 0; padding-bottom: 0; }
+.kn-prose.kn-preview .ProseMirror > * + * { margin-top: 0.45em; }
+.kn-prose.kn-preview h2 { font-size: 1.15em; margin-top: 0.9em; }
+.kn-prose.kn-preview h3 { font-size: 1.05em; margin-top: 0.8em; }
+.kn-prose.kn-preview > * + * { margin-top: 0.45em; }
+.kn-prose.kn-preview > :first-child { margin-top: 0; }

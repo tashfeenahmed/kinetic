@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, ChevronDown, Download, Forward, Mail, MailOpen, MoreHorizontal, Reply, ReplyAll, Send, Sparkles, Star, ThumbsDown, Trash2, UserX, Workflow,
+  ArrowLeft, ChevronDown, Download, Forward, Mail, MailOpen, MoreHorizontal, Reply, ReplyAll, Send, Star, PenLine, ThumbsDown, Trash2, UserX, Workflow,
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api.ts';
 import { avatarColor, fmtDateTime, fullName, initials } from '../../lib/format.ts';
-import { Badge, Button, cx, Field, IconButton, Input, Loading, Menu, Modal, Select, Textarea, useUi } from '../../components/ui.tsx';
+import { Badge, Button, cx, Field, IconButton, Input, Loading, Menu, Modal, Select, Shimmer, Textarea, useUi } from '../../components/ui.tsx';
 import { CampaignStatus, LeadStatus, REPLY_LABELS, ReplyCategory } from '../../components/status.tsx';
 import { AttachmentPicker, EmailText, parseEmails, useAttachments } from './shared.tsx';
 
@@ -110,7 +110,7 @@ function Composer({ thread, replyId, onSent }: { thread: Thread; replyId: number
         {aiStatus.data?.configured && (
           <button onClick={() => draft.mutate()} disabled={draft.isPending} title={body.trim() ? 'Draft a reply with AI, using what you typed as instructions' : 'Draft a reply with AI from the thread, lead, campaign and knowledge'}
             className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50">
-            <Sparkles className={cx('size-3.5', draft.isPending && 'animate-pulse')} /> {draft.isPending ? 'Drafting…' : 'Draft with AI'}
+            {draft.isPending ? <Shimmer>Drafting…</Shimmer> : <><PenLine className="size-3.5" /> Draft with AI</>}
           </button>
         )}
         {!showCc && <button className="text-brand-600 hover:underline" onClick={() => setShowCc(true)}>Add Cc</button>}
@@ -309,7 +309,7 @@ function AiSummary({ reply: r }: { reply: any }) {
   return (
     <div className="mt-2 flex items-start gap-2 text-[12.5px] leading-snug">
       <span className="mt-px inline-flex shrink-0 items-center gap-0.5 rounded bg-violet-50 px-1 py-px text-[10.5px] font-semibold text-violet-700" title={r.ai_model ?? 'AI'}>
-        <Sparkles className="size-2.5" /> AI
+        AI
       </span>
       <div className="min-w-0 flex-1">
         {r.ai_summary && <span className="text-slate-700">{r.ai_summary}</span>}

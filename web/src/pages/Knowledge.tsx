@@ -1,349 +1,333 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookOpen, ChevronDown, ChevronRight, FileText, Globe, Link2, Plus, Sparkles, Trash2, Wand2, X } from 'lucide-react';
+import { AlertCircle, BookOpen, Check, ChevronLeft, Copy, Eye, FileText, Globe, GripVertical, MoreHorizontal, Pin, PinOff, Plus, Search, Trash2 } from 'lucide-react';
 import { api, errorMessage } from '../lib/api.ts';
 import { fmtRelative } from '../lib/format.ts';
-import { Page } from '../components/Layout.tsx';
-import { Button, Checkbox, Field, Input, Loading, Modal, Textarea, cx, useUi } from '../components/ui.tsx';
+import { Button, IconButton, Loading, Menu, Modal, cx, useUi } from '../components/ui.tsx';
+import { AutofillModal } from './knowledge/Autofill.tsx';
+import './knowledge/knowledge.css';
 
-interface Offer { name: string; description: string; pricing: string }
-interface Persona { title: string; pains: string; goals: string; objections: string }
-interface Competitor { name: string; domain: string; notes: string }
-interface Proof { title: string; summary: string; url: string }
-interface Hub {
-  company: { name: string; website: string; overview: string };
-  offers: Offer[];
-  icp: { industries: string[]; sizes: string[]; geos: string[]; tech: string[]; triggers: string[]; notes: string };
-  personas: Persona[];
-  positioning: string;
-  competitors: Competitor[];
-  proof: Proof[];
-  tone: string;
-  exclusions: string;
-  updated_at?: string | null;
+const DocEditor = lazy(() => import('./knowledge/DocEditor.tsx'));
+
+type Source = 'user' | 'agent' | 'autofill';
+interface DocRow { id: number; title: string; source_url: string | null; pinned: boolean; position: number; created_by: Source; chars: number; excerpt?: string; created_at: string; updated_at: string }
+interface Doc extends DocRow { content: string }
+interface Template { key: string; title: string; content: string }
+
+const SOURCE_LABEL: Record<Source, string | null> = { user: null, agent: 'Agent', autofill: 'From website' };
+const LIST_KEY = ['knowledge-docs'];
+
+function useDebounced<T>(value: T, ms = 250) {
+  const [v, setV] = useState(value);
+  useEffect(() => { const t = setTimeout(() => setV(value), ms); return () => clearTimeout(t); }, [value, ms]);
+  return v;
 }
-interface Doc { id: number; title: string; source_url: string | null; summary: string | null; chars: number; created_at: string }
-type Draft = Partial<Hub>;
 
-const SECTION_LABELS: Record<string, string> = {
-  company: 'Company overview', offers: 'Products & offers', icp: 'Ideal customer profile', personas: 'Buyer personas', positioning: 'Positioning & value props',
-  competitors: 'Competitors', proof: 'Case studies & proof', tone: 'Tone of voice & email guidelines', exclusions: 'Exclusions / do not target',
-};
-
-/** Knowledge Hub: what we sell and to whom — used by the agent and AI research columns. */
+/** Knowledge Hub: plain documents the agent, AI columns and reply drafts read. */
 export function KnowledgePage() {
   const qc = useQueryClient();
-  const { toast } = useUi();
-  const q = useQuery({ queryKey: ['knowledge'], queryFn: () => api.get('/api/knowledge') as Promise<{ data: Hub; docs: Doc[] }> });
-  const [hub, setHub] = useState<Hub | null>(null);
-  const [dirty, setDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [draft, setDraft] = useState<{ draft: Draft; source: string } | null>(null);
-  useEffect(() => { if (q.data && !dirty) setHub(q.data.data); }, [q.data, dirty]);
+  const { toast, confirm } = useUi();
+  const [params, setParams] = useSearchParams();
+  const [search, setSearch] = useState('');
+  const q = useDebounced(search.trim());
+  const [autofill, setAutofill] = useState(false);
+  const [showContext, setShowContext] = useState(false);
+  const [fresh, setFresh] = useState<number | null>(null);
 
-  if (q.isLoading || !hub) return <Loading />;
-  const set = <K extends keyof Hub>(k: K, v: Hub[K]) => { setHub((h) => (h ? { ...h, [k]: v } : h)); setDirty(true); };
+  const list = useQuery({ queryKey: LIST_KEY, queryFn: () => api.get('/api/knowledge/docs').then((r) => r.data as DocRow[]) });
+  const found = useQuery({ queryKey: [...LIST_KEY, q], queryFn: () => api.get('/api/knowledge/docs', { q }).then((r) => r.data as DocRow[]), enabled: !!q });
+  const templates = useQuery({ queryKey: ['knowledge-templates'], queryFn: () => api.get('/api/knowledge/templates').then((r) => r.data as Template[]), staleTime: Infinity });
 
-  const save = async () => {
-    setSaving(true);
+  const docs = list.data ?? [];
+  const shown = q ? found.data ?? [] : docs;
+  const selected = Number(params.get('doc')) || null;
+  const select = useCallback((id: number | null) => setParams((p) => { const n = new URLSearchParams(p); if (id) n.set('doc', String(id)); else n.delete('doc'); return n; }, { replace: true }), [setParams]);
+
+  // Open the first doc when none (or a deleted one) is selected.
+  useEffect(() => {
+    if (!list.data) return;
+    if (selected && list.data.some((d) => d.id === selected)) return;
+    if (selected && !list.data.some((d) => d.id === selected)) { select(list.data[0]?.id ?? null); return; }
+    if (!selected && list.data.length && window.matchMedia('(min-width: 768px)').matches) select(list.data[0].id);
+  }, [list.data, selected, select]);
+
+  const refresh = () => qc.invalidateQueries({ queryKey: LIST_KEY });
+
+  const create = async (t?: Template) => {
     try {
-      const { updated_at: _u, ...body } = hub;
-      const r = await api.put('/api/knowledge', body);
-      setHub(r.data);
-      setDirty(false);
-      await qc.invalidateQueries({ queryKey: ['knowledge'] });
-      toast('Knowledge Hub saved');
-    } catch (e) { toast(errorMessage(e), 'error'); } finally { setSaving(false); }
+      const r = await api.post('/api/knowledge/docs', t ? { template: t.key } : { title: 'Untitled' });
+      await refresh();
+      setFresh(r.data.id);
+      select(r.data.id);
+    } catch (e) { toast(errorMessage(e), 'error'); }
   };
 
+  const patch = async (d: DocRow, body: Partial<Pick<Doc, 'pinned' | 'title'>>) => {
+    try { await api.patch(`/api/knowledge/docs/${d.id}`, body); await refresh(); qc.removeQueries({ queryKey: ['knowledge-doc', d.id] }); } catch (e) { toast(errorMessage(e), 'error'); }
+  };
+  const duplicate = async (d: DocRow) => {
+    try { const r = await api.post(`/api/knowledge/docs/${d.id}/duplicate`); await refresh(); select(r.data.id); } catch (e) { toast(errorMessage(e), 'error'); }
+  };
+  const remove = async (d: DocRow) => {
+    if (!(await confirm({ title: `Delete “${d.title}”?`, message: 'The agent and AI columns will stop using it. This cannot be undone.', confirmLabel: 'Delete', danger: true }))) return;
+    try {
+      await api.del(`/api/knowledge/docs/${d.id}`);
+      const rest = docs.filter((x) => x.id !== d.id);
+      qc.setQueryData(LIST_KEY, rest);
+      if (selected === d.id) select(rest[0]?.id ?? null);
+      await refresh();
+    } catch (e) { toast(errorMessage(e), 'error'); }
+  };
+  const reorder = async (ids: number[]) => {
+    const byId = new Map(docs.map((d) => [d.id, d]));
+    qc.setQueryData(LIST_KEY, ids.map((id) => byId.get(id)!).filter(Boolean));
+    try { await api.post('/api/knowledge/docs/reorder', { ids }); } catch (e) { toast(errorMessage(e), 'error'); }
+    await refresh();
+  };
+
+  const newMenu = (trigger: (open: () => void) => ReactNode) => (
+    <Menu align="left" trigger={trigger} items={[
+      { label: 'Blank document', icon: <FileText className="size-4 text-zinc-400" />, onClick: () => create() },
+      'divider',
+      ...(templates.data ?? []).map((t) => ({ label: t.title, icon: <FileText className="size-4 text-zinc-300" />, onClick: () => create(t) })),
+      'divider',
+      { label: 'Fill from website…', icon: <Globe className="size-4 text-zinc-400" />, onClick: () => setAutofill(true) },
+    ]} />
+  );
+
+  if (list.isLoading) return <Loading />;
+  const current = docs.find((d) => d.id === selected) ?? null;
+
   return (
-    <Page>
-      <div className="mb-6 flex flex-col gap-3 border-b border-zinc-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-zinc-900"><BookOpen className="size-5" />Knowledge Hub</h1>
-          <p className="mt-1 max-w-2xl text-[14px] text-zinc-500">What you sell and to whom. The agent reads it on every chat, and AI research columns can use it (tick “Use Knowledge Hub”) to judge fit and write on-brand copy.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {hub.updated_at && !dirty && <span className="text-[12px] text-zinc-400">Saved {fmtRelative(hub.updated_at)}</span>}
-          <Button variant="primary" loading={saving} disabled={!dirty} onClick={save}>{dirty ? 'Save changes' : 'Saved'}</Button>
-        </div>
-      </div>
-
-      <AutoFill onDraft={(d, source) => setDraft({ draft: d, source })} defaultDomain={hub.company.website} />
-
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-5">
-          <Section title={SECTION_LABELS.company}>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Company name"><Input value={hub.company.name} onChange={(e) => set('company', { ...hub.company, name: e.target.value })} /></Field>
-              <Field label="Website"><Input value={hub.company.website} onChange={(e) => set('company', { ...hub.company, website: e.target.value })} placeholder="acme.com" /></Field>
-            </div>
-            <Field label="Overview" className="mt-3"><Textarea rows={3} value={hub.company.overview} onChange={(e) => set('company', { ...hub.company, overview: e.target.value })} placeholder="What you do, for whom, in 2–4 sentences." /></Field>
-          </Section>
-
-          <Section title={SECTION_LABELS.offers}>
-            <ListEditor items={hub.offers} onChange={(v) => set('offers', v)} blank={{ name: '', description: '', pricing: '' }} addLabel="Add offer"
-              fields={[{ k: 'name', label: 'Name' }, { k: 'pricing', label: 'Pricing', placeholder: '€49/mo' }, { k: 'description', label: 'Description', long: true }]} />
-          </Section>
-
-          <Section title={SECTION_LABELS.icp}>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {(['industries', 'sizes', 'geos', 'tech', 'triggers'] as const).map((k) => (
-                <Field key={k} label={{ industries: 'Industries', sizes: 'Company sizes', geos: 'Geographies', tech: 'Tech they use', triggers: 'Buying triggers' }[k]} hint="Comma-separated">
-                  <TagInput value={hub.icp[k]} onChange={(v) => set('icp', { ...hub.icp, [k]: v })} placeholder={{ industries: 'Hospitality, Retail', sizes: '1-50, 51-200', geos: 'Ireland, UK', tech: 'Shopify, Square', triggers: 'Opening a new site, hiring managers' }[k]} />
-                </Field>
-              ))}
-            </div>
-            <Field label="Notes" className="mt-3"><Textarea rows={2} value={hub.icp.notes} onChange={(e) => set('icp', { ...hub.icp, notes: e.target.value })} /></Field>
-          </Section>
-
-          <Section title={SECTION_LABELS.personas}>
-            <ListEditor items={hub.personas} onChange={(v) => set('personas', v)} blank={{ title: '', pains: '', goals: '', objections: '' }} addLabel="Add persona"
-              fields={[{ k: 'title', label: 'Title / role' }, { k: 'pains', label: 'Pains', long: true }, { k: 'goals', label: 'Goals', long: true }, { k: 'objections', label: 'Objections', long: true }]} />
-          </Section>
-
-          <Section title={SECTION_LABELS.positioning}>
-            <Textarea rows={4} value={hub.positioning} onChange={(e) => set('positioning', e.target.value)} placeholder="Why you win: value props and differentiators." />
-          </Section>
-
-          <Section title={SECTION_LABELS.competitors}>
-            <ListEditor items={hub.competitors} onChange={(v) => set('competitors', v)} blank={{ name: '', domain: '', notes: '' }} addLabel="Add competitor"
-              fields={[{ k: 'name', label: 'Name' }, { k: 'domain', label: 'Domain' }, { k: 'notes', label: 'How you compare', long: true }]} />
-          </Section>
-
-          <Section title={SECTION_LABELS.proof}>
-            <ListEditor items={hub.proof} onChange={(v) => set('proof', v)} blank={{ title: '', summary: '', url: '' }} addLabel="Add proof point"
-              fields={[{ k: 'title', label: 'Title', placeholder: 'Café X cut queues 30%' }, { k: 'url', label: 'Link' }, { k: 'summary', label: 'Summary', long: true }]} />
-          </Section>
-
-          <Section title={SECTION_LABELS.tone}>
-            <Textarea rows={4} value={hub.tone} onChange={(e) => set('tone', e.target.value)} placeholder="e.g. Friendly and direct. Under 90 words, one question as the CTA, no buzzwords, sign off with first name." />
-          </Section>
-
-          <Section title={SECTION_LABELS.exclusions}>
-            <Textarea rows={3} value={hub.exclusions} onChange={(e) => set('exclusions', e.target.value)} placeholder="Who not to target: existing customers, competitors, chains with 50+ sites…" />
-          </Section>
-        </div>
-
-        <div className="space-y-5">
-          <Docs docs={q.data?.docs ?? []} onDraft={(d, source) => setDraft({ draft: d, source })} />
-          <ContextPreview updatedAt={hub.updated_at ?? ''} />
-        </div>
-      </div>
-
-      {dirty && (
-        <div className="sticky bottom-4 mt-6 flex justify-end">
-          <div className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 shadow-lg">
-            <span className="text-[13px] text-zinc-600">Unsaved changes</span>
-            <Button size="sm" onClick={() => { setDirty(false); setHub(q.data!.data); }}>Discard</Button>
-            <Button size="sm" variant="primary" loading={saving} onClick={save}>Save</Button>
+    <div className="flex h-full min-h-0 bg-white">
+      {/* Document list */}
+      <aside className={cx('w-full shrink-0 flex-col border-r border-zinc-200 bg-zinc-50/40 md:w-[272px]', current ? 'hidden md:flex' : 'flex')}>
+        <div className="px-4 pb-3 pt-5">
+          <div className="flex items-center justify-between">
+            <h1 className="flex items-center gap-2 text-[15px] font-semibold text-zinc-900"><BookOpen className="size-4 text-zinc-500" strokeWidth={1.75} />Knowledge</h1>
+            {newMenu((open) => <IconButton label="New document" onClick={open} className="size-7"><Plus className="size-4" /></IconButton>)}
+          </div>
+          <p className="mt-1 text-[12px] leading-snug text-zinc-500">Documents the agent, AI columns and reply drafts read.</p>
+          <div className="relative mt-3">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search docs"
+              className="h-8 w-full rounded-[7px] border border-zinc-200 bg-white pl-8 pr-2 text-[13px] text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none" />
           </div>
         </div>
-      )}
+        <DocList docs={shown} selected={selected} draggable={!q} onSelect={select} onReorder={reorder}
+          onPin={(d) => patch(d, { pinned: !d.pinned })} onDuplicate={duplicate} onDelete={remove}
+          empty={q ? `Nothing matches “${q}”.` : 'No documents yet.'} />
+        <div className="space-y-0.5 border-t border-zinc-200 p-2">
+          <SideButton icon={<Globe className="size-4" />} onClick={() => setAutofill(true)}>Fill from website</SideButton>
+          <SideButton icon={<Eye className="size-4" />} onClick={() => setShowContext(true)}>What the AI sees</SideButton>
+        </div>
+      </aside>
 
-      {draft && <DraftReview draft={draft.draft} source={draft.source} current={hub} onClose={() => setDraft(null)}
-        onApply={(picked) => { setHub((h) => (h ? { ...h, ...picked } : h)); setDirty(true); setDraft(null); toast('Draft applied — review and save'); }} />}
-    </Page>
+      {/* Editor */}
+      <section className={cx('min-w-0 flex-1 overflow-y-auto scroll-thin', !current && 'hidden md:block')}>
+        {current ? (
+          <DocPane key={current.id} row={current} autoFocus={fresh === current.id} onBack={() => select(null)}
+            onPin={() => patch(current, { pinned: !current.pinned })} onDuplicate={() => duplicate(current)} onDelete={() => remove(current)} />
+        ) : (
+          <Welcome templates={templates.data ?? []} onCreate={create} onAutofill={() => setAutofill(true)} />
+        )}
+      </section>
+
+      <AutofillModal open={autofill} onClose={() => setAutofill(false)} onCreated={async (ids) => { setAutofill(false); await refresh(); if (ids[0]) select(ids[0]); }} />
+      <ContextModal open={showContext} onClose={() => setShowContext(false)} />
+    </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function SideButton({ icon, onClick, children }: { icon: ReactNode; onClick: () => void; children: ReactNode }) {
   return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-4">
-      <h2 className="mb-3 text-[13.5px] font-semibold text-zinc-900">{title}</h2>
-      {children}
-    </section>
+    <button onClick={onClick} className="flex h-8 w-full items-center gap-2.5 rounded-[7px] px-2 text-[13px] text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 [&>svg]:text-zinc-400">
+      {icon}{children}
+    </button>
   );
 }
 
-function TagInput({ value, onChange, placeholder }: { value: string[]; onChange: (v: string[]) => void; placeholder?: string }) {
-  const [text, setText] = useState(value.join(', '));
-  useEffect(() => { setText(value.join(', ')); }, [value.join('\u0000')]); // eslint-disable-line react-hooks/exhaustive-deps
-  return <Input value={text} placeholder={placeholder} onChange={(e) => setText(e.target.value)}
-    onBlur={() => onChange(text.split(',').map((x) => x.trim()).filter(Boolean))} />;
-}
-
-function ListEditor<T extends Record<string, string>>({ items, onChange, blank, fields, addLabel }: {
-  items: T[]; onChange: (v: T[]) => void; blank: T; addLabel: string;
-  fields: { k: keyof T & string; label: string; long?: boolean; placeholder?: string }[];
+function DocList({ docs, selected, draggable, onSelect, onReorder, onPin, onDuplicate, onDelete, empty }: {
+  docs: DocRow[]; selected: number | null; draggable: boolean; empty: string;
+  onSelect: (id: number) => void; onReorder: (ids: number[]) => void;
+  onPin: (d: DocRow) => void; onDuplicate: (d: DocRow) => void; onDelete: (d: DocRow) => void;
 }) {
-  const update = (i: number, k: string, v: string) => onChange(items.map((it, j) => (j === i ? { ...it, [k]: v } : it)));
+  const [drag, setDrag] = useState<number | null>(null);
+  const [over, setOver] = useState<number | null>(null);
+  const pinned = docs.filter((d) => d.pinned);
+  const rest = docs.filter((d) => !d.pinned);
+  const drop = (target: number) => {
+    if (drag == null || drag === target) return;
+    const ids = docs.map((d) => d.id).filter((id) => id !== drag);
+    ids.splice(ids.indexOf(target), 0, drag);
+    onReorder(ids);
+  };
+  const row = (d: DocRow) => {
+    const active = d.id === selected;
+    const label = SOURCE_LABEL[d.created_by];
+    return (
+      <div key={d.id} draggable={draggable}
+        onDragStart={(e) => { setDrag(d.id); e.dataTransfer.effectAllowed = 'move'; }}
+        onDragEnd={() => { setDrag(null); setOver(null); }}
+        onDragOver={(e) => { if (drag != null) { e.preventDefault(); setOver(d.id); } }}
+        onDrop={(e) => { e.preventDefault(); drop(d.id); setDrag(null); setOver(null); }}
+        className={cx('group relative flex cursor-pointer items-start gap-2 rounded-[7px] px-2 py-1.5 transition-colors',
+          active ? 'bg-zinc-200/60' : 'hover:bg-zinc-100', drag === d.id && 'opacity-40', over === d.id && drag !== d.id && 'ring-1 ring-inset ring-zinc-300')}
+        onClick={() => onSelect(d.id)}>
+        {draggable && <GripVertical className="absolute -left-0.5 top-2.5 size-3 text-zinc-300 opacity-0 group-hover:opacity-100" />}
+        {d.source_url ? <Globe className="mt-0.5 size-4 shrink-0 text-zinc-400" strokeWidth={1.75} /> : <FileText className="mt-0.5 size-4 shrink-0 text-zinc-400" strokeWidth={1.75} />}
+        <div className="min-w-0 flex-1">
+          <div className={cx('truncate text-[13px]', active ? 'font-medium text-zinc-900' : 'text-zinc-700')}>{d.title || 'Untitled'}</div>
+          <div className="truncate text-[11.5px] text-zinc-400">{fmtRelative(d.updated_at)}{label && <> · {label}</>}</div>
+        </div>
+        <div className="opacity-0 group-hover:opacity-100 has-[button[aria-expanded=true]]:opacity-100" onClick={(e) => e.stopPropagation()}>
+          <Menu trigger={(open) => <IconButton label="Document actions" onClick={open} className="size-6"><MoreHorizontal className="size-3.5" /></IconButton>} items={[
+            { label: d.pinned ? 'Unpin' : 'Pin to top', icon: d.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />, onClick: () => onPin(d) },
+            { label: 'Duplicate', icon: <Copy className="size-4" />, onClick: () => onDuplicate(d) },
+            'divider',
+            { label: 'Delete', icon: <Trash2 className="size-4" />, danger: true, onClick: () => onDelete(d) },
+          ]} />
+        </div>
+      </div>
+    );
+  };
   return (
-    <div className="space-y-3">
-      {items.map((it, i) => (
-        <div key={i} className="relative rounded-lg border border-zinc-200 bg-zinc-50/50 p-3 pr-10">
-          <button onClick={() => onChange(items.filter((_, j) => j !== i))} className="absolute right-2 top-2 rounded p-1 text-zinc-400 hover:bg-zinc-200 hover:text-red-600" aria-label="Remove" title="Remove"><X className="size-3.5" /></button>
+    <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 scroll-thin">
+      {docs.length === 0 && <p className="px-2 py-3 text-[12.5px] text-zinc-400">{empty}</p>}
+      {pinned.length > 0 && <div className="px-2 pb-1 pt-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400">Pinned</div>}
+      {pinned.map(row)}
+      {pinned.length > 0 && rest.length > 0 && <div className="px-2 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-zinc-400">Documents</div>}
+      {rest.map(row)}
+    </div>
+  );
+}
+
+type SaveState = 'saved' | 'pending' | 'saving' | 'error';
+
+/** One document: title + rich-text body, autosaved (debounced) as markdown. */
+function DocPane({ row, autoFocus, onBack, onPin, onDuplicate, onDelete }: { row: DocRow; autoFocus: boolean; onBack: () => void; onPin: () => void; onDuplicate: () => void; onDelete: () => void }) {
+  const qc = useQueryClient();
+  const doc = useQuery({ queryKey: ['knowledge-doc', row.id], queryFn: () => api.get(`/api/knowledge/docs/${row.id}`).then((r) => r.data as Doc), staleTime: Infinity, refetchOnWindowFocus: false });
+  const [title, setTitle] = useState(row.title);
+  const [state, setState] = useState<SaveState>('saved');
+  const [savedAt, setSavedAt] = useState(row.updated_at);
+  const pending = useRef<{ title?: string; content?: string }>({});
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flush = useCallback(async () => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    const body = pending.current;
+    if (!Object.keys(body).length) return;
+    pending.current = {};
+    setState('saving');
+    try {
+      const r = await api.patch(`/api/knowledge/docs/${row.id}`, body);
+      const d = r.data as Doc;
+      qc.setQueryData(['knowledge-doc', row.id], d);
+      qc.setQueriesData<DocRow[]>({ queryKey: LIST_KEY }, (rows) => rows?.map((x) => (x.id === d.id ? { ...x, title: d.title, updated_at: d.updated_at, chars: d.chars } : x)));
+      setSavedAt(d.updated_at);
+      setState(Object.keys(pending.current).length ? 'pending' : 'saved');
+    } catch {
+      pending.current = { ...body, ...pending.current };
+      setState('error');
+    }
+  }, [qc, row.id]);
+
+  const queue = (change: { title?: string; content?: string }) => {
+    pending.current = { ...pending.current, ...change };
+    setState('pending');
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => void flush(), 700);
+  };
+
+  // Save anything pending when switching docs or leaving the page.
+  useEffect(() => () => { void flush(); }, [flush]);
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => { if (Object.keys(pending.current).length) { void flush(); e.preventDefault(); } };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [flush]);
+
+  const source = SOURCE_LABEL[row.created_by];
+  return (
+    <div className="min-h-full">
+      <div className="sticky top-0 z-20 flex h-11 items-center gap-2 border-b border-zinc-100 bg-white/90 px-4 backdrop-blur">
+        <button onClick={onBack} className="-ml-1 rounded-md p-1 text-zinc-500 hover:bg-zinc-100 md:hidden" aria-label="All documents"><ChevronLeft className="size-4" /></button>
+        <span className="min-w-0 truncate text-[13px] text-zinc-500">Knowledge <span className="text-zinc-300">/</span> <span className="text-zinc-800">{title || 'Untitled'}</span></span>
+        <span className="flex-1" />
+        <SaveIndicator state={state} savedAt={savedAt} onRetry={() => void flush()} />
+        <IconButton label={row.pinned ? 'Unpin' : 'Pin to top'} onClick={onPin} className={cx('size-7', row.pinned && 'text-zinc-900')}>
+          {row.pinned ? <Pin className="size-4 fill-current" /> : <Pin className="size-4" />}
+        </IconButton>
+        <Menu trigger={(open) => <IconButton label="More" onClick={open} className="size-7"><MoreHorizontal className="size-4" /></IconButton>} items={[
+          { label: 'Duplicate', icon: <Copy className="size-4" />, onClick: onDuplicate },
+          'divider',
+          { label: 'Delete', icon: <Trash2 className="size-4" />, danger: true, onClick: onDelete },
+        ]} />
+      </div>
+
+      <div className="mx-auto w-full max-w-[760px] px-6 pb-10 pt-12 sm:px-12">
+        <input value={title} onChange={(e) => { setTitle(e.target.value); if (e.target.value.trim()) queue({ title: e.target.value.trim() }); }}
+          placeholder="Untitled" aria-label="Title"
+          className="w-full border-none bg-transparent p-0 text-[30px] font-semibold leading-tight tracking-tight text-zinc-900 placeholder:text-zinc-300 focus:outline-none" />
+        <div className="mb-6 mt-2 flex flex-wrap items-center gap-x-2 text-[12px] text-zinc-400">
+          {source && <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-zinc-500">{source}</span>}
+          {row.source_url && <a href={row.source_url} target="_blank" rel="noreferrer" className="truncate hover:text-zinc-600">{row.source_url.replace(/^https?:\/\//, '')}</a>}
+          <span>Created {fmtRelative(row.created_at)}</span>
+        </div>
+        {doc.isLoading || !doc.data ? <p className="text-shimmer text-[14px]">Loading document…</p> : (
+          <Suspense fallback={<p className="text-shimmer text-[14px]">Loading editor…</p>}>
+            <DocEditor markdown={doc.data.content} autoFocus={autoFocus} onChange={(md) => queue({ content: md })} />
+          </Suspense>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SaveIndicator({ state, savedAt, onRetry }: { state: SaveState; savedAt: string; onRetry: () => void }) {
+  if (state === 'error') return <button onClick={onRetry} className="flex items-center gap-1 text-[12px] text-red-600 hover:underline"><AlertCircle className="size-3.5" />Not saved — retry</button>;
+  if (state === 'saving' || state === 'pending') return <span className="text-[12px] text-zinc-400">Saving…</span>;
+  return <span className="flex items-center gap-1 text-[12px] text-zinc-400" title={`Saved ${fmtRelative(savedAt)}`}><Check className="size-3.5" />Saved</span>;
+}
+
+function Welcome({ templates, onCreate, onAutofill }: { templates: Template[]; onCreate: (t?: Template) => void; onAutofill: () => void }) {
+  return (
+    <div className="mx-auto max-w-[760px] px-6 py-16 sm:px-12">
+      <h2 className="text-[26px] font-semibold tracking-tight text-zinc-900">Your knowledge hub</h2>
+      <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-zinc-500">
+        Plain documents about what you sell and to whom. The agent reads them in every chat and can write them for you; AI research columns and reply drafts use them too.
+      </p>
+      <div className="mt-6 flex flex-wrap gap-2">
+        <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => onCreate()}>New document</Button>
+        <Button icon={<Globe className="size-4" />} onClick={onAutofill}>Fill from website</Button>
+      </div>
+      {templates.length > 0 && (
+        <>
+          <div className="mb-2 mt-10 text-[11px] font-medium uppercase tracking-wide text-zinc-400">Start from a template</div>
           <div className="grid gap-2 sm:grid-cols-2">
-            {fields.map((f) => (
-              <label key={f.k} className={cx('block', f.long && 'sm:col-span-2')}>
-                <span className="mb-1 block text-[12px] font-medium text-zinc-500">{f.label}</span>
-                {f.long
-                  ? <Textarea rows={2} value={it[f.k] ?? ''} placeholder={f.placeholder} onChange={(e) => update(i, f.k, e.target.value)} />
-                  : <Input value={it[f.k] ?? ''} placeholder={f.placeholder} onChange={(e) => update(i, f.k, e.target.value)} />}
-              </label>
+            {templates.map((t) => (
+              <button key={t.key} onClick={() => onCreate(t)} className="flex items-center gap-2.5 rounded-lg border border-zinc-200 px-3 py-2.5 text-left text-[13px] text-zinc-700 transition-colors hover:border-zinc-300 hover:bg-zinc-50">
+                <FileText className="size-4 shrink-0 text-zinc-400" strokeWidth={1.75} />{t.title}
+              </button>
             ))}
           </div>
-        </div>
-      ))}
-      <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={() => onChange([...items, { ...blank }])}>{addLabel}</Button>
-    </div>
-  );
-}
-
-function AutoFill({ onDraft, defaultDomain }: { onDraft: (d: Draft, source: string) => void; defaultDomain: string }) {
-  const { toast } = useUi();
-  const qc = useQueryClient();
-  const [domain, setDomain] = useState(defaultDomain);
-  const [busy, setBusy] = useState(false);
-  const go = async () => {
-    setBusy(true);
-    try {
-      const r = await api.post('/api/knowledge/autofill', { domain: domain.trim(), apply: false });
-      await qc.invalidateQueries({ queryKey: ['knowledge'] });
-      if (!r.data.ai) toast('No AI model is set up, so only the basics were read from the site. Add an OpenRouter key for a full draft.', 'info');
-      onDraft(r.data.draft, `${r.data.pages.length} page${r.data.pages.length === 1 ? '' : 's'} from ${domain.trim()}`);
-    } catch (e) { toast(errorMessage(e), 'error'); } finally { setBusy(false); }
-  };
-  return (
-    <div className="mb-5 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-gradient-to-br from-zinc-50 to-white p-4 sm:flex-row sm:items-center">
-      <div className="flex min-w-0 flex-1 items-start gap-3">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-white"><Sparkles className="size-4" /></div>
-        <div>
-          <div className="text-[13.5px] font-medium text-zinc-900">AI fill from website</div>
-          <div className="text-[12.5px] text-zinc-500">Reads your home, about, product, pricing and customer pages and drafts every section. You review before anything changes.</div>
-        </div>
-      </div>
-      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (domain.trim()) void go(); }}>
-        <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="yourcompany.com" className="w-56" />
-        <Button type="submit" variant="primary" loading={busy} disabled={!domain.trim()} icon={<Wand2 className="size-4" />}>Draft</Button>
-      </form>
-    </div>
-  );
-}
-
-function Docs({ docs, onDraft }: { docs: Doc[]; onDraft: (d: Draft, source: string) => void }) {
-  const qc = useQueryClient();
-  const { toast, confirm } = useUi();
-  const [adding, setAdding] = useState(false);
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [url, setUrl] = useState('');
-  const [busy, setBusy] = useState<number | 'add' | null>(null);
-  const refresh = () => qc.invalidateQueries({ queryKey: ['knowledge'] });
-  const add = async () => {
-    setBusy('add');
-    try {
-      await api.post('/api/knowledge/docs', { title: title || undefined, content: content || undefined, url: url || undefined });
-      setAdding(false); setTitle(''); setContent(''); setUrl('');
-      await refresh();
-    } catch (e) { toast(errorMessage(e), 'error'); } finally { setBusy(null); }
-  };
-  const draft = async (d: Doc) => {
-    setBusy(d.id);
-    try {
-      const r = await api.post(`/api/knowledge/docs/${d.id}/draft`, { apply: false });
-      await refresh();
-      onDraft(r.data.draft, d.title);
-    } catch (e) { toast(errorMessage(e), 'error'); } finally { setBusy(null); }
-  };
-  const remove = async (d: Doc) => {
-    if (!(await confirm({ title: `Delete “${d.title}”?`, message: 'Sections already drafted from it are kept.', confirmLabel: 'Delete', danger: true }))) return;
-    try { await api.del(`/api/knowledge/docs/${d.id}`); await refresh(); } catch (e) { toast(errorMessage(e), 'error'); }
-  };
-  return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-4">
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-[13.5px] font-semibold text-zinc-900">Docs</h2>
-        <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={() => setAdding(true)}>Add</Button>
-      </div>
-      <p className="mb-3 text-[12.5px] text-zinc-500">Paste a sales deck, notes or case studies, or import a URL. AI can summarise any doc into the sections.</p>
-      {docs.length === 0 && <p className="text-[12.5px] text-zinc-400">No docs yet.</p>}
-      <div className="space-y-2">
-        {docs.map((d) => (
-          <div key={d.id} className="group rounded-lg border border-zinc-200 p-2.5">
-            <div className="flex items-start gap-2">
-              {d.source_url ? <Globe className="mt-0.5 size-3.5 shrink-0 text-zinc-400" /> : <FileText className="mt-0.5 size-3.5 shrink-0 text-zinc-400" />}
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium text-zinc-800" title={d.title}>{d.title}</div>
-                <div className="text-[11.5px] text-zinc-400">{d.chars.toLocaleString()} chars · {fmtRelative(d.created_at)}</div>
-                {d.summary && <p className="mt-1 line-clamp-3 text-[12px] text-zinc-600">{d.summary}</p>}
-              </div>
-              <button onClick={() => remove(d)} className="rounded p-1 text-zinc-400 opacity-0 hover:bg-zinc-100 hover:text-red-600 group-hover:opacity-100" aria-label="Delete doc" title="Delete"><Trash2 className="size-3.5" /></button>
-            </div>
-            <Button size="sm" variant="ghost" className="mt-1" loading={busy === d.id} icon={<Wand2 className="size-3.5" />} onClick={() => draft(d)}>Draft sections from this</Button>
-          </div>
-        ))}
-      </div>
-      <Modal open={adding} onClose={() => setAdding(false)} title="Add a doc" size="lg"
-        footer={<><Button onClick={() => setAdding(false)}>Cancel</Button><Button variant="primary" loading={busy === 'add'} disabled={!content.trim() && !url.trim()} onClick={add}>Add doc</Button></>}>
-        <div className="space-y-3">
-          <Field label="Title (optional)"><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Sales deck Q3" /></Field>
-          <Field label="Import from URL" hint="Leave the text empty to fetch the page."><Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://acme.com/customers" /></Field>
-          <Field label="…or paste text"><Textarea rows={10} value={content} onChange={(e) => setContent(e.target.value)} /></Field>
-        </div>
-      </Modal>
-    </section>
-  );
-}
-
-function ContextPreview({ updatedAt }: { updatedAt: string }) {
-  const [open, setOpen] = useState(false);
-  const q = useQuery({ queryKey: ['knowledge-context', updatedAt], queryFn: () => api.get('/api/knowledge/context').then((r) => r.data as { text: string; empty: boolean }), enabled: open });
-  return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-4">
-      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-1.5 text-left text-[13.5px] font-semibold text-zinc-900">
-        {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}What the AI sees
-      </button>
-      {open && (q.isLoading ? <p className="mt-2 text-[12.5px] text-zinc-400">Loading…</p>
-        : <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap font-mono text-[11.5px] leading-snug text-zinc-700 scroll-thin">{q.data?.text || 'Nothing yet — fill in a section and save.'}</pre>)}
-      {!open && <p className="mt-1 text-[12px] text-zinc-500">The compact summary added to agent and AI column prompts (saved changes only).</p>}
-    </section>
-  );
-}
-
-function hasContent(v: unknown): boolean {
-  if (Array.isArray(v)) return v.length > 0;
-  if (v && typeof v === 'object') return Object.values(v).some(hasContent);
-  return typeof v === 'string' ? v.trim().length > 0 : false;
-}
-
-function preview(v: unknown): string {
-  if (typeof v === 'string') return v;
-  if (Array.isArray(v)) return v.map((x) => (typeof x === 'string' ? x : Object.values(x).filter(Boolean).join(' — '))).join('\n');
-  if (v && typeof v === 'object') return Object.entries(v).filter(([, x]) => hasContent(x)).map(([k, x]) => `${k}: ${Array.isArray(x) ? x.join(', ') : x}`).join('\n');
-  return '';
-}
-
-/** Pick which drafted sections to use; sections you already filled are unticked by default. */
-function DraftReview({ draft, source, current, onApply, onClose }: { draft: Draft; source: string; current: Hub; onApply: (picked: Partial<Hub>) => void; onClose: () => void }) {
-  const keys = Object.keys(SECTION_LABELS).filter((k) => hasContent((draft as any)[k]));
-  const [picked, setPicked] = useState<Set<string>>(() => new Set(keys.filter((k) => !hasContent((current as any)[k]))));
-  const apply = () => {
-    const out: Partial<Hub> = {};
-    for (const k of picked) {
-      const v = (draft as any)[k];
-      (out as any)[k] = k === 'company' || k === 'icp' ? { ...(current as any)[k], ...Object.fromEntries(Object.entries(v).filter(([, x]) => hasContent(x))) } : v;
-    }
-    onApply(out);
-  };
-  return (
-    <Modal open onClose={onClose} size="xl" title="Review the AI draft" description={`Drafted from ${source}. Tick the sections to use — ticked sections replace what's there. Nothing is saved until you click Save.`}
-      footer={<><Button onClick={onClose}>Discard draft</Button><Button variant="primary" disabled={!picked.size} onClick={apply}>Use {picked.size} section{picked.size === 1 ? '' : 's'}</Button></>}>
-      {keys.length === 0 ? <p className="text-[13px] text-zinc-500">The AI couldn't draft anything from this source.</p> : (
-        <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1 scroll-thin">
-          {keys.map((k) => (
-            <div key={k} className={cx('rounded-lg border p-3', picked.has(k) ? 'border-zinc-300 bg-white' : 'border-zinc-200 bg-zinc-50/60')}>
-              <div className="flex items-center gap-2">
-                <Checkbox checked={picked.has(k)} onChange={(v) => setPicked((s) => { const n = new Set(s); if (v) n.add(k); else n.delete(k); return n; })} />
-                <span className="text-[13px] font-medium text-zinc-900">{SECTION_LABELS[k]}</span>
-                {hasContent((current as any)[k]) && <span className="text-[11.5px] text-amber-600">you already have this</span>}
-              </div>
-              <pre className="ml-6 mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap font-sans text-[12.5px] text-zinc-600 scroll-thin">{preview((draft as any)[k])}</pre>
-            </div>
-          ))}
-        </div>
+        </>
       )}
-      <p className="mt-3 flex items-center gap-1.5 text-[11.5px] text-zinc-400"><Link2 className="size-3" />Source text is kept under Docs.</p>
+    </div>
+  );
+}
+
+function ContextModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const q = useQuery({ queryKey: ['knowledge-context'], queryFn: () => api.get('/api/knowledge/context').then((r) => r.data as { text: string; empty: boolean }), enabled: open, staleTime: 0 });
+  const text = useMemo(() => q.data?.text ?? '', [q.data]);
+  return (
+    <Modal open={open} onClose={onClose} size="lg" title="What the AI sees"
+      description="The compact text added to agent chats, AI research columns and reply drafts: pinned documents first, long ones cut. The agent can open any document in full.">
+      {q.isLoading ? <p className="text-shimmer text-[13px]">Building context…</p>
+        : <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-50 p-3 font-mono text-[11.5px] leading-snug text-zinc-700 scroll-thin">{text || 'Nothing yet — add a document.'}</pre>}
+      {!!text && <p className="mt-2 text-[12px] text-zinc-400">{text.length.toLocaleString()} characters</p>}
     </Modal>
   );
 }

@@ -41,7 +41,7 @@ export function Signals() {
                   </>
                 ) : (
                   <>
-                    <span className={`ty ty-${s.type}`}><Icon name={s.type === 'signal' ? 'radar' : s.type === 'ai' ? 'sparkles' : 'database'} size={14} /></span>
+                    <span className={`ty ty-${s.type}`}><Icon name={s.type === 'signal' ? 'radar' : s.type === 'ai' ? 'brain' : 'database'} size={14} /></span>
                     <div>
                       <div className="what"><b style={{ fontWeight: 600 }}>{String(s.row)}</b> · {s.column} <span className="muted">in {s.table}</span></div>
                       <div className="delta"><s>{display(s.from).slice(0, 140) || '∅'}</s> → {display(s.to).slice(0, 240) || '∅'}</div>

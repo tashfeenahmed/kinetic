@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Users, Send, Inbox, AtSign, Flame, Clock, Puzzle, Code2, ChevronDown, Settings, HelpCircle, LogOut,
   PanelLeftClose, PanelLeft, Check, Plus, Pencil, Trash2, ChevronsUpDown, ChevronRight, Menu as MenuIcon, X, Home as HomeIcon, Radar, Table2, Activity, Globe,
-  Blocks, Eye, Sparkles, BookOpen, Bot, SearchCheck,
+  Blocks, Eye, MessageSquareText, BookOpen, Bot, SearchCheck,
 } from 'lucide-react';
 import { useGtmTables } from '../gtm/lib/queries';
 import { RouteErrorBoundary } from './RouteErrorBoundary.tsx';
@@ -214,7 +214,7 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-2 pb-2 scroll-thin">
         <nav className="mt-1 flex flex-col gap-px pt-px">
           <NavItem to="/" end label="Home" icon={HomeIcon} collapsed={collapsed} />
-          <NavItem to="/agent" label="Agent" icon={Sparkles} collapsed={collapsed} />
+          <NavItem to="/agent" label="Agent" icon={MessageSquareText} collapsed={collapsed} />
           <NavItem to="/knowledge" label="Knowledge" icon={BookOpen} collapsed={collapsed} />
           <NavItem to="/signals" label="Signals" icon={Radar} collapsed={collapsed} />
           <NavItem to="/searches" label="Searches" icon={SearchCheck} collapsed={collapsed} />

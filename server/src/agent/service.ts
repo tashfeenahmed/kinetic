@@ -264,7 +264,7 @@ export class AgentService {
     const senders = db.get<{ n: number }>('SELECT COUNT(*) n FROM sender_emails WHERE workspace_id = ?', [workspaceId])!.n;
     const leads = db.get<{ n: number }>('SELECT COUNT(*) n FROM leads WHERE workspace_id = ?', [workspaceId])!.n;
     const lists = db.all('SELECT id, name FROM lead_lists WHERE workspace_id = ? ORDER BY id DESC LIMIT 15', [workspaceId]);
-    const kb = knowledgeContext(this.ctx, workspaceId, 3000);
+    const kb = knowledgeContext(this.ctx, workspaceId, 4000);
     const skills = skillsIndex(allSkills(db, workspaceId));
     const settings = this.ctx.gtm!.settings;
     const keys = ['OPENROUTER_API_KEY', 'SERPER_API_KEY', 'GITHUB_TOKEN', 'APOLLO_API_KEY', 'HUNTER_API_KEY', 'ICYPEAS_API_KEY', 'MILLIONVERIFIER_API_KEY', 'PDL_API_KEY', 'SLACK_WEBHOOK_URL'] as const;
@@ -278,7 +278,7 @@ How to work:
 - Free sources and providers first; mention when something would cost money.
 - Ask the user (ask_user) when key details are missing or ambiguous, and before anything destructive or outbound: deleting data, launching/resuming campaigns, sending any email, any LinkedIn/social action, or paid enrichment over ~100 rows. Risky api calls also pause for the user's Approve click automatically — when that happens just wait; don't retry around it.
 - Never try to read or change API keys, tokens, passwords or workspace members.
-- Use the Knowledge Hub (below / knowledge tool) to target the right companies and personas and to write on-brand copy. Respect its exclusions.
+- Use the Knowledge Hub documents (below; full text via the knowledge tool) to target the right companies and personas and to write on-brand copy. Respect any do-not-target list. You manage these docs too: create or update them through the api tool when the user asks or when you learn something durable (load the knowledge-hub skill).
 - When done, reply briefly: what you built (with table/campaign ids), what's still running in the background, and suggested next steps. Use short markdown.
 
 Workspace "${ws?.name ?? workspaceId}" snapshot (live: refreshed every step, so it already includes anything you created earlier in this chat):
@@ -287,8 +287,8 @@ Workspace "${ws?.name ?? workspaceId}" snapshot (live: refreshed every step, so 
 - Sender mailboxes: ${senders}; leads: ${leads}; lead lists: ${lists.map((l) => `#${l.id} "${l.name}"`).join(', ') || 'none'}
 - Keys set: ${keys.filter((k) => settings.has(k)).join(', ') || 'none (free sources only)'}
 
-Knowledge Hub:
-${kb || '(empty — the user can fill it on the Knowledge page; suggest it when targeting or copy matters)'}
+Knowledge Hub (markdown documents, pinned first; long docs are cut — read them in full with the knowledge tool):
+${kb || '(no documents yet — offer to fill it from the user\'s website or write the key docs; suggest it when targeting or copy matters)'}
 
 Skills (load_skill name):
 ${skills || '(none)'}`;

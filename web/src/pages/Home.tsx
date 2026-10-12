@@ -1,20 +1,18 @@
-import { useState } from 'react';
-import { lazy, Suspense } from 'react';
-import { MapPin, Sparkles } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
-  ArrowRight, AtSign, Briefcase, Globe, Building2, CheckCircle2, ChevronRight, Circle, FileText, Flame, Inbox, Loader2, Mail, Radar, Rocket,
-  Table2, User, Users,
+  ArrowRight, ArrowUp, AtSign, Globe, Building2, CheckCircle2, ChevronRight, Circle, FileText, Flame, Inbox, Mail, Radar, Rocket,
+  Table2, Users,
 } from 'lucide-react';
 import { api, errorMessage } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import { avatarColor, fmtDate, fmtNumber, fmtPct, fmtRelative, initials } from '../lib/format.ts';
 import { Page } from '../components/Layout.tsx';
-import { Alert, Button, Card, EmptyState, Loading, ProgressBar, Select, cx, useUi } from '../components/ui.tsx';
+import { Alert, Button, Card, EmptyState, Loading, ProgressBar, Select, cx } from '../components/ui.tsx';
 import { CampaignStatus, ReplyCategory } from '../components/status.tsx';
-import { useGtmCatalog, useGtmTables } from '../gtm/lib/queries.ts';
+import { useGtmTables } from '../gtm/lib/queries.ts';
 
 /**
  * Home = the whole pipeline on one page:
@@ -28,16 +26,13 @@ const SERIES = [
   { key: 'bounced', label: 'Bounced', color: '#ef4444' },
 ] as const;
 
-type Mode = 'companies' | 'people' | 'jobs' | 'local' | 'lookalikes';
-// Local businesses (map) and lookalikes live in their own lazily loaded panel (Leaflet is heavy).
-const SourcingFind = lazy(() => import('./searches/SourcingFind.tsx').then((m) => ({ default: m.SourcingFind })));
-const MODES: Record<Mode, { label: string; icon: typeof Building2; placeholder: string; hint: string }> = {
-  companies: { label: 'Companies', icon: Building2, placeholder: 'What kind of companies? e.g. restaurant POS, developer tools, fintech', hint: 'Free · YC directory, then AI web search' },
-  people: { label: 'People', icon: User, placeholder: 'Company domain or GitHub org, e.g. vercel.com', hint: 'Free · public GitHub org members' },
-  jobs: { label: 'Jobs', icon: Briefcase, placeholder: 'Company domains, e.g. ramp.com, linear.app', hint: 'Free · public job boards' },
-  local: { label: 'Local businesses (Google Maps)', icon: MapPin, placeholder: '', hint: 'Free · OpenStreetMap, or Google Maps with a key' },
-  lookalikes: { label: 'Lookalikes', icon: Sparkles, placeholder: '', hint: 'Companies or people like your best accounts' },
-};
+const EXAMPLES = [
+  '50 Irish POS companies and their CEOs',
+  'Dental clinics in Manchester with a website',
+  'UK SaaS companies hiring SDRs',
+  'Companies like linear.app',
+  'Engineering leaders at vercel.com',
+];
 
 const TEMPLATES = [
   { id: 'company_research', icon: Building2, title: 'Research companies', desc: 'Firmographics, tech stack, open roles and an AI summary.' },
@@ -276,62 +271,62 @@ function GetStarted({ counts }: { counts: { lists: number; domains: number; send
   );
 }
 
-/** Free prospect search that lands in a new table. */
+/** "Find new prospects" is the agent's input: one open field; the agent picks sources, builds the table and enriches it. */
 function FindBox() {
-  const [mode, setMode] = useState<Mode>('companies');
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const ref = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { toast } = useUi();
-  const catalog = useGtmCatalog();
-  if (mode === 'local' || mode === 'lookalikes') return <Suspense fallback={<Loading />}><SourcingFind mode={mode} modes={MODES} onMode={setMode} /></Suspense>;
+  // Same query (and cache) as the Agent page.
+  const config = useQuery({ queryKey: ['agent-config'], queryFn: () => api.get('/api/agent/config').then((r) => r.data as { aiReady: boolean }), staleTime: 5 * 60_000 });
+  const noAi = config.data && !config.data.aiReady;
 
-  async function find() {
-    if (!q.trim() || busy) return;
+  async function start() {
+    const message = q.trim();
+    if (!message || busy) return;
     setBusy(true);
     setErr('');
     try {
-      const r = await api.post<{ id: number; rows: number; source: string }>('/api/gtm/find', { mode, query: q.trim(), limit: mode === 'people' ? 30 : 100 });
-      await qc.invalidateQueries({ queryKey: ['gtm-tables'] });
-      toast(`Found ${r.rows} ${mode === 'jobs' ? 'open roles' : mode} · ${r.source}`);
-      navigate(`/tables/${r.id}`);
+      const r = await api.post<{ data: { id: number } }>('/api/agent/sessions', { message });
+      await qc.invalidateQueries({ queryKey: ['agent-sessions'] });
+      navigate(`/agent/${r.data.id}`);
     } catch (e) {
       setErr(errorMessage(e));
-    } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div id="find" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_12px_40px_rgba(16,16,20,.08)]">
-      <div className="mb-2 text-[15px] font-semibold text-slate-900">Find new prospects</div>
-      <textarea
-        rows={2}
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void find(); } }}
-        placeholder={MODES[mode].placeholder}
-        className="w-full resize-none border-0 bg-transparent p-0 text-[15px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0"
-      />
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        {(Object.keys(MODES) as Mode[]).map((m) => {
-          const M = MODES[m];
-          return (
-            <button key={m} onClick={() => setMode(m)} className={cx('inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium', m === mode ? 'bg-brand-50 text-brand-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70')}>
-              <M.icon className="size-3.5" />{M.label}
-            </button>
-          );
-        })}
-        <span className="flex-1" />
-        <span className="hidden text-xs text-slate-400 sm:inline">{mode === 'companies' && !catalog.data?.aiReady ? 'Free · YC directory (add OpenRouter on Integrations to search the whole web)' : MODES[mode].hint}</span>
-        <button onClick={find} disabled={busy || !q.trim()} className="ml-2 inline-flex size-8 items-center justify-center rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 disabled:opacity-40" aria-label="Search">
-          {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-        </button>
+    <div id="find" className="scroll-mt-6">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_12px_40px_rgba(16,16,20,.08)] focus-within:border-slate-300">
+        <div className="mb-2 text-[15px] font-semibold text-slate-900">Find new prospects</div>
+        <textarea
+          ref={ref}
+          rows={2}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void start(); } }}
+          placeholder="Companies, people, local businesses, jobs… e.g. 50 Irish POS companies and their CEOs"
+          className="w-full resize-none border-0 bg-transparent p-0 text-[15px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0"
+        />
+        <div className="mt-2 flex items-center gap-2">
+          <span className="flex-1 text-xs text-slate-400">
+            {noAi ? <>The agent needs an AI key. Add OpenRouter (or a local model URL) on <Link to="/integrations" className="font-medium text-slate-600 underline hover:text-slate-900">Integrations</Link>.</>
+              : 'The agent finds them, builds the table and enriches it. Enter to send, Shift+Enter for a new line.'}
+          </span>
+          <button onClick={start} disabled={busy || !q.trim()} className="inline-flex size-8 items-center justify-center rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 disabled:opacity-40" aria-label="Find" title="Find (Enter)">
+            <ArrowUp className="size-4" />
+          </button>
+        </div>
+        {err && <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-900">{err}</p>}
       </div>
-      {busy && <p className="mt-2 text-[13px] text-slate-500">Searching… {mode === 'companies' ? 'if the YC directory has no match and AI is set up, a web search can take up to a minute.' : mode === 'jobs' ? 'checking each company’s job board.' : ''}</p>}
-      {err && <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-900">{err}</p>}
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {EXAMPLES.map((x) => (
+          <button key={x} onClick={() => { setQ(x); ref.current?.focus(); }} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[12.5px] text-slate-600 hover:border-slate-300 hover:text-slate-900">{x}</button>
+        ))}
+      </div>
     </div>
   );
 }

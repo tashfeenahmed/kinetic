@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowUp, BookOpen, Check, ChevronDown, ChevronRight, Circle, Clock, ExternalLink, Globe, Hand, Loader2, Minus, PanelLeftClose, PanelLeft,
-  Plus, Search, ShieldAlert, Sparkles, Square, Table2, Trash2, Wrench, X,
+  ArrowUp, BookOpen, ChevronDown, ChevronRight, ExternalLink, Globe, Hand, MessageSquareText, PanelLeftClose, PanelLeft,
+  Plus, Search, ShieldAlert, Square, Table2, Trash2, Wrench,
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api.ts';
 import { fmtRelative } from '../../lib/format.ts';
-import { Button, cx, useUi } from '../../components/ui.tsx';
+import { Button, Shimmer, cx, useUi } from '../../components/ui.tsx';
+import { stepLabel } from './labels.ts';
 import { Markdown } from './Markdown.tsx';
 import type { AgentConfig, AgentMessage, AgentSession } from './types.ts';
 
@@ -65,9 +66,8 @@ function History({ sessionId, onClose }: { sessionId: number | null; onClose: ()
           <div key={s.id} className={cx('group flex items-center rounded-[7px]', s.id === sessionId ? 'bg-white shadow-sm ring-1 ring-zinc-200' : 'hover:bg-zinc-200/50')}>
             <Link to={`/agent/${s.id}`} className="min-w-0 flex-1 px-2.5 py-1.5">
               <div className="flex items-center gap-1.5">
-                {s.status === 'running' && <Loader2 className="size-3 shrink-0 animate-spin text-zinc-500" />}
                 {s.status === 'waiting' && <Hand className="size-3 shrink-0 text-amber-500" />}
-                <span className="truncate text-[13px] text-zinc-800">{s.title}</span>
+                <span className="truncate text-[13px] text-zinc-800">{s.status === 'running' ? <Shimmer>{s.title}</Shimmer> : s.title}</span>
               </div>
               <div className="text-[11.5px] text-zinc-400">{fmtRelative(s.updated_at)}</div>
             </Link>
@@ -110,7 +110,7 @@ function NewChat({ historyOpen, toggleHistory }: { historyOpen: boolean; toggleH
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10">
         <div className="w-full max-w-[680px]">
           <div className="mb-6 text-center">
-            <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-xl bg-zinc-900 text-white"><Sparkles className="size-5" /></div>
+            <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-xl bg-zinc-900 text-white"><MessageSquareText className="size-5" /></div>
             <h1 className="text-[22px] font-semibold tracking-tight text-zinc-900">What should we build?</h1>
             <p className="mt-1 text-[13.5px] text-zinc-500">The agent builds tables, finds and enriches prospects, writes campaigns and triages replies — it asks before anything that sends, deletes or spends.</p>
           </div>
@@ -173,7 +173,7 @@ function Composer({ onSend, onStop, busy, running, model, setModel, config, auto
           <button onClick={onStop} className="flex size-8 items-center justify-center rounded-lg bg-zinc-900 text-white hover:bg-zinc-700" title="Stop" aria-label="Stop"><Square className="size-3.5 fill-current" /></button>
         ) : (
           <button onClick={send} disabled={!text.trim() || busy} className="flex size-8 items-center justify-center rounded-lg bg-zinc-900 text-white hover:bg-zinc-700 disabled:bg-zinc-200 disabled:text-zinc-400" title="Send (Enter)" aria-label="Send">
-            {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
+            <ArrowUp className="size-4" />
           </button>
         )}
       </div>
@@ -255,7 +255,7 @@ function Conversation({ sessionId, historyOpen, toggleHistory }: { sessionId: nu
           {items.map((it) => it.kind === 'user'
             ? <div key={it.msg.id} className="mb-5 flex justify-end"><div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-zinc-100 px-3.5 py-2 text-[13.5px] text-zinc-900">{it.msg.content}</div></div>
             : <AssistantTurn key={it.key} messages={it.msgs} onAnswer={answer} />)}
-          {thinking && <div className="flex items-center gap-2 py-1 text-[13px] text-zinc-400"><Loader2 className="size-3.5 animate-spin" /> Thinking…</div>}
+          {thinking && <div className="py-1 text-[13px]"><Shimmer>Thinking…</Shimmer></div>}
           {s?.status === 'error' && s.error && !messages.at(-1)?.meta?.error && <div className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{s.error}</div>}
         </div>
       </div>
@@ -302,15 +302,16 @@ const TOOL_ICON: Record<string, typeof Wrench> = { load_skill: BookOpen, knowled
 function ToolStep({ msg }: { msg: AgentMessage }) {
   const [open, setOpen] = useState(false);
   const Icon = TOOL_ICON[msg.tool_name ?? ''] ?? Wrench;
-  const label = msg.meta.label ?? msg.tool_name ?? 'Tool';
+  const label = stepLabel(msg);
   const pause = msg.meta.pause;
+  const running = msg.status === 'running';
   return (
     <div className="group">
       <div className="flex min-h-7 items-center gap-2 text-[12.5px]">
         <button onClick={() => setOpen((o) => !o)} className="flex min-w-0 items-center gap-2 rounded-md py-0.5 pr-1.5 text-left text-zinc-500 hover:text-zinc-800">
-          <StatusIcon status={msg.status} />
-          <Icon className="size-3.5 shrink-0 text-zinc-400" strokeWidth={1.75} />
-          <span className={cx('truncate', msg.status === 'failed' && 'text-red-600')}>{label}</span>
+          <Icon className={cx('size-3.5 shrink-0', msg.status === 'failed' ? 'text-red-400' : 'text-zinc-400')} strokeWidth={1.75} />
+          {running ? <Shimmer className="truncate">{label}</Shimmer>
+            : <span className={cx('truncate', msg.status === 'failed' && 'text-red-600/90', msg.status === 'waiting' && 'text-amber-700', msg.status === 'skipped' && 'text-zinc-400')}>{label}</span>}
           {open ? <ChevronDown className="size-3 shrink-0 opacity-60" /> : <ChevronRight className="size-3 shrink-0 opacity-0 group-hover:opacity-60" />}
         </button>
         {msg.meta.links?.map((l) => (
@@ -318,7 +319,7 @@ function ToolStep({ msg }: { msg: AgentMessage }) {
             {l.label}<ExternalLink className="size-3" />
           </Link>
         ))}
-        {msg.meta.decision && <span className={cx('text-[11.5px]', msg.meta.decision === 'approved' ? 'text-emerald-600' : 'text-zinc-400')}>{msg.meta.decision === 'approved' ? 'Approved by you' : 'Declined by you'}</span>}
+        {msg.meta.decision && <span className="text-[11.5px] text-zinc-400">{msg.meta.decision === 'approved' ? 'Approved by you' : 'Declined by you'}</span>}
         {pause?.type === 'question' && msg.meta.answer && <span className="truncate text-[11.5px] text-zinc-400">“{msg.meta.answer}”</span>}
       </div>
       {open && (
@@ -339,15 +340,6 @@ function Pre({ label, text }: { label: string; text: string }) {
       <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all font-mono text-[11.5px] leading-snug text-zinc-700 scroll-thin">{text.length > 8000 ? `${text.slice(0, 8000)}…` : text}</pre>
     </div>
   );
-}
-
-function StatusIcon({ status }: { status: AgentMessage['status'] }) {
-  if (status === 'running') return <Loader2 className="size-3.5 shrink-0 animate-spin text-zinc-500" />;
-  if (status === 'done') return <Check className="size-3.5 shrink-0 text-emerald-600" />;
-  if (status === 'failed') return <X className="size-3.5 shrink-0 text-red-500" />;
-  if (status === 'waiting') return <Clock className="size-3.5 shrink-0 text-amber-500" />;
-  if (status === 'skipped') return <Minus className="size-3.5 shrink-0 text-zinc-400" />;
-  return <Circle className="size-3.5 shrink-0 text-zinc-300" />;
 }
 
 function PauseCard({ msg, onAnswer }: { msg: AgentMessage; onAnswer: (id: number, b: { answer?: string; approve?: boolean }) => Promise<void> }) {

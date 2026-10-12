@@ -13,7 +13,7 @@ import { classify } from './policy.ts';
 import { findEndpoints } from './endpoints.ts';
 import { allSkills, findSkill, skillsIndex } from './skills.ts';
 import { INTERNAL_HEADER, mintInternalToken, revokeInternalToken } from './internalAuth.ts';
-import { getHub, knowledgeContext } from '../knowledge/store.ts';
+import { findDoc, knowledgeContext, listDocs, searchDocs } from '../knowledge/store.ts';
 
 export const TOOLS = [
   fnTool('api', 'Call any Kinetic HTTP API route as the current user, e.g. POST /api/gtm/tables. Returns status and a truncated JSON body (large arrays are summarised with their row count). Risky routes (launch/resume campaigns, sending email, deletes, social actions, paid enrichment over ~100 rows) pause for the user\'s approval automatically.', {
@@ -25,7 +25,10 @@ export const TOOLS = [
   fnTool('find_endpoints', 'Search the API reference by keywords. Returns method, path, summary and a compact body schema. Use when no skill covers what you need.', { query: { type: 'string' } }, ['query']),
   fnTool('list_skills', 'List available skills (playbooks) with their descriptions.', {}),
   fnTool('load_skill', 'Load a skill\'s full instructions by name. Load the relevant skill BEFORE starting a task it covers.', { name: { type: 'string' } }, ['name']),
-  fnTool('knowledge', 'Read the Knowledge Hub: what this business sells, ICP, personas, positioning, competitors, proof, tone and exclusions. Optional query filters to matching lines.', { query: { type: 'string' } }),
+  fnTool('knowledge', 'Read the Knowledge Hub documents (company, offers, ICP, personas, positioning, competitors, case studies, tone, do-not-target…). No arguments: the list of docs plus their combined text. doc: one document\'s full markdown by id or title. query: search all docs for matching lines. To create or edit docs use the api tool (knowledge-hub skill).', {
+    doc: { type: 'string', description: 'Document id or title' },
+    query: { type: 'string', description: 'Words to search for' },
+  }),
   fnTool('web_search', 'Search the web. Returns titles, URLs and snippets.', { query: { type: 'string' } }, ['query']),
   fnTool('fetch_page', 'Fetch a web page and return its readable text (first ~12k chars).', { url: { type: 'string' } }, ['url']),
   fnTool('ask_user', 'Ask the user a question and wait for the answer. Use for missing details and before anything destructive or outbound. Offer short options when you can.', {
@@ -71,14 +74,7 @@ export async function runTool(name: string, args: any, env: ToolEnv): Promise<To
         if (!s) return fail(`No skill named "${args.name}". Available: ${allSkills(env.ctx.db, env.workspaceId).map((x) => x.name).join(', ')}`, `Skill ${args.name} not found`);
         return ok(`# Skill: ${s.name}\n${s.body}`, `Loaded skill ${s.name}`);
       }
-      case 'knowledge': {
-        const text = knowledgeContext(env.ctx, env.workspaceId, 12_000);
-        if (!text) return ok('The Knowledge Hub is empty. Suggest the user fills it in on the Knowledge page (or POST /api/knowledge/autofill with their domain).', 'Read Knowledge Hub (empty)');
-        const q = String(args.query ?? '').toLowerCase().trim();
-        const lines = q ? text.split('\n').filter((l) => q.split(/\s+/).some((t) => l.toLowerCase().includes(t))) : [];
-        const hub = getHub(env.ctx.db, env.workspaceId);
-        return ok(lines.length ? lines.join('\n') : text, `Read Knowledge Hub${hub.company.name ? ` (${hub.company.name})` : ''}`);
-      }
+      case 'knowledge': return knowledgeTool(args, env);
       case 'web_search': {
         const settings = env.ctx.gtm!.settings;
         const r = await webSearch(String(args.query ?? ''), { settings, log: () => {} }, 8);
@@ -99,6 +95,25 @@ export async function runTool(name: string, args: any, env: ToolEnv): Promise<To
   } catch (e: any) {
     return fail(`Error: ${e.message}`, `${name} failed: ${String(e.message).slice(0, 120)}`);
   }
+}
+
+function knowledgeTool(args: any, env: ToolEnv): ToolOutcome {
+  const docs = listDocs(env.ctx.db, env.workspaceId);
+  if (!docs.length) return ok('The Knowledge Hub has no documents yet. Offer to fill it from the user\'s website (POST /api/knowledge/autofill) or write docs with POST /api/knowledge/docs — see the knowledge-hub skill.', 'Read Knowledge Hub (empty)');
+  const index = docs.map((d) => `#${d.id} ${d.title}${d.pinned ? ' [pinned]' : ''} (${d.content.length} chars, updated ${d.updated_at.slice(0, 10)})`).join('\n');
+  const ref = String(args.doc ?? '').trim();
+  if (ref) {
+    const d = findDoc(env.ctx.db, env.workspaceId, ref);
+    if (!d) return fail(`No document matching "${ref}". Documents:\n${index}`, `Doc “${ref}” not found`);
+    return ok(`# ${d.title} (doc #${d.id}${d.pinned ? ', pinned' : ''}, updated ${d.updated_at})\n\n${d.content || '(empty)'}`, `Read doc “${d.title}”`, [{ label: d.title, to: `/knowledge?doc=${d.id}` }]);
+  }
+  const q = String(args.query ?? '').trim();
+  if (q) {
+    const hits = searchDocs(docs, q);
+    if (!hits.length) return ok(`Nothing matches "${q}". Documents:\n${index}`, `Searched Knowledge Hub “${q}” (0)`);
+    return ok(hits.map((h) => `#${h.id} ${h.title}\n${h.hits.map((l) => `  ${l}`).join('\n')}`).join('\n\n'), `Searched Knowledge Hub “${q}” (${hits.length})`);
+  }
+  return ok(`Documents:\n${index}\n\n${knowledgeContext(env.ctx, env.workspaceId, 12_000)}`, `Read Knowledge Hub (${docs.length} doc${docs.length === 1 ? '' : 's'})`);
 }
 
 const ok = (content: string, label: string, links?: Link[]): ToolOutcome => ({ kind: 'result', ok: true, content: clip(content, 14_000), label, links });
@@ -169,6 +184,11 @@ function describe(method: string, path: string, status: number, json: any): { te
   if (createdCampaign) {
     links.push({ label: json.data.name ? `Campaign “${json.data.name}”` : `Campaign #${json.data.id}`, to: `/campaigns/${json.data.id}` });
     return { text: `created campaign #${json.data.id}`, links };
+  }
+  const knowledgeDoc = /^\/api\/knowledge\/docs(\/\d+(\/duplicate)?)?$/.test(path) && method !== 'DELETE' && json?.data && typeof json.data.id === 'number' ? json.data : null;
+  if (knowledgeDoc) {
+    links.push({ label: `Doc “${knowledgeDoc.title}”`, to: `/knowledge?doc=${knowledgeDoc.id}` });
+    return { text: method === 'POST' ? `created doc #${knowledgeDoc.id}` : method === 'PATCH' ? `updated doc #${knowledgeDoc.id}` : `doc #${knowledgeDoc.id}`, links };
   }
   if (tableId && method !== 'DELETE') links.push({ label: `Table #${tableId}`, to: `/tables/${tableId}` });
   if (campaignId && method !== 'DELETE') links.push({ label: `Campaign #${campaignId}`, to: `/campaigns/${campaignId}` });

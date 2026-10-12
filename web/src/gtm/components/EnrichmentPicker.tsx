@@ -20,7 +20,7 @@ export function EnrichmentPicker({ catalog, onPick, onClose }: { catalog: Catalo
   const fns = useFunctions();
 
   const items = useMemo<Item[]>(() => [
-    { cat: 'AI', type: 'ai', name: 'AI research', title: 'AI research agent', desc: 'Ask anything about each row. Searches the web, reads pages, returns typed fields with sources.', icon: 'sparkles', free: false },
+    { cat: 'AI', type: 'ai', name: 'AI research', title: 'AI research agent', desc: 'Ask anything about each row. Searches the web, reads pages, returns typed fields with sources.', icon: 'brain', free: false },
     ...catalog.enrich.map((k) => ({
       cat: ENRICH_CAT[k.id] ?? 'Company', type: 'enrich' as const, kind: k.id, name: k.label.replace(/^Find |^Enrich /, '').replace(/^./, (c) => c.toUpperCase()),
       title: k.label, desc: `${k.description} ${k.steps.length} provider${k.steps.length === 1 ? '' : 's'}: ${k.steps.map((s) => s.label.replace(/ \(.*\)/, '')).join(', ')}.`,
