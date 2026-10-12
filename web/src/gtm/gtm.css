@@ -229,6 +229,8 @@
   .picker-item .ty { width: 28px; height: 28px; border-radius: 7px; }
   .picker-item b { display: block; font-weight: 500; font-size: 13px; color: var(--text); }
   .picker-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; margin-top: 1px; }
+  .picker-item.needs-connect b, .picker-item.needs-connect .ty { opacity: .55; }
+  .picker-item .tag.connect { color: var(--text); background: var(--bg-subtle); border: 1px solid var(--border); }
   .picker-item .tag { margin-left: auto; font-size: 11px; color: var(--ok); background: var(--ok-soft); border-radius: 999px; padding: 1px 8px; white-space: nowrap; align-self: center; }
   .tpl .chips { display: none; }
   .tpl:focus-within .chips { display: flex; }

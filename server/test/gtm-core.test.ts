@@ -8,6 +8,7 @@ import { Bus } from '../src/gtm/events.ts';
 import { Engine } from '../src/gtm/engine/runner.ts';
 import { ENRICH_KINDS } from '../src/gtm/providers/catalog.ts';
 import { gtmTestSetup, workspace } from './gtm-helpers.ts';
+import { makeEnv } from './helpers.ts';
 
 gtmTestSetup();
 
@@ -164,5 +165,26 @@ describe('engine cycles', () => {
     engine.run(t, { force: true });
     for (let i = 0; i < 100 && (engine.stats(t).pending || engine.stats(t).running); i++) await new Promise((x) => setTimeout(x, 10));
     expect(engine.stats(t)).toEqual({ pending: 0, running: 0 });
+  });
+});
+
+describe('connections required before adding', () => {
+  it('refuses signals and actions whose connection is missing, and says which', async () => {
+    const env = await makeEnv();
+    try {
+      const t = (await env.api('POST', '/api/gtm/tables', { name: 'T' })).body;
+      const tableId = t.id ?? t.data?.id;
+      const cat = (await env.api('GET', '/api/gtm/catalog')).body;
+      expect(cat.signals.find((s: any) => s.id === 'job_change').missing).toEqual(['People Data Labs or Apollo']);
+      expect(cat.signals.find((s: any) => s.id === 'hiring').missing).toEqual([]);
+      const r = await env.api('POST', `/api/gtm/tables/${tableId}/columns`, { name: 'Job change', type: 'signal', config: { kind: 'job_change', inputs: {} } });
+      expect(r.status).toBe(422);
+      expect(r.body).toMatchObject({ error: 'not_connected' });
+      expect(r.body.message).toContain('Integrations');
+      expect((await env.api('POST', `/api/gtm/tables/${tableId}/columns`, { name: 'Slack', type: 'action', config: { kind: 'slack' } })).status).toBe(422);
+      expect((await env.api('POST', `/api/gtm/tables/${tableId}/columns`, { name: 'Hiring', type: 'signal', config: { kind: 'hiring', inputs: {} } })).status).toBe(200);
+      const pack = await env.api('POST', `/api/gtm/tables/${tableId}/signal-pack`, { nameColumn: 'Company', signals: ['hiring', 'uk_filings'], alert: 'none' });
+      expect(pack.status).toBe(422);
+    } finally { await env.close(); }
   });
 });

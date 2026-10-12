@@ -20,6 +20,7 @@ import { unwrap, stringify } from './lib/template.ts';
 import { filterExcluded } from '../sourcing/exclusions.ts';
 import { isSourcingMode, sourcingFind } from '../sourcing/routes.ts';
 import { appendNewRows, runSource } from '../sourcing/sources.ts';
+import { actionNeeds, missingConnections, requireConnected } from './requirements.ts';
 
 const id = z.coerce.number().int().positive();
 const COLUMN_TYPES = ['text', 'formula', 'extract', 'enrich', 'ai', 'http', 'signal', 'action', 'lookup', 'function'] as const;
@@ -34,15 +35,15 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
   // ---------- catalog (drives the column editor) ----------
   r.get('/api/gtm/catalog', 'Enrichments, signals, actions and AI models', async () => ({
     enrich: ENRICH_KINDS.map((k) => ({ id: k.id, label: k.label, description: k.description, inputs: k.inputs, needs: k.needs, steps: k.steps.map((s) => ({ id: s.id, label: s.label, cost: s.cost, requires: s.requires, ready: s.requires.every((r) => settings.has(r)) })) })),
-    signals: SIGNAL_KINDS.map((k) => ({ id: k.id, label: k.label, description: k.description, inputs: k.inputs, requires: k.requires })),
+    signals: SIGNAL_KINDS.map((k) => ({ id: k.id, label: k.label, description: k.description, inputs: k.inputs, requires: k.requires, missing: missingConnections(k.requires, settings) })),
     actions: [
       { id: 'outreach_campaign', label: 'Add to campaign', ready: true },
       { id: 'outreach_update_lead', label: 'Create or update lead', ready: true },
-      { id: 'slack', label: 'Send Slack message', ready: settings.has('SLACK_WEBHOOK_URL') || settings.has('SLACK_BOT_TOKEN') },
+      { id: 'slack', label: 'Send Slack message', ready: settings.has('SLACK_WEBHOOK_URL') || settings.has('SLACK_BOT_TOKEN'), missing: missingConnections(actionNeeds('slack'), settings) },
       { id: 'webhook', label: 'Send webhook / HTTP request', ready: true },
-      { id: 'hubspot_contact', label: 'HubSpot: upsert contact', ready: settings.has('HUBSPOT_TOKEN') },
-      { id: 'hubspot_company', label: 'HubSpot: upsert company', ready: settings.has('HUBSPOT_TOKEN') },
-      { id: 'salesforce', label: 'Salesforce: upsert record', ready: settings.has('SALESFORCE_CLIENT_ID') },
+      { id: 'hubspot_contact', label: 'HubSpot: upsert contact', ready: settings.has('HUBSPOT_TOKEN'), missing: missingConnections(actionNeeds('hubspot_contact'), settings) },
+      { id: 'hubspot_company', label: 'HubSpot: upsert company', ready: settings.has('HUBSPOT_TOKEN'), missing: missingConnections(actionNeeds('hubspot_company'), settings) },
+      { id: 'salesforce', label: 'Salesforce: upsert record', ready: settings.has('SALESFORCE_CLIENT_ID'), missing: missingConnections(actionNeeds('salesforce'), settings) },
       { id: 'send_to_table', label: 'Send to another table', ready: true },
     ],
     models: await listModels(),
@@ -213,6 +214,14 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
     const a = canWrite(req);
     const tableId = tableOf(req, a);
     const body = columnBody.parse(req.body);
+    const kind = (body.config as any)?.kind as string | undefined;
+    if (body.type === 'signal' && kind) { const k = SIGNAL_KINDS.find((x) => x.id === kind); if (k) requireConnected(k.label, k.requires, settings); }
+    if (body.type === 'action' && kind) requireConnected('This action', actionNeeds(kind), settings);
+    if (body.type === 'enrich' && kind) {
+      const k = ENRICH_KINDS.find((x) => x.id === kind);
+      // A waterfall is usable when at least one of its steps can run.
+      if (k && !k.steps.some((st) => !missingConnections(st.requires, settings).length)) requireConnected(k.label, [k.steps.map((st) => st.requires.join('|')).join('|')], settings);
+    }
     const autoDefault = body.type === 'formula' || body.type === 'extract';
     const colId = store.createColumn(tableId, { ...body, auto_run: body.auto_run ?? autoDefault });
     bus.publish({ type: 'columns', tableId });
@@ -302,6 +311,8 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
     const name = `{{${body.nameColumn}}}`;
     const domain = body.domainColumn ? `{{${body.domainColumn}}}` : '';
     const created: { id: number; name: string }[] = [];
+    // Check every signal before adding any, so a missing connection doesn't leave half a pack.
+    for (const kindId of body.signals) { const k = SIGNAL_KINDS.find((x) => x.id === kindId); if (k) requireConnected(k.label, k.requires, settings); }
     for (const kindId of body.signals) {
       const kind = SIGNAL_KINDS.find((k) => k.id === kindId);
       if (!kind) continue;

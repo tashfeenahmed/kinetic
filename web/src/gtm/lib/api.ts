@@ -31,8 +31,9 @@ export interface TableView {
 
 export interface Catalog {
   enrich: { id: string; label: string; description: string; inputs: string[]; needs: string[][]; steps: { id: string; label: string; cost: string; requires: string[]; ready: boolean }[] }[];
-  signals: { id: string; label: string; description: string; inputs: string[]; requires: string[] }[];
-  actions: { id: string; label: string; ready: boolean }[];
+  /** `missing` lists connections (Integrations page) the item needs before it can be added. */
+  signals: { id: string; label: string; description: string; inputs: string[]; requires: string[]; missing?: string[] }[];
+  actions: { id: string; label: string; ready: boolean; missing?: string[] }[];
   models: { id: string; label: string; free?: boolean }[];
   defaultModel: string;
   aiReady: boolean;

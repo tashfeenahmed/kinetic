@@ -23,7 +23,7 @@ export function opsRoutes(app: FastifyInstance, ctx: Ctx) {
   const warmupRow = (s: any) => ({
     id: s.id, name: s.name, email: s.email, provider: s.provider, status: s.status,
     warmup_enabled: !!s.warmup_enabled, warmup_daily_limit: s.warmup_daily_limit, warmup_reply_rate: s.warmup_reply_rate,
-    warmup_started_at: s.warmup_started_at, today_target: s.warmup_enabled ? rampTarget(s, ctx.now()) : 0,
+    warmup_started_at: s.warmup_started_at, today_target: s.warmup_enabled ? rampTarget(s, ctx.now(), warmupTimezone(ctx)) : 0,
     stats: warmupStats(ctx, s.id, 7),
   });
   w.get('/api/warmup/sender-emails', 'Email accounts with warmup stats', (req) => {

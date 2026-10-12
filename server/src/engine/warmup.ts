@@ -20,15 +20,24 @@ import { quoteText } from './quote.ts';
 export const WARMUP_FOLDER = 'Kinetic Warmup';
 const RAMP_START = 2;
 const RAMP_STEP = 2;
+const WINDOW_START_HOUR = 8;
+const WINDOW_END_HOUR = 20;
 
 export function warmupTimezone(ctx: Ctx): string {
   return getSetting(ctx.db, 'warmup_timezone') ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
 }
 
-/** Warmup sends allowed today for a mailbox, ramping from RAMP_START by RAMP_STEP per day. */
-export function rampTarget(sender: Row, now: Date): number {
-  const started = sender.warmup_started_at ? Date.parse(sender.warmup_started_at) : now.getTime();
-  const days = Math.max(0, Math.floor((now.getTime() - started) / 86_400_000));
+/**
+ * Warmup sends allowed today for a mailbox, ramping from RAMP_START by RAMP_STEP per
+ * calendar day in the warmup timezone (so the target steps up at midnight, not at the
+ * hour warmup was switched on). Switched on in the last 2 hours of the window, that day
+ * doesn't count: the first full day starts at RAMP_START.
+ */
+export function rampTarget(sender: Row, now: Date, tz = 'UTC'): number {
+  const today = DateTime.fromJSDate(now).setZone(tz).startOf('day');
+  let start = sender.warmup_started_at ? DateTime.fromISO(sender.warmup_started_at).setZone(tz) : today;
+  start = start.hour >= WINDOW_END_HOUR - 2 ? start.plus({ days: 1 }).startOf('day') : start.startOf('day');
+  const days = Math.max(0, Math.round(today.diff(start, 'days').days));
   return Math.min(sender.warmup_daily_limit, RAMP_START + RAMP_STEP * days);
 }
 
@@ -39,8 +48,8 @@ export function planWarmup(ctx: Ctx): { planned: number } {
   const tz = warmupTimezone(ctx);
   const local = DateTime.fromJSDate(now).setZone(tz);
   const dayStart = local.startOf('day');
-  const windowStart = dayStart.set({ hour: 8 }).toMillis();
-  const windowEnd = dayStart.set({ hour: 20 }).toMillis();
+  const windowStart = dayStart.set({ hour: WINDOW_START_HOUR }).toMillis();
+  const windowEnd = dayStart.set({ hour: WINDOW_END_HOUR }).toMillis();
   if (now.getTime() >= windowEnd) return { planned: 0 };
 
   const pool = db.all(`SELECT * FROM sender_emails WHERE warmup_enabled = 1 AND status = 'Connected'`);
@@ -52,7 +61,7 @@ export function planWarmup(ctx: Ctx): { planned: number } {
       const booked = db.get<{ n: number }>(
         `SELECT COUNT(*) n FROM warmup_emails WHERE from_sender_id = ? AND is_reply = 0 AND scheduled_at >= ? AND status != 'cancelled'`,
         [sender.id, dayStart.toUTC().toISO()])?.n ?? 0;
-      const need = rampTarget(sender, now) - booked;
+      const need = rampTarget(sender, now, tz) - booked;
       if (need <= 0) continue;
 
       const from = Math.max(now.getTime(), windowStart);
