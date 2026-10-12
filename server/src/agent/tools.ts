@@ -13,7 +13,8 @@ import { classify } from './policy.ts';
 import { findEndpoints } from './endpoints.ts';
 import { allSkills, findSkill, skillsIndex } from './skills.ts';
 import { INTERNAL_HEADER, mintInternalToken, revokeInternalToken } from './internalAuth.ts';
-import { findDoc, knowledgeContext, listDocs, searchDocs } from '../knowledge/store.ts';
+import { docsInTreeOrder, findDoc, knowledgeContext, pathTitle, searchDocs } from '../knowledge/store.ts';
+import { folderPaths, listFolders } from '../knowledge/folders.ts';
 
 export const TOOLS = [
   fnTool('api', 'Call any Kinetic HTTP API route as the current user, e.g. POST /api/gtm/tables. Returns status and a truncated JSON body (large arrays are summarised with their row count). Risky routes (launch/resume campaigns, sending email, deletes, social actions, paid enrichment over ~100 rows) pause for the user\'s approval automatically.', {
@@ -25,7 +26,7 @@ export const TOOLS = [
   fnTool('find_endpoints', 'Search the API reference by keywords. Returns method, path, summary and a compact body schema. Use when no skill covers what you need.', { query: { type: 'string' } }, ['query']),
   fnTool('list_skills', 'List available skills (playbooks) with their descriptions.', {}),
   fnTool('load_skill', 'Load a skill\'s full instructions by name. Load the relevant skill BEFORE starting a task it covers.', { name: { type: 'string' } }, ['name']),
-  fnTool('knowledge', 'Read the Knowledge Hub documents (company, offers, ICP, personas, positioning, competitors, case studies, tone, do-not-target…). No arguments: the list of docs plus their combined text. doc: one document\'s full markdown by id or title. query: search all docs for matching lines. To create or edit docs use the api tool (knowledge-hub skill).', {
+  fnTool('knowledge', 'Read the Knowledge Hub documents (company, offers, ICP, personas, positioning, competitors, case studies, tone, do-not-target…). No arguments: the folders, the list of docs (with folder paths) plus their combined text. doc: one document\'s full markdown by id or title. query: search all docs for matching lines. To create or edit docs use the api tool (knowledge-hub skill).', {
     doc: { type: 'string', description: 'Document id or title' },
     query: { type: 'string', description: 'Words to search for' },
   }),
@@ -98,18 +99,24 @@ export async function runTool(name: string, args: any, env: ToolEnv): Promise<To
 }
 
 function knowledgeTool(args: any, env: ToolEnv): ToolOutcome {
-  const docs = listDocs(env.ctx.db, env.workspaceId);
-  if (!docs.length) return ok('The Knowledge Hub has no documents yet. Offer to fill it from the user\'s website (POST /api/knowledge/autofill) or write docs with POST /api/knowledge/docs — see the knowledge-hub skill.', 'Read Knowledge Hub (empty)');
-  const index = docs.map((d) => `#${d.id} ${d.title}${d.pinned ? ' [pinned]' : ''} (${d.content.length} chars, updated ${d.updated_at.slice(0, 10)})`).join('\n');
+  const docs = docsInTreeOrder(env.ctx.db, env.workspaceId);
+  const folders = listFolders(env.ctx.db, env.workspaceId);
+  if (!docs.length && !folders.length) return ok('The Knowledge Hub has no documents yet. Offer to fill it from the user\'s website (POST /api/knowledge/autofill) or write docs with POST /api/knowledge/docs — see the knowledge-hub skill.', 'Read Knowledge Hub (empty)');
+  const paths = folderPaths(folders);
+  const folderIndex = folders.length
+    ? `Folders (folder_id: path):\n${folders.map((f) => ({ id: f.id, path: paths.get(f.id)! })).sort((a, b) => a.path.localeCompare(b.path)).map((f) => `folder ${f.id}: ${f.path}`).join('\n')}\n\n`
+    : '';
+  const index = folderIndex + (docs.length ? docs.map((d) => `#${d.id} ${pathTitle(d)}${d.pinned ? ' [pinned]' : ''} (${d.content.length} chars, updated ${d.updated_at.slice(0, 10)})`).join('\n') : '(no documents yet)');
   const ref = String(args.doc ?? '').trim();
   if (ref) {
     const d = findDoc(env.ctx.db, env.workspaceId, ref);
     if (!d) return fail(`No document matching "${ref}". Documents:\n${index}`, `Doc “${ref}” not found`);
-    return ok(`# ${d.title} (doc #${d.id}${d.pinned ? ', pinned' : ''}, updated ${d.updated_at})\n\n${d.content || '(empty)'}`, `Read doc “${d.title}”`, [{ label: d.title, to: `/knowledge?doc=${d.id}` }]);
+    const where = d.folder_id ? `, in folder ${d.folder_id} “${paths.get(d.folder_id)}”` : '';
+    return ok(`# ${d.title} (doc #${d.id}${where}${d.pinned ? ', pinned' : ''}, updated ${d.updated_at})\n\n${d.content || '(empty)'}`, `Read doc “${d.title}”`, [{ label: d.title, to: `/knowledge?doc=${d.id}` }]);
   }
   const q = String(args.query ?? '').trim();
   if (q) {
-    const hits = searchDocs(docs, q);
+    const hits = searchDocs(docs.map((d) => ({ ...d, title: pathTitle(d) })), q);
     if (!hits.length) return ok(`Nothing matches "${q}". Documents:\n${index}`, `Searched Knowledge Hub “${q}” (0)`);
     return ok(hits.map((h) => `#${h.id} ${h.title}\n${h.hits.map((l) => `  ${l}`).join('\n')}`).join('\n\n'), `Searched Knowledge Hub “${q}” (${hits.length})`);
   }
