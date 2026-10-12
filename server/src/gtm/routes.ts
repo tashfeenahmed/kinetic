@@ -93,6 +93,7 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
     const tableId = tableOf(req, a);
     const body = z.object({ name: z.string().min(1).optional(), schedule: z.object({ enabled: z.boolean(), everyMinutes: z.number().int().min(5), columnIds: z.array(z.number()) }).optional() }).parse(req.body);
     store.updateTable(tableId, { name: body.name, schedule: body.schedule ? { ...store.table(tableId).schedule, ...body.schedule, lastRunAt: undefined } : undefined });
+    if (body.name) bus.publish({ type: 'columns', tableId }); // open table pages refresh their title
     return { ok: true };
   });
 

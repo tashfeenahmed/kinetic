@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Users, Send, Inbox, AtSign, Flame, Clock, Puzzle, Code2, ChevronDown, Settings, HelpCircle, LogOut,
-  PanelLeftClose, PanelLeft, Check, Plus, ChevronRight, Menu as MenuIcon, X, Home as HomeIcon, Radar, Table2, Activity,
+  PanelLeftClose, PanelLeft, Check, Plus, Pencil, Trash2, ChevronRight, Menu as MenuIcon, X, Home as HomeIcon, Radar, Table2, Activity,
 } from 'lucide-react';
 import { useGtmTables } from '../gtm/lib/queries';
 import { api } from '../lib/api.ts';
@@ -130,6 +130,24 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
     refetchInterval: 60_000,
   });
   const tables = useGtmTables();
+  const [menu, setMenu] = useState<{ id: number; name: string; x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(null);
+  const { toast, confirm } = useUi();
+  const refreshTables = () => qc.invalidateQueries({ queryKey: ['gtm-tables'] });
+  const rename = useMutation({
+    mutationFn: (r: { id: number; name: string }) => api.patch(`/api/gtm/tables/${r.id}`, { name: r.name.trim() }),
+    onSuccess: () => { setRenaming(null); toast('Table renamed'); void refreshTables(); },
+    onError: (e: Error) => toast(e.message, 'error'),
+  });
+  const removeTable = async (t: { id: number; name: string }) => {
+    if (!(await confirm({ title: `Delete “${t.name}”?`, message: 'All rows, columns and results in this table are deleted. Leads and campaigns are not affected.', confirmLabel: 'Delete table', danger: true }))) return;
+    try {
+      await api.del(`/api/gtm/tables/${t.id}`);
+      toast('Table deleted');
+      await refreshTables();
+      if (location.pathname === `/tables/${t.id}`) navigate('/');
+    } catch (e) { toast((e as Error).message, 'error'); }
+  };
 
   const logout = async () => {
     await api.post('/api/auth/logout');
@@ -159,7 +177,11 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
 
         {!collapsed && <SectionLabel action={<button title="New table" onClick={() => navigate('/')} className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200/60 hover:text-zinc-700"><Plus className="size-3.5" /></button>}>Tables</SectionLabel>}
         <nav className="flex flex-col gap-px">
-          {(tables.data ?? []).map((t) => <NavItem key={t.id} to={`/tables/${t.id}`} label={t.name} icon={Table2} collapsed={collapsed} count={t.row_count} />)}
+          {(tables.data ?? []).map((t) => (
+            <div key={t.id} onContextMenu={(e) => { e.preventDefault(); setMenu({ id: t.id, name: t.name, x: e.clientX, y: e.clientY }); }}>
+              <NavItem to={`/tables/${t.id}`} label={t.name} icon={Table2} collapsed={collapsed} count={t.row_count} />
+            </div>
+          ))}
           {!collapsed && tables.data?.length === 0 && <span className="px-2 py-1 text-[12.5px] text-zinc-400">No tables yet</span>}
         </nav>
 
@@ -191,6 +213,26 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
         <NavItem to="/settings" label="Settings" icon={Settings} collapsed={collapsed} />
         <NavItem to="/help" label="Help & Support" icon={HelpCircle} collapsed={collapsed} />
       </nav>
+      {menu && (
+        <>
+          <div className="fixed inset-0 z-40" onMouseDown={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }} />
+          <div className="fixed z-50 w-44 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg" style={{ left: menu.x, top: Math.min(menu.y, window.innerHeight - 100) }}>
+            <button className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-zinc-700 hover:bg-zinc-50" onClick={() => { setRenaming({ id: menu.id, name: menu.name }); setMenu(null); }}>
+              <Pencil className="size-3.5" /> Rename
+            </button>
+            <button className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-red-600 hover:bg-red-50" onClick={() => { const t = menu; setMenu(null); void removeTable(t); }}>
+              <Trash2 className="size-3.5" /> Delete
+            </button>
+          </div>
+        </>
+      )}
+      <Modal open={!!renaming} onClose={() => setRenaming(null)} title="Rename table" size="sm"
+        footer={<><Button onClick={() => setRenaming(null)}>Cancel</Button><Button variant="primary" loading={rename.isPending} disabled={!renaming?.name.trim()} onClick={() => renaming && rename.mutate(renaming)}>Rename</Button></>}>
+        <Field label="Name">
+          <Input autoFocus value={renaming?.name ?? ''} onChange={(e) => setRenaming((r) => r && { ...r, name: e.target.value })}
+            onFocus={(e) => e.target.select()} onKeyDown={(e) => { if (e.key === 'Enter' && renaming?.name.trim()) rename.mutate(renaming); }} />
+        </Field>
+      </Modal>
       <div className={cx('flex items-center gap-2.5 border-t border-zinc-200/80 px-1 py-2.5', collapsed && 'justify-center px-0')}>
         <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-200 text-[11px] font-semibold text-zinc-700">{initials(me?.name ?? '')}</div>
         {!collapsed && (

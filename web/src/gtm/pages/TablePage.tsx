@@ -80,7 +80,7 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
       <div className="topbar">
         <div className="crumbs">
           <Link to="/">Tables</Link><Icon name="chevronRight" size={14} />
-          <input className="title-input" defaultValue={view.table.name} key={view.table.id} size={Math.max(12, view.table.name.length)}
+          <input className="title-input" defaultValue={view.table.name} key={`${view.table.id}-${view.table.name}`} size={Math.max(12, view.table.name.length)}
             onBlur={async (e) => { if (e.target.value.trim() && e.target.value !== view.table.name) { await api(`/api/gtm/tables/${tableId}`, { method: 'PATCH', body: { name: e.target.value.trim() } }); onTablesChanged(); } }} />
         </div>
         <span className="grow" />
