@@ -216,7 +216,8 @@ describe('lead filters by email stats', () => {
     const f = await time('replied=false&sent_min=2&last_contacted_before=7d&email_provider=unknown');
     const slowest = Math.max(a.ms, b.ms, c.ms, d.ms, e.ms, f.ms);
     console.log(`100k leads: filter queries took ${[a, b, c, d, e, f].map((x) => `${x.ms.toFixed(0)}ms`).join(', ')}`);
-    expect(slowest).toBeLessThan(1500);
+    // ~130ms alone; the margin covers the rest of the suite running in parallel. A missing index is seconds.
+    expect(slowest).toBeLessThan(4000);
   }, 120_000);
 });
 

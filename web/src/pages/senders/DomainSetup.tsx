@@ -1,33 +1,37 @@
-import { useEffect, useState } from 'react';
+/** Sending domains on the Sender Emails page: Cloudflare DNS setup wizard, health pills and the domain drawer. */
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, CheckCircle2, Circle, ExternalLink, Globe, Plus, RefreshCw, XCircle } from 'lucide-react';
-import { api, errorMessage } from '../lib/api.ts';
-import { fmtRelative } from '../lib/format.ts';
-import { Page, PageHeader } from '../components/Layout.tsx';
-import { Alert, Badge, Button, Card, EmptyState, Field, Input, Loading, Menu, Modal, Select, Table, Td, Textarea, Th, Toggle, cx, useUi } from '../components/ui.tsx';
-import { BrandIcon } from '../components/BrandIcon.tsx';
+import { CheckCircle2, Circle, ExternalLink, Globe, XCircle } from 'lucide-react';
+import { api, errorMessage } from '../../lib/api.ts';
+import { fmtRelative } from '../../lib/format.ts';
+import { Alert, Badge, Button, Drawer, Field, Input, Loading, Modal, Select, Textarea, Toggle, cx, useUi } from '../../components/ui.tsx';
+import { BrandIcon } from '../../components/BrandIcon.tsx';
+import { DnsList } from './DnsChecks.tsx';
+import type { DnsCheck } from './types.ts';
 
-type Provider = 'google' | 'microsoft' | 'other';
-interface Setup {
+export type Provider = 'google' | 'microsoft' | 'other';
+export interface Setup {
   domain: string; provider: Provider; verification?: string; dkimValue?: string; dkimSelector?: string; msDkim1?: string; msDkim2?: string;
   otherMx?: string[]; otherSpfInclude?: string; dmarcPolicy: 'none' | 'quarantine' | 'reject'; dmarcReportEmail?: string;
   trackingSubdomain?: string; redirectTo?: string; replaceMx: boolean;
 }
-interface Check { name: string; status: 'pass' | 'warn' | 'fail'; value: string | null; advice: string }
-interface DomainRow {
+export interface Check { name: string; status: 'pass' | 'warn' | 'fail'; value: string | null; advice: string }
+export interface DomainReportLite { checks: Check[]; tracking?: { host: string; ok: boolean } }
+export interface DomainRow {
   id: number | null; domain: string; provider?: Provider; status: 'draft' | 'configured' | 'verified' | 'attention' | 'unmanaged';
-  setup: Partial<Setup>; report: { checks: Check[]; tracking?: { host: string; ok: boolean } } | null; checked_at?: string; mailboxes: number; connected_mailboxes: number;
+  setup: Partial<Setup>; report: DomainReportLite | null; checked_at?: string; mailboxes: number; connected_mailboxes: number;
+  last_result?: { results: Action[]; notes: string[] } | null;
 }
 interface Zone { id: string; name: string; status: string; name_servers: string[]; added: boolean }
 interface Action { op: 'create' | 'update' | 'delete' | 'keep'; purpose: string; type: string; name: string; content: string; priority?: number; before?: string; note?: string; ok?: boolean; error?: string }
 
-const PROVIDERS: Record<Provider, { label: string; domain?: string; text: string }> = {
+export const PROVIDERS: Record<Provider, { label: string; domain?: string; text: string }> = {
   google: { label: 'Google Workspace', domain: 'google.com', text: 'Best deliverability to Gmail. App passwords work out of the box.' },
   microsoft: { label: 'Microsoft 365', domain: 'microsoft.com', text: 'Best for reaching Outlook/enterprise inboxes. Connect with Microsoft sign-in.' },
   other: { label: 'Other provider', text: 'Zoho, Fastmail, Migadu… enter their MX and SPF values.' },
 };
-const STATUS: Record<DomainRow['status'], { tone: 'green' | 'blue' | 'yellow' | 'red' | 'gray'; label: string }> = {
+export const DOMAIN_STATUS: Record<DomainRow['status'], { tone: 'green' | 'blue' | 'yellow' | 'red' | 'gray'; label: string }> = {
   verified: { tone: 'green', label: 'Ready' },
   configured: { tone: 'blue', label: 'Waiting for DNS' },
   attention: { tone: 'red', label: 'Needs attention' },
@@ -35,89 +39,30 @@ const STATUS: Record<DomainRow['status'], { tone: 'green' | 'blue' | 'yellow' | 
   unmanaged: { tone: 'gray', label: 'Not set up here' },
 };
 
-export function DomainsPage() {
-  const qc = useQueryClient();
-  const { toast, confirm } = useUi();
-  const domains = useQuery({ queryKey: ['domains'], queryFn: () => api.get<{ data: DomainRow[]; meta: { cloudflare_connected: boolean; tracking_target: string | null } }>('/api/domains') });
-  const cf = useQuery({ queryKey: ['cloudflare'], queryFn: () => api.get('/api/domains/cloudflare').then((r) => r.data as { connected: boolean; error?: string; zones: Zone[] }) });
-  const [wizard, setWizard] = useState<{ initial?: Partial<Setup> } | null>(null);
-  const refresh = () => { void qc.invalidateQueries({ queryKey: ['domains'] }); void qc.invalidateQueries({ queryKey: ['cloudflare'] }); };
+// Personal mailbox providers: their DNS isn't yours, so there is nothing to set up or check.
+const FREE_MAIL = new Set(['gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com', 'icloud.com', 'me.com', 'aol.com', 'proton.me', 'protonmail.com', 'gmx.com', 'gmx.net', 'zoho.com', 'yandex.com', 'mail.com', 'fastmail.com']);
+export const isFreeMail = (domain: string) => FREE_MAIL.has(domain.toLowerCase());
 
-  const check = useMutation({
-    mutationFn: (id: number) => api.post(`/api/domains/${id}/check`),
-    onSuccess: () => { toast('DNS checked'); refresh(); },
-    onError: (e) => toast(errorMessage(e), 'error'),
-  });
-  const remove = async (d: DomainRow) => {
-    if (!(await confirm({ title: `Stop managing ${d.domain}?`, message: 'It is removed from Kinetic only. Its DNS records stay in Cloudflare and its mailboxes keep working.', confirmLabel: 'Remove', danger: true }))) return;
-    try { await api.del(`/api/domains/${d.id}`); toast('Domain removed'); refresh(); } catch (e) { toast(errorMessage(e), 'error'); }
-  };
+const PILL_ORDER = ['SPF', 'DKIM', 'DMARC', 'MX'] as const;
+const PILL = {
+  pass: 'bg-emerald-50 text-emerald-700',
+  warn: 'bg-amber-50 text-amber-700',
+  fail: 'bg-red-50 text-red-700',
+  none: 'bg-zinc-100 text-zinc-400',
+};
 
-  const connected = !!cf.data?.connected;
-  const rows = domains.data?.data ?? [];
-
+/** SPF / DKIM / DMARC / MX at a glance: green passes, amber needs a look, red is broken, grey unknown. */
+export function HealthPills({ checks, loading }: { checks?: Check[] | null; loading?: boolean }) {
   return (
-    <Page>
-      <PageHeader
-        title="Domains"
-        subtitle="Sending domains for your Google Workspace and Microsoft 365 mailboxes. Kinetic writes MX, SPF, DKIM and DMARC to Cloudflare for you."
-        actions={<Button variant="primary" icon={<Plus className="size-4" />} disabled={!connected} onClick={() => setWizard({})}>Add domain</Button>}
-      />
-
-      {cf.isLoading ? <Loading /> : !connected ? <ConnectCloudflare error={cf.data?.error} onConnected={refresh} /> : (
-        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-600">
-          <BrandIcon domain="cloudflare.com" size={28} />
-          <span>Connected to Cloudflare · {cf.data!.zones.length} domain{cf.data!.zones.length === 1 ? '' : 's'} in your account</span>
-          <span className="flex-1" />
-          <Link to="/integrations#providers" className="text-brand-600 hover:underline">Manage token</Link>
-        </div>
-      )}
-
-      <Card padded={false}>
-        {domains.isLoading ? <Loading /> : rows.length === 0 ? (
-          <EmptyState icon={<Globe className="size-5" />} title="No sending domains yet"
-            description="Use separate domains for cold email (e.g. getacme.com), never your main company domain. Add one and Kinetic configures its DNS."
-            action={connected ? <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setWizard({})}>Add domain</Button> : undefined} />
-        ) : (
-          <Table>
-            <thead><tr><Th>Domain</Th><Th>Mailboxes</Th><Th>MX</Th><Th>SPF</Th><Th>DKIM</Th><Th>DMARC</Th><Th>Status</Th><Th className="w-10" /></tr></thead>
-            <tbody>
-              {rows.map((d) => (
-                <tr key={d.domain} className="hover:bg-slate-50">
-                  <Td>
-                    <div className="flex items-center gap-2.5">
-                      {d.provider ? <BrandIcon domain={PROVIDERS[d.provider].domain} fallback={<Globe className="size-3.5" />} size={26} /> : <BrandIcon fallback={<Globe className="size-3.5" />} size={26} />}
-                      <div>
-                        <div className="font-medium text-slate-900">{d.domain}</div>
-                        <div className="text-xs text-slate-500">{d.provider ? PROVIDERS[d.provider].label : 'Mailboxes only'}{d.checked_at ? ` · checked ${fmtRelative(d.checked_at)}` : ''}</div>
-                      </div>
-                    </div>
-                  </Td>
-                  <Td><Link to="/sender-emails" className="text-slate-700 hover:text-brand-600">{d.connected_mailboxes}/{d.mailboxes}</Link></Td>
-                  {(['MX', 'SPF', 'DKIM', 'DMARC'] as const).map((n) => <Td key={n}><CheckIcon check={d.report?.checks.find((c) => c.name === n)} /></Td>)}
-                  <Td><Badge tone={STATUS[d.status].tone} dot>{STATUS[d.status].label}</Badge></Td>
-                  <Td>
-                    {d.id ? (
-                      <Menu trigger={(t) => <Button size="sm" variant="ghost" onClick={t}>•••</Button>} items={[
-                        { label: 'Re-check DNS', icon: <RefreshCw className="size-4" />, onClick: () => check.mutate(d.id!) },
-                        { label: 'Edit setup', icon: <Globe className="size-4" />, onClick: () => setWizard({ initial: { ...d.setup, domain: d.domain } }), disabled: !connected },
-                        { label: 'Remove from Kinetic', danger: true, onClick: () => remove(d) },
-                      ]} />
-                    ) : connected ? <Button size="sm" onClick={() => setWizard({ initial: { domain: d.domain } })}>Set up</Button> : null}
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        )}
-      </Card>
-
-      <p className="mt-4 text-[13px] text-slate-500">
-        After the DNS is set: create mailboxes in Google Workspace or Microsoft 365 → connect them in <Link to="/sender-emails" className="text-brand-600 hover:underline">Sender Emails</Link> → turn on <Link to="/warmup" className="text-brand-600 hover:underline">warmup</Link> for 2–4 weeks before sending.
-      </p>
-
-      {wizard && <DomainWizard zones={cf.data?.zones ?? []} trackingTarget={domains.data?.meta.tracking_target ?? null} initial={wizard.initial} onClose={() => setWizard(null)} onDone={refresh} />}
-    </Page>
+    <span className={cx('inline-flex gap-1', loading && 'animate-pulse')}>
+      {PILL_ORDER.map((n) => {
+        const c = checks?.find((x) => x.name === n);
+        return (
+          <span key={n} title={c ? `${n}: ${c.advice}${c.value ? `\n${c.value}` : ''}` : `${n}: not checked yet`}
+            className={cx('rounded px-1.5 py-px text-[10.5px] font-medium leading-4', PILL[c?.status ?? 'none'])}>{n}</span>
+        );
+      })}
+    </span>
   );
 }
 
@@ -125,6 +70,10 @@ function CheckIcon({ check }: { check?: Check }) {
   if (!check) return <Circle className="size-4 text-slate-300" />;
   const Icon = check.status === 'pass' ? CheckCircle2 : check.status === 'warn' ? Circle : XCircle;
   return <span title={`${check.advice}${check.value ? `\n${check.value}` : ''}`}><Icon className={cx('size-4', check.status === 'pass' ? 'text-emerald-600' : check.status === 'warn' ? 'text-amber-500' : 'text-red-500')} /></span>;
+}
+
+export function useCloudflare(enabled = true) {
+  return useQuery({ queryKey: ['cloudflare'], enabled, queryFn: () => api.get('/api/domains/cloudflare').then((r) => r.data as { connected: boolean; error?: string; zones: Zone[] }) });
 }
 
 function ConnectCloudflare({ error, onConnected }: { error?: string; onConnected: () => void }) {
@@ -141,26 +90,45 @@ function ConnectCloudflare({ error, onConnected }: { error?: string; onConnected
     onError: (e) => setErr(errorMessage(e)),
   });
   return (
-    <Card className="mb-6" title={<span className="flex items-center gap-2.5"><BrandIcon domain="cloudflare.com" size={30} />Connect Cloudflare</span>}
-      description="Kinetic writes your sending domains' DNS records through Cloudflare's API. Your domains need to use Cloudflare for DNS (free plan is fine).">
-      <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm text-slate-600">
+    <div>
+      <div className="flex items-center gap-2.5 text-sm font-medium text-slate-900"><BrandIcon domain="cloudflare.com" size={28} />Connect Cloudflare first</div>
+      <p className="mt-2 text-[13px] text-slate-500">Kinetic writes your sending domains' DNS records through Cloudflare's API. Your domains need to use Cloudflare for DNS (free plan is fine).</p>
+      <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-[13px] text-slate-600">
         <li>Open <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-brand-600 hover:underline">Cloudflare → API Tokens <ExternalLink className="size-3" /></a> and click <b>Create Token</b> → <b>Create Custom Token</b>.</li>
         <li>Permissions: <b>Zone → DNS → Edit</b> and <b>Zone → Zone → Read</b>. To add new domains from Kinetic also add <b>Zone → Zone → Edit</b> and <b>Account → Account Settings → Read</b>; for website redirects add <b>Zone → Dynamic Redirect → Edit</b>.</li>
         <li>Zone resources: <b>All zones</b> (or the domains you'll send from). Create the token and paste it below.</li>
       </ol>
-      <div className="mt-4 flex gap-2 pb-5">
+      <div className="mt-4 flex gap-2">
         <Input type="password" value={token} onChange={(e) => { setToken(e.target.value); setErr(''); }} placeholder="Cloudflare API token" className="max-w-md" />
         <Button variant="primary" loading={save.isPending} disabled={!token.trim()} onClick={() => save.mutate()}>Connect</Button>
       </div>
-      {err && <div className="pb-5"><Alert tone="red">{err}</Alert></div>}
-    </Card>
+      {err && <div className="mt-3"><Alert tone="red">{err}</Alert></div>}
+    </div>
   );
+}
+
+/**
+ * Add a domain or change its DNS: pick a Cloudflare zone (or add one) → provider → details → preview → apply → checks.
+ * `review` jumps straight to the DNS plan for an existing setup.
+ */
+export function DomainSetupModal({ initial, review, trackingTarget, onClose }: { initial?: Partial<Setup>; review?: boolean; trackingTarget: string | null; onClose: () => void }) {
+  const qc = useQueryClient();
+  const cf = useCloudflare();
+  const refresh = () => { void qc.invalidateQueries({ queryKey: ['domains'] }); void qc.invalidateQueries({ queryKey: ['cloudflare'] }); };
+  if (cf.isLoading || !cf.data?.connected) {
+    return (
+      <Modal open onClose={onClose} size="lg" title={initial?.domain ? `Set up ${initial.domain}` : 'Add a sending domain'} footer={<Button onClick={onClose}>Close</Button>}>
+        {cf.isLoading ? <Loading label="Connecting to Cloudflare…" /> : <ConnectCloudflare error={cf.data?.error} onConnected={refresh} />}
+      </Modal>
+    );
+  }
+  return <DomainWizard zones={cf.data.zones} trackingTarget={trackingTarget} initial={initial} review={review} onClose={onClose} onDone={refresh} />;
 }
 
 const STEPS = ['Domain', 'Mailbox provider', 'Details', 'Review', 'Done'] as const;
 type Step = (typeof STEPS)[number];
 
-function DomainWizard({ zones, trackingTarget, initial, onClose, onDone }: { zones: Zone[]; trackingTarget: string | null; initial?: Partial<Setup>; onClose: () => void; onDone: () => void }) {
+function DomainWizard({ zones, trackingTarget, initial, review, onClose, onDone }: { zones: Zone[]; trackingTarget: string | null; initial?: Partial<Setup>; review?: boolean; onClose: () => void; onDone: () => void }) {
   const { toast } = useUi();
   const qc = useQueryClient();
   const [step, setStep] = useState<Step>(initial?.domain ? (initial.provider ? 'Details' : 'Mailbox provider') : 'Domain');
@@ -189,6 +157,11 @@ function DomainWizard({ zones, trackingTarget, initial, onClose, onDone }: { zon
     onError: (e) => setErr(errorMessage(e)),
   });
   useEffect(() => setErr(''), [step]);
+  // "View DNS plan" opens straight on the preview of the saved setup.
+  const started = useRef(false);
+  useEffect(() => {
+    if (review && !started.current && s.domain && s.provider) { started.current = true; preview.mutate(); }
+  }, [review]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const changes = plan?.actions.filter((a) => a.op !== 'keep').length ?? 0;
   const footer = (
@@ -206,6 +179,7 @@ function DomainWizard({ zones, trackingTarget, initial, onClose, onDone }: { zon
     <Modal open onClose={onClose} size="xl" title={s.domain ? `Set up ${s.domain}` : 'Add a sending domain'} description="Kinetic writes the DNS records to Cloudflare. Nothing changes until you apply." footer={footer}>
       {err && <div className="mb-4"><Alert tone="red">{err}</Alert></div>}
 
+      {review && step === 'Details' && preview.isPending ? <Loading label="Building the DNS plan…" /> : <>
       {step === 'Domain' && (
         <div className="space-y-5">
           <div>
@@ -339,16 +313,17 @@ function DomainWizard({ zones, trackingTarget, initial, onClose, onDone }: { zon
             <div className="font-medium text-slate-900">Next</div>
             <ol className="mt-1.5 list-decimal space-y-1 pl-5">
               <li>Create 2–3 mailboxes on {s.domain} in {s.provider === 'microsoft' ? 'Microsoft 365' : s.provider === 'google' ? 'Google Workspace' : 'your provider'}{s.dkimValue || s.msDkim1 ? ' and turn DKIM signing on' : ''}.</li>
-              <li>Connect them in <Link to="/sender-emails" className="text-brand-600 hover:underline">Sender Emails</Link> <ArrowRight className="inline size-3" /> enable <Link to="/warmup" className="text-brand-600 hover:underline">warmup</Link>.</li>
+              <li>Connect them here with <b>Add email account</b>, then turn on <Link to="/warmup" className="text-brand-600 hover:underline">warmup</Link> for 2–4 weeks before sending.</li>
             </ol>
           </div>
         </div>
       )}
+      </>}
     </Modal>
   );
 }
 
-function ActionsTable({ actions }: { actions: Action[] }) {
+export function ActionsTable({ actions }: { actions: Action[] }) {
   const tone = { create: 'green', update: 'yellow', delete: 'red', keep: 'gray' } as const;
   const label = { create: 'Add', update: 'Change', delete: 'Remove', keep: 'Keep' } as const;
   return (
@@ -375,5 +350,68 @@ function ActionsTable({ actions }: { actions: Action[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** Domain detail: DNS check results, the records Kinetic wrote, and the saved setup. */
+export function DomainDrawer({ domain, report, checking, onClose, onCheck, onSetup, onReview, onRemove }: {
+  domain: DomainRow | null; report: DomainReportLite | null; checking: boolean; onClose: () => void;
+  onCheck: () => void; onSetup: () => void; onReview: () => void; onRemove: () => void;
+}) {
+  if (!domain) return null;
+  const managed = domain.id != null;
+  const free = isFreeMail(domain.domain);
+  const written = domain.last_result?.results.filter((a) => a.op !== 'keep') ?? [];
+  const setup = domain.setup;
+  return (
+    <Drawer open onClose={onClose} width="max-w-2xl" title={domain.domain}
+      subtitle={<span className="flex items-center gap-2">
+        <Badge tone={DOMAIN_STATUS[domain.status].tone} dot>{managed ? DOMAIN_STATUS[domain.status].label : free ? 'Personal mailbox provider' : 'DNS not managed by Kinetic'}</Badge>
+        <span>{domain.mailboxes} mailbox{domain.mailboxes === 1 ? '' : 'es'}{domain.provider ? ` · ${PROVIDERS[domain.provider].label}` : ''}{domain.checked_at ? ` · checked ${fmtRelative(domain.checked_at)}` : ''}</span>
+      </span>}
+      actions={!free && <Button size="sm" loading={checking} onClick={onCheck}>Check DNS again</Button>}>
+      <div className="space-y-7">
+        {free ? (
+          <p className="text-[13px] text-slate-500">{domain.domain} is a personal mailbox provider. Its DNS belongs to the provider, so there is nothing to set up.</p>
+        ) : (
+          <section>
+            <h3 className="mb-3 text-[13px] font-semibold text-slate-900">DNS checks</h3>
+            {report ? <DnsList checks={report.checks as DnsCheck[]} /> : checking ? <Loading label="Checking DNS…" /> : <p className="text-[13px] text-slate-500">Not checked yet.</p>}
+            {report?.tracking && <p className="mt-3 text-[13px] text-slate-600">Tracking domain <span className="font-mono">{report.tracking.host}</span>: {report.tracking.ok ? 'points at Kinetic' : 'not pointing at Kinetic yet'}</p>}
+          </section>
+        )}
+
+        {managed ? (
+          <>
+            <section>
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-[13px] font-semibold text-slate-900">Records Kinetic wrote</h3>
+                <div className="flex gap-2"><Button size="sm" variant="ghost" onClick={onSetup}>Edit setup</Button><Button size="sm" onClick={onReview}>View DNS plan</Button></div>
+              </div>
+              {written.length ? <ActionsTable actions={written} /> : <p className="text-[13px] text-slate-500">Nothing written yet. Open the DNS plan to preview and apply.</p>}
+              {domain.last_result?.notes?.length ? <ul className="mt-3 list-disc space-y-1 pl-5 text-[13px] text-slate-600">{domain.last_result.notes.map((n) => <li key={n}>{n}</li>)}</ul> : null}
+            </section>
+            <section>
+              <h3 className="mb-2 text-[13px] font-semibold text-slate-900">Setup</h3>
+              <dl className="grid grid-cols-[160px_1fr] gap-y-1.5 text-[13px]">
+                <dt className="text-slate-500">Mailbox provider</dt><dd className="text-slate-800">{domain.provider ? PROVIDERS[domain.provider].label : '—'}</dd>
+                <dt className="text-slate-500">DMARC policy</dt><dd className="text-slate-800">{setup.dmarcPolicy ?? 'none'}{setup.dmarcReportEmail ? ` · reports to ${setup.dmarcReportEmail}` : ''}</dd>
+                <dt className="text-slate-500">Tracking subdomain</dt><dd className="text-slate-800">{setup.trackingSubdomain ? `${setup.trackingSubdomain}.${domain.domain}` : '—'}</dd>
+                <dt className="text-slate-500">Website redirect</dt><dd className="text-slate-800">{setup.redirectTo || '—'}</dd>
+                <dt className="text-slate-500">DKIM</dt><dd className="text-slate-800">{setup.dkimValue || setup.msDkim1 ? 'Key saved' : 'Not added yet'}</dd>
+              </dl>
+            </section>
+            <div className="border-t border-slate-100 pt-4">
+              <Button size="sm" variant="ghost" className="text-red-600" onClick={onRemove}>Stop managing this domain</Button>
+              <p className="mt-1 text-xs text-slate-400">Removes it from Kinetic only. DNS records stay in Cloudflare and mailboxes keep working.</p>
+            </div>
+          </>
+        ) : !free && (
+          <Alert tone="blue" title="DNS not managed by Kinetic" action={<Button size="sm" onClick={onSetup}>Set up DNS</Button>}>
+            Kinetic can write MX, SPF, DKIM and DMARC for this domain through Cloudflare.
+          </Alert>
+        )}
+      </div>
+    </Drawer>
   );
 }

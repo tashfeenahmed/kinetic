@@ -27,7 +27,6 @@ const DeveloperApiPage = page(() => import('./pages/Developers.tsx'), 'Developer
 const WebhooksPage = page(() => import('./pages/Developers.tsx'), 'WebhooksPage');
 const SettingsPage = page(() => import('./pages/Settings.tsx'), 'SettingsPage');
 const HelpPage = page(() => import('./pages/Help.tsx'), 'HelpPage');
-const DomainsPage = page(() => import('./pages/Domains.tsx'), 'DomainsPage');
 const GtmTablePage = page(() => import('./gtm/index.tsx'), 'GtmTablePage');
 const GtmSignalsPage = page(() => import('./gtm/index.tsx'), 'GtmSignalsPage');
 const GtmActivityPage = page(() => import('./gtm/index.tsx'), 'GtmActivityPage');
@@ -61,7 +60,7 @@ function Gate() {
         <Route path="campaigns/:id/:tab?" element={<CampaignDetailPage />} />
         <Route path="automations/*" element={<AutomationsPage />} />
         <Route path="inbox" element={<InboxPage />} />
-        <Route path="domains" element={<DomainsPage />} />
+        <Route path="domains" element={<Navigate to="/sender-emails" replace />} />
         <Route path="sender-emails" element={<SenderEmailsPage />} />
         <Route path="warmup" element={<WarmupPage />} />
         <Route path="sending-schedule" element={<SendingSchedulePage />} />

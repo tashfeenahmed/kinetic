@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Users, Send, Inbox, AtSign, Flame, Clock, Puzzle, Code2, ChevronDown, Settings, HelpCircle, LogOut,
-  PanelLeftClose, PanelLeft, Check, Plus, Pencil, Trash2, ChevronsUpDown, ChevronRight, Menu as MenuIcon, X, Home as HomeIcon, Radar, Table2, Activity, Globe,
+  PanelLeftClose, PanelLeft, Check, Plus, Pencil, Trash2, ChevronsUpDown, ChevronRight, Menu as MenuIcon, X, Home as HomeIcon, Radar, Table2, Activity,
   Blocks, Eye, MessageSquareText, BookOpen, Bot, SearchCheck,
 } from 'lucide-react';
 import { useGtmTables } from '../gtm/lib/queries';
@@ -19,7 +19,6 @@ const OUTREACH_NAV = [
   { to: '/leads', label: 'Leads', icon: Users },
   { to: '/visitors', label: 'Visitors', icon: Eye },
   { to: '/inbox', label: 'Master Inbox', icon: Inbox, badge: 'unread' as const },
-  { to: '/domains', label: 'Domains', icon: Globe },
   { to: '/sender-emails', label: 'Sender Emails', icon: AtSign },
   { to: '/warmup', label: 'Email Warmup', icon: Flame },
   { to: '/sending-schedule', label: 'Sending Schedule', icon: Clock },

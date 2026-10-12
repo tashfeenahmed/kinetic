@@ -241,7 +241,7 @@ function Stage({ to, icon: Icon, label, value, hint, tone, last }: { to: string;
 function GetStarted({ counts }: { counts: { lists: number; domains: number; senders: number; warmup: number; campaigns: number; active: number } }) {
   const steps = [
     { done: counts.lists > 0, title: 'Build a prospect list', text: 'Search below, import a CSV or start from a template.', to: '#find', icon: Table2 },
-    { done: counts.domains > 0, title: 'Set up a sending domain', text: 'Connect Cloudflare and Kinetic configures the DNS.', to: '/domains', icon: Globe },
+    { done: counts.domains > 0, title: 'Set up a sending domain', text: 'Connect Cloudflare and Kinetic configures the DNS.', to: '/sender-emails', icon: Globe },
     { done: counts.senders > 0, title: 'Connect a mailbox', text: 'Add the inboxes you will send from.', to: '/sender-emails', icon: AtSign },
     { done: counts.warmup > 0, title: 'Turn on warmup', text: 'Build reputation for 2–4 weeks first.', to: '/warmup', icon: Flame },
     { done: counts.campaigns > 0, title: 'Create a campaign', text: 'Write the sequence; send table rows to it.', to: '/campaigns', icon: FileText },

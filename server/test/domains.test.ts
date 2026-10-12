@@ -121,3 +121,36 @@ describe('domain setup through Cloudflare', () => {
     expect(list.body.meta.cloudflare_connected).toBe(true);
   }, 30_000);
 });
+
+describe('sending domains with their mailboxes', () => {
+  let env: TestEnv;
+  afterEach(() => env.close());
+
+  it('lists managed domains (even without mailboxes) and every domain a mailbox uses, nothing else', async () => {
+    env = await makeEnv();
+    const db = env.ctx.db;
+    const report = { checks: [{ name: 'SPF', status: 'pass', value: 'v=spf1 include:spf.protection.outlook.com -all', advice: 'ok' }], ok: true };
+    db.insert('sending_domains', { workspace_id: 1, domain: 'neu.example', provider: 'microsoft', status: 'verified', report: JSON.stringify(report) });
+    db.insert('sending_domains', { workspace_id: 1, domain: 'fresh.example', provider: 'google', status: 'configured' });
+    db.insert('sender_emails', { workspace_id: 1, name: 'Nathan', email: 'nathan@neu.example' });
+    db.insert('sender_emails', { workspace_id: 1, name: 'Ella', email: 'Ella@NEU.example', status: 'Disconnected' });
+    db.insert('sender_emails', { workspace_id: 1, name: 'Side', email: 'me@side.example' });
+
+    const list = await env.api('GET', '/api/domains');
+    expect(list.status).toBe(200);
+    const by = Object.fromEntries(list.body.data.map((d: any) => [d.domain, d]));
+    expect(Object.keys(by).sort()).toEqual(['fresh.example', 'neu.example', 'side.example']);
+    expect(by['neu.example']).toMatchObject({ status: 'verified', provider: 'microsoft', mailboxes: 2, connected_mailboxes: 1, report: { checks: [{ name: 'SPF', status: 'pass' }] } });
+    expect(by['fresh.example']).toMatchObject({ status: 'configured', mailboxes: 0 });
+    expect(by['side.example']).toMatchObject({ id: null, status: 'unmanaged', mailboxes: 1, connected_mailboxes: 1 });
+
+    // Mailboxes of a domain can be found by searching its name.
+    const mine = await env.api('GET', '/api/sender-emails?search=neu.example');
+    expect(mine.body.data.map((s: any) => s.email.toLowerCase()).sort()).toEqual(['ella@neu.example', 'nathan@neu.example']);
+
+    // Stop managing: the domain stays listed because it still has mailboxes, now unmanaged.
+    expect((await env.api('DELETE', `/api/domains/${by['neu.example'].id}`)).status).toBe(200);
+    const after = await env.api('GET', '/api/domains');
+    expect(after.body.data.find((d: any) => d.domain === 'neu.example')).toMatchObject({ id: null, status: 'unmanaged', mailboxes: 2 });
+  });
+});
