@@ -19,6 +19,15 @@ export const EVENT_TYPES = {
   TAG_REMOVED: 'Tag Removed',
   CAMPAIGN_COMPLETED: 'Campaign Completed',
   SIGNAL_CHANGED: 'Signal Changed',
+  WEBSITE_VISIT: 'Website Visit',
+  HIGH_INTENT_VISIT: 'High Intent Visit',
+  AB_TEST_WINNER: 'A/B Test Winner Picked',
+  LEAD_MEETING_REQUEST: 'Lead Meeting Request',
+  LEAD_OUT_OF_OFFICE: 'Lead Out Of Office',
+  LINKEDIN_CONNECTION_ACCEPTED: 'LinkedIn Connection Accepted',
+  LINKEDIN_REPLY_RECEIVED: 'LinkedIn Reply Received',
+  LINKEDIN_POST_ENGAGER: 'LinkedIn Post Engager',
+  COMPANION_JOB_COMPLETED: 'Companion Job Completed',
 } as const;
 
 export type EventType = keyof typeof EVENT_TYPES;

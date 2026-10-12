@@ -18,9 +18,18 @@ import { opsRoutes } from './routes/ops.ts';
 import { trackingRoutes } from './routes/tracking.ts';
 import { docsRoutes } from './routes/docs.ts';
 import { domainRoutes } from './routes/domains.ts';
+import { sequenceRoutes } from './routes/sequences.ts';
 import { ZodError } from 'zod';
 import { createGtm } from './gtm/index.ts';
 import { gtmHookRoutes, gtmRoutes } from './gtm/routes.ts';
+import { gtmLinkRoutes } from './gtm/linkRoutes.ts';
+import { visitorRoutes } from './visitors/routes.ts';
+import { sourcingRoutes } from './sourcing/routes.ts';
+import { agentRoutes } from './agent/routes.ts';
+import { knowledgeRoutes } from './knowledge/routes.ts';
+import { replyAiRoutes } from './routes/replyAi.ts';
+import { leadFilterRoutes } from './routes/leadFilters.ts';
+import { companionRoutes } from './companion/routes.ts';
 
 const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'web', 'dist');
 
@@ -72,9 +81,18 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
   ctx.gtm ??= createGtm(ctx);
   app.addHook('onClose', async () => ctx.gtm?.stop());
   gtmRoutes(app, ctx);
+  gtmLinkRoutes(app, ctx);
+  sourcingRoutes(app, ctx);
   domainRoutes(app, ctx);
+  sequenceRoutes(app, ctx);
   gtmHookRoutes(app, ctx);
+  knowledgeRoutes(app, ctx);
+  agentRoutes(app, ctx);
+  replyAiRoutes(app, ctx);
+  leadFilterRoutes(app, ctx);
+  companionRoutes(app, ctx);
   docsRoutes(app, ctx);
+  visitorRoutes(app, ctx);
 
   app.get('/healthz', { config: { public: true } }, () => ({ ok: true }));
 

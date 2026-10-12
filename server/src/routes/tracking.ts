@@ -5,6 +5,7 @@ import { emit } from '../events.ts';
 import { signUrl } from '../engine/compose.ts';
 import { unsubscribeLead } from '../engine/inbox.ts';
 import { escapeHtml } from '../lib/html.ts';
+import { withVisitorParam } from '../visitors/service.ts';
 
 const PIXEL = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
 
@@ -37,7 +38,7 @@ export function trackingRoutes(app: FastifyInstance, ctx: Ctx) {
       db.run('UPDATE sent_emails SET clicks = clicks + 1 WHERE id = ?', [s.id]);
       emit(ctx, s.workspace_id, 'LINK_CLICKED', { sent_email_id: s.id, campaign_id: s.campaign_id, lead_id: s.lead_id, lead_email: s.to_email, url: u }, { campaign_id: s.campaign_id, lead_id: s.lead_id, sent_email_id: s.id });
     }
-    return reply.redirect(u);
+    return reply.redirect(s ? withVisitorParam(ctx, s.workspace_id, s.lead_id, u) : u);
   });
 
   const page = (title: string, body: string) => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>

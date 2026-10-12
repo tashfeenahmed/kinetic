@@ -8,6 +8,7 @@ import { unsubscribeLead } from '../engine/inbox.ts';
 import { cancelScheduled } from '../engine/sequencer.ts';
 import { domainOf } from '../lib/dns.ts';
 import { tagsFor } from './tags.ts';
+import { leadEmailStats, leadFilters, leadWhere } from './leadFilters.ts';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const LEAD_STATUSES = ['verified', 'unverified', 'unknown', 'unsubscribed', 'risky', 'inactive', 'bounced'] as const;
@@ -51,6 +52,7 @@ export function leadJson(ctx: Ctx, l: Row) {
     tags: tagsFor(ctx, 'lead', l.id),
     lead_list: l.lead_list_id ? ctx.db.get('SELECT id, name FROM lead_lists WHERE id = ?', [l.lead_list_id]) ?? null : null,
     overall_stats: stats,
+    email_stats: leadEmailStats(ctx, l.id),
   };
 }
 
@@ -133,29 +135,13 @@ export function leadRoutes(app: FastifyInstance, ctx: Ctx) {
     return l;
   };
 
-  const listQuery = pageQuery.extend({
-    search: z.string().optional(),
-    status: z.enum(LEAD_STATUSES).optional(),
-    lead_list_id: z.coerce.number().int().optional(),
-    campaign_id: z.coerce.number().int().optional(),
-    tag_id: z.coerce.number().int().optional(),
-    without_campaign: bool.optional(),
-  });
-  r.get('/api/leads', 'Get all leads', (req) => {
+  // Filters (incl. email stats: opens, clicks, replies, last contacted…) live in leadFilters.ts.
+  const listQuery = pageQuery.extend(leadFilters.shape);
+  r.get('/api/leads', 'Get all leads (filter by status, list, tag, campaign and email stats: sent/opens/clicks/replies, bounced, reply category, last contacted, mailbox, email provider)', (req) => {
     const a = auth(req);
     const q = parse(listQuery, req.query);
-    const where = ['l.workspace_id = ?'];
-    const params: any[] = [a.workspaceId];
-    if (q.search) {
-      where.push(`(l.email LIKE ? OR l.first_name LIKE ? OR l.last_name LIKE ? OR l.company LIKE ? OR (l.first_name || ' ' || l.last_name) LIKE ?)`);
-      params.push(...Array(5).fill(`%${q.search}%`));
-    }
-    if (q.status) { where.push('l.status = ?'); params.push(q.status); }
-    if (q.lead_list_id) { where.push('l.lead_list_id = ?'); params.push(q.lead_list_id); }
-    if (q.campaign_id) { where.push('EXISTS (SELECT 1 FROM campaign_leads cl WHERE cl.lead_id = l.id AND cl.campaign_id = ?)'); params.push(q.campaign_id); }
-    if (q.without_campaign) where.push('NOT EXISTS (SELECT 1 FROM campaign_leads cl WHERE cl.lead_id = l.id)');
-    if (q.tag_id) { where.push(`EXISTS (SELECT 1 FROM taggables t WHERE t.taggable_type = 'lead' AND t.taggable_id = l.id AND t.tag_id = ?)`); params.push(q.tag_id); }
-    return paginate(ctx, `SELECT l.* FROM leads l WHERE ${where.join(' AND ')} ORDER BY l.id DESC`, params, q, (l) => leadJson(ctx, l));
+    const { where, params, order } = leadWhere(ctx, a.workspaceId, q);
+    return paginate(ctx, `SELECT l.* FROM leads l WHERE ${where.join(' AND ')} ${order}`, params, q, (l) => leadJson(ctx, l));
   }, { query: listQuery });
 
   r.post('/api/leads', 'Create lead', (req) => {

@@ -190,22 +190,49 @@ function InboxSettings() {
   const qc = useQueryClient();
   const { toast } = useUi();
   const s = useQuery({ queryKey: ['inbox-settings'], queryFn: () => api.get('/api/workspaces/v1.1/master-inbox-settings').then((r) => r.data) });
-  const save = async (patch: Record<string, boolean>) => {
+  const [model, setModel] = useState<string | null>(null);
+  const save = async (patch: Record<string, unknown>) => {
     try {
       await api.patch('/api/workspaces/v1.1/master-inbox-settings', patch);
       qc.invalidateQueries({ queryKey: ['inbox-settings'] });
+      qc.invalidateQueries({ queryKey: ['reply-ai-status'] });
       toast('Saved');
     } catch (e) { toast(errorMessage(e), 'error'); }
   };
+  const resort = useMutation({
+    mutationFn: () => api.post('/api/replies/reclassify', { from: new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10), to: new Date().toISOString().slice(0, 10) }),
+    onSuccess: (r) => toast(`${r.data.queued} replies queued for AI sorting${r.data.skipped_manual ? ` · ${r.data.skipped_manual} with your own label kept` : ''}`),
+    onError: (e) => toast(errorMessage(e), 'error'),
+  });
   if (!s.data) return <Loading />;
+  const ai = s.data;
   return (
-    <Card title="Master inbox" description="How replies are collected and labelled.">
-      <div className="max-w-2xl space-y-5">
-        <Toggle checked={s.data.sync_all_emails} onChange={(v) => save({ sync_all_emails: v })} label="Show all incoming email" description="Off: only replies to your campaigns appear. On: every message your mailboxes receive appears (warmup traffic is always hidden)." />
-        <Toggle checked={s.data.auto_interested_categorization} onChange={(v) => save({ auto_interested_categorization: v })} label="Detect interested replies automatically" description="Replies like “sounds good, let's talk” are labelled Interested and stop the sequence for that lead." />
-        <Toggle checked={s.data.smart_warmup_filter} onChange={(v) => save({ smart_warmup_filter: v })} label="Hide warmup emails" description="Warmup conversations are filed into the “Kinetic Warmup” folder and never shown here." />
-      </div>
-    </Card>
+    <>
+      <Card title="Master inbox" description="How replies are collected and labelled.">
+        <div className="max-w-2xl space-y-5">
+          <Toggle checked={s.data.sync_all_emails} onChange={(v) => save({ sync_all_emails: v })} label="Show all incoming email" description="Off: only replies to your campaigns appear. On: every message your mailboxes receive appears (warmup traffic is always hidden)." />
+          <Toggle checked={s.data.auto_interested_categorization} onChange={(v) => save({ auto_interested_categorization: v })} label="Detect interested replies automatically" description="Replies like “sounds good, let's talk” are labelled Interested and stop the sequence for that lead." />
+          <Toggle checked={s.data.smart_warmup_filter} onChange={(v) => save({ smart_warmup_filter: v })} label="Hide warmup emails" description="Warmup conversations are filed into the “Kinetic Warmup” folder and never shown here." />
+        </div>
+      </Card>
+      <Card title="AI reply sorting" description="Every human reply is read by an AI model and sorted into meeting requests, questions, objections, referrals, out-of-office and more, with a one-line summary and a suggested next step. Labels you set by hand are never changed."
+        actions={ai.ai_configured && ai.ai_reply_sorting ? <Button size="sm" loading={resort.isPending} onClick={() => resort.mutate()}>Re-sort last 30 days</Button> : undefined}>
+        <div className="max-w-2xl space-y-5">
+          {!ai.ai_configured && (
+            <Alert tone="yellow" title="No AI key yet">Add an OpenRouter key (or a local model URL) on the <NavLink to="/integrations#providers" className="font-medium underline">Integrations</NavLink> page. Until then replies are sorted by keyword rules.</Alert>
+          )}
+          <Toggle checked={ai.ai_reply_sorting} onChange={(v) => save({ ai_reply_sorting: v })} label="Sort replies with AI" description="Runs in the background after each sync, so the inbox never waits on it. If the model fails, the keyword label stays." />
+          <Field label="Model" hint={`Default: ${ai.ai_effective_model}. Any OpenRouter model id works; cheap fast models are plenty.`}>
+            <div className="flex gap-2">
+              <Input value={model ?? ai.ai_reply_model ?? ''} placeholder={ai.ai_effective_model} onChange={(e) => setModel(e.target.value)} />
+              {model !== null && model !== (ai.ai_reply_model ?? '') && <Button onClick={() => { void save({ ai_reply_model: model.trim() || null }); setModel(null); }}>Save</Button>}
+            </div>
+          </Field>
+          <Toggle checked={ai.ai_auto_unsubscribe} onChange={(v) => save({ ai_auto_unsubscribe: v })} label="Unsubscribe on unsubscribe intent" description="When the AI reads “please stop emailing me”, the lead is unsubscribed everywhere, like the unsubscribe link." />
+          <Toggle checked={ai.ai_pause_on_ooo} onChange={(v) => save({ ai_pause_on_ooo: v })} label="Pause leads who are out of office" description="When an out-of-office reply says when they’re back, their next email waits until that date." />
+        </div>
+      </Card>
+    </>
   );
 }
 

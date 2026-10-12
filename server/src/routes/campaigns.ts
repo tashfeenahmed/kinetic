@@ -10,6 +10,8 @@ import { buildVariables, missingVariables } from '../lib/template.ts';
 import { isValidTimezone, nextWindow, timezones, WEEKDAYS } from '../lib/schedule.ts';
 import { attachLeads } from './leads.ts';
 import { tagsFor } from './tags.ts';
+import { branchingSchema, parseBranching, validateBranching } from '../engine/branching.ts';
+import { abConfigPatchSchema, abConfigSchema, parseAbConfig } from '../engine/abtest.ts';
 
 const pct = (n: number, d: number) => (d ? Math.round((n / d) * 1000) / 10 : 0);
 
@@ -123,10 +125,15 @@ const variantInput = z.object({
   email_body: z.string().max(100_000).default(''),
   active: bool.default(true),
 });
+// Optional branching rules / A/B config; omitted = keep what the step has (null clears).
+const branchingInput = branchingSchema.nullable().optional();
+const abTestInput = abConfigPatchSchema.nullable().optional();
 const stepInput = variantInput.extend({
   wait_in_days: z.coerce.number().int().min(0).max(365).default(1),
   thread_reply: bool.default(false),
   variants: z.array(variantInput).max(25).default([]),
+  branching: branchingInput,
+  ab_test: abTestInput,
 });
 const sequenceBody = z.object({ title: z.string().max(200).optional(), steps: z.array(stepInput).max(50) });
 
@@ -148,7 +155,10 @@ export function saveSequence(ctx: Ctx, campaignId: number, steps: z.infer<typeof
     };
     steps.forEach((s, i) => {
       const order = i + 1;
-      const mainId = upsert({ step_order: order, variant_of_step_id: null, email_subject: s.email_subject, email_body: s.email_body, wait_in_days: order === 1 ? 0 : s.wait_in_days, thread_reply: order === 1 ? 0 : s.thread_reply ? 1 : 0, active: s.active ? 1 : 0 }, s.id);
+      const extra: Row = {};
+      if (s.branching !== undefined) extra.branching = s.branching && (s.branching.rules.length || s.branching.else.type !== 'continue' || s.branching.max_visits || s.branching.check_after_days !== undefined) ? JSON.stringify(s.branching) : null;
+      if (s.ab_test !== undefined) extra.ab_test = s.ab_test ? JSON.stringify(abConfigSchema.parse(s.ab_test)) : null;
+      const mainId = upsert({ step_order: order, variant_of_step_id: null, email_subject: s.email_subject, email_body: s.email_body, wait_in_days: order === 1 ? 0 : s.wait_in_days, thread_reply: order === 1 ? 0 : s.thread_reply ? 1 : 0, active: s.active ? 1 : 0, ...extra }, s.id);
       for (const v of s.variants) {
         upsert({ step_order: order, variant_of_step_id: mainId, email_subject: v.email_subject, email_body: v.email_body, wait_in_days: order === 1 ? 0 : s.wait_in_days, thread_reply: order === 1 ? 0 : s.thread_reply ? 1 : 0, active: v.active ? 1 : 0 }, v.id);
       }
@@ -168,6 +178,9 @@ export function sequenceJson(ctx: Ctx, campaignId: number) {
       id: main.id, step_order: order, email_subject: main.email_subject, email_body: main.email_body,
       wait_in_days: main.wait_in_days, thread_reply: !!main.thread_reply, active: !!main.active,
       variants: rows.filter((r) => r.id !== main.id).map((v) => ({ id: v.id, email_subject: v.email_subject, email_body: v.email_body, active: !!v.active })),
+      branching: main.branching ? parseBranching(main.branching) : null,
+      ab_test: main.ab_test ? parseAbConfig(main.ab_test) : null,
+      ab_winner_step_id: main.ab_winner_step_id ?? null,
     });
   }
   return out;
@@ -244,7 +257,8 @@ export function campaignRoutes(app: FastifyInstance, ctx: Ctx) {
   });
   r.get('/api/campaigns/:id/launch-check', 'What still needs doing before launch', (req) => {
     const a = auth(req);
-    return { data: { problems: launchProblems(ctx, getCampaign(a.workspaceId, idParam(req))) } };
+    const c = getCampaign(a.workspaceId, idParam(req));
+    return { data: { problems: launchProblems(ctx, c), warnings: validateBranching(ctx, c, loadSteps(ctx, c.id)).warnings } };
   });
 
   r.patch('/api/campaigns/:id/pause', 'Pause campaign', (req) => {
@@ -354,18 +368,21 @@ export function campaignRoutes(app: FastifyInstance, ctx: Ctx) {
   const v11Step = z.object({
     email_subject: z.string(), email_body: z.string(), wait_in_days: z.coerce.number().int().min(0), order: z.number().int().optional(),
     variant: bool.optional(), variant_from_step: z.number().int().optional(), variant_from_step_id: z.number().int().optional(), thread_reply: bool.optional(),
+    branching: branchingInput, ab_test: abTestInput,
   });
   const v11Body = z.object({ title: z.string(), sequence_steps: z.array(v11Step).min(1) });
   const fromV11 = (steps: z.infer<typeof v11Step>[]) => {
     const mains = steps.filter((s) => !s.variant);
     return mains.map((m, i) => ({
       email_subject: m.email_subject, email_body: m.email_body, wait_in_days: m.wait_in_days, thread_reply: !!m.thread_reply, active: true,
+      branching: m.branching, ab_test: m.ab_test,
       variants: steps.filter((s) => s.variant && s.variant_from_step === (m.order ?? i + 1)).map((v) => ({ email_subject: v.email_subject, email_body: v.email_body, active: true })),
     }));
   };
   const toV11 = (campaignId: number) => db.all('SELECT * FROM sequence_steps WHERE campaign_id = ? ORDER BY step_order, id', [campaignId]).map((s) => ({
     id: s.id, email_subject: s.email_subject, email_body: s.email_body, order: s.step_order, wait_in_days: s.wait_in_days,
     variant: !!s.variant_of_step_id, variant_from_step_id: s.variant_of_step_id, thread_reply: !!s.thread_reply, active: !!s.active,
+    ...(s.variant_of_step_id ? {} : { branching: s.branching ? parseBranching(s.branching) : null, ab_test: s.ab_test ? parseAbConfig(s.ab_test) : null }),
   }));
   sr.get('/api/campaigns/v1.1/:id/sequence-steps', 'View sequence steps (v1.1)', (req) => {
     const c = getCampaign(auth(req).workspaceId, idParam(req));
@@ -619,6 +636,13 @@ export function launchProblems(ctx: Ctx, c: Row): string[] {
   if (!senders) problems.push('Add at least one connected sender email.');
   const leads = db.get<{ n: number }>(`SELECT COUNT(*) n FROM campaign_leads WHERE campaign_id = ? AND status IN ('pending','in_sequence')`, [c.id])!.n;
   if (!leads) problems.push('Add leads to the campaign.');
+  // Branch targets must exist; A/B metrics need their tracking switched on.
+  problems.push(...validateBranching(ctx, c, loadSteps(ctx, c.id)).problems);
+  for (const s of db.all('SELECT step_order, ab_test FROM sequence_steps WHERE campaign_id = ? AND variant_of_step_id IS NULL AND ab_test IS NOT NULL', [c.id])) {
+    const cfg = parseAbConfig(s.ab_test);
+    if (cfg.enabled && cfg.metric === 'open_rate' && !c.open_tracking) problems.push(`Step ${s.step_order}'s A/B test picks by open rate, but open tracking is off.`);
+    if (cfg.enabled && cfg.metric === 'click_rate' && !c.click_tracking) problems.push(`Step ${s.step_order}'s A/B test picks by click rate, but click tracking is off.`);
+  }
   return problems;
 }
 

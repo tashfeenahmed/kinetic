@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { api, TYPE_META, type Catalog, type Column, type ColumnType } from '../lib/api';
 import { TemplateInput } from './TemplateInput';
 import { Icon } from './Icon';
+import { FunctionColumnForm, LookupForm, SendToTableForm } from './LinkForms';
 
 interface Props {
   tableId: number;
@@ -14,6 +15,8 @@ interface Props {
   catalog: Catalog;
   onClose: () => void;
   onSaved: (colId: number, runNow: boolean) => void;
+  /** Step mode (function builder): hand the config back instead of saving a column. */
+  onSubmit?: (step: { name: string; type: ColumnType; config: any; run_if: string | null }) => void;
 }
 
 const INPUT_LABELS: Record<string, string> = {
@@ -72,7 +75,7 @@ export function ColumnEditor(props: Props) {
     if (type === 'action') { setConfig({ kind: kind ?? 'slack', text: '' }); setAutoRun(false); return; }
     if (type === 'ai' && !config.prompt) setConfig({ prompt: '', model: catalog.defaultModel, outputs: [{ name: 'answer', type: 'string', description: '' }], webSearch: true, fetchPages: true, maxSteps: 8 });
     if (type === 'http' && !config.url) setConfig({ method: 'GET', url: '', headers: {}, body: '', extract: '' });
-    if (type === 'formula' || type === 'extract') setAutoRun(true);
+    if (type === 'formula' || type === 'extract' || type === 'lookup') setAutoRun(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type]);
 
@@ -88,6 +91,7 @@ export function ColumnEditor(props: Props) {
   }
 
   async function save(runNow: boolean) {
+    if (props.onSubmit) return props.onSubmit({ name: name.trim() || TYPE_META[type].label, type, config, run_if: runIf.trim() || null });
     setBusy(true);
     setError('');
     try {
@@ -115,7 +119,7 @@ export function ColumnEditor(props: Props) {
   return (
     <aside className="drawer">
       <header>
-        <h3>{isNew ? `New ${TYPE_META[type].label.toLowerCase()} column` : props.column!.name}</h3>
+        <h3>{isNew ? `New ${TYPE_META[type].label.toLowerCase()} ${props.onSubmit ? 'step' : 'column'}` : props.column!.name}</h3>
         <button className="ghost icon-btn sm" onClick={props.onClose}><Icon name="x" /></button>
       </header>
       <div className="drawer-body">
@@ -199,6 +203,7 @@ export function ColumnEditor(props: Props) {
             <div className="row-flex">
               <label className="check"><input type="checkbox" checked={config.webSearch !== false} onChange={(e) => set({ webSearch: e.target.checked })} /> Web search</label>
               <label className="check"><input type="checkbox" checked={config.fetchPages !== false} onChange={(e) => set({ fetchPages: e.target.checked })} /> Read pages</label>
+              <label className="check" title="Adds your Knowledge Hub (what you sell, ICP, personas, tone) to the prompt"><input type="checkbox" checked={!!config.useKnowledge} onChange={(e) => set({ useKnowledge: e.target.checked })} /> Use Knowledge Hub</label>
               <label className="inline">Max steps <input type="number" min={1} max={20} value={config.maxSteps ?? 8} onChange={(e) => set({ maxSteps: Number(e.target.value) })} /></label>
             </div>
             <OutputFields value={config.outputs ?? []} onChange={(outputs) => set({ outputs })} />
@@ -221,10 +226,14 @@ export function ColumnEditor(props: Props) {
 
         {type === 'action' && <ActionForm config={config} set={set} others={others} catalog={catalog} />}
 
+        {type === 'lookup' && <LookupForm config={config} set={set} others={others} tableId={props.tableId} />}
+
+        {type === 'function' && <FunctionColumnForm config={config} set={set} others={others} onName={(n) => setName((cur) => cur || n)} />}
+
         {type !== 'text' && (
           <fieldset>
             <legend>When to run</legend>
-            <label className="check"><input type="checkbox" checked={autoRun} onChange={(e) => setAutoRun(e.target.checked)} /> Auto-run when referenced columns change (new rows, edits, signal changes)</label>
+            {!props.onSubmit && <label className="check"><input type="checkbox" checked={autoRun} onChange={(e) => setAutoRun(e.target.checked)} /> Auto-run when referenced columns change (new rows, edits, signal changes)</label>}
             <label>Only run if (JavaScript, optional)
               <input className="mono" value={runIf} onChange={(e) => setRunIf(e.target.value)} placeholder={'changed("Hiring") && row["Hiring"] > 3'} />
               <small className="muted"><code>changed("Col")</code> = that column's value changed since this cell last ran. <code>{'{{_changes}}'}</code> in a message lists what changed.</small>
@@ -234,10 +243,10 @@ export function ColumnEditor(props: Props) {
         {error && <p className="err">{error}</p>}
       </div>
       <footer>
-        {!isNew && <button className="danger ghost" onClick={remove}>Delete</button>}
+        {!isNew && !props.onSubmit && <button className="danger ghost" onClick={remove}>Delete</button>}
         <span style={{ flex: 1 }} />
-        <button onClick={() => save(false)} disabled={busy}>Save</button>
-        {type !== 'text' && <button className="primary" onClick={() => save(true)} disabled={busy}>Save & run</button>}
+        <button className={props.onSubmit ? 'primary' : ''} onClick={() => save(false)} disabled={busy}>{props.onSubmit ? 'Done' : 'Save'}</button>
+        {type !== 'text' && !props.onSubmit && <button className="primary" onClick={() => save(true)} disabled={busy}>Save & run</button>}
       </footer>
     </aside>
   );
@@ -462,6 +471,7 @@ function ActionForm({ config, set, others, catalog }: { config: any; set: (p: an
         </>
       )}
       {(config.kind === 'outreach_campaign' || config.kind === 'outreach_update_lead') && <OutreachForm config={config} set={set} others={others} />}
+      {config.kind === 'send_to_table' && <SendToTableForm config={config} set={set} others={others} />}
       {config.kind === 'salesforce' && (
         <>
           <div className="row-flex">

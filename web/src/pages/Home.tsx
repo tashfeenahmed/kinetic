@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { lazy, Suspense } from 'react';
+import { MapPin, Sparkles } from 'lucide-react';
 import { Link, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -26,11 +28,15 @@ const SERIES = [
   { key: 'bounced', label: 'Bounced', color: '#ef4444' },
 ] as const;
 
-type Mode = 'companies' | 'people' | 'jobs';
+type Mode = 'companies' | 'people' | 'jobs' | 'local' | 'lookalikes';
+// Local businesses (map) and lookalikes live in their own lazily loaded panel (Leaflet is heavy).
+const SourcingFind = lazy(() => import('./searches/SourcingFind.tsx').then((m) => ({ default: m.SourcingFind })));
 const MODES: Record<Mode, { label: string; icon: typeof Building2; placeholder: string; hint: string }> = {
   companies: { label: 'Companies', icon: Building2, placeholder: 'What kind of companies? e.g. restaurant POS, developer tools, fintech', hint: 'Free · YC directory, then AI web search' },
   people: { label: 'People', icon: User, placeholder: 'Company domain or GitHub org, e.g. vercel.com', hint: 'Free · public GitHub org members' },
   jobs: { label: 'Jobs', icon: Briefcase, placeholder: 'Company domains, e.g. ramp.com, linear.app', hint: 'Free · public job boards' },
+  local: { label: 'Local businesses (Google Maps)', icon: MapPin, placeholder: '', hint: 'Free · OpenStreetMap, or Google Maps with a key' },
+  lookalikes: { label: 'Lookalikes', icon: Sparkles, placeholder: '', hint: 'Companies or people like your best accounts' },
 };
 
 const TEMPLATES = [
@@ -280,6 +286,7 @@ function FindBox() {
   const qc = useQueryClient();
   const { toast } = useUi();
   const catalog = useGtmCatalog();
+  if (mode === 'local' || mode === 'lookalikes') return <Suspense fallback={<Loading />}><SourcingFind mode={mode} modes={MODES} onMode={setMode} /></Suspense>;
 
   async function find() {
     if (!q.trim() || busy) return;

@@ -16,7 +16,13 @@ const SENDER: Record<string, [string, Tone]> = { Connected: ['Connected', 'green
 const CATEGORY: Record<string, [string, Tone]> = {
   interested: ['Interested', 'green'], not_interested: ['Not interested', 'gray'], unsubscribe: ['Unsub', 'yellow'], auto_reply: ['Auto reply', 'purple'],
   bounce: ['Bounce', 'red'], reply: ['Replied', 'blue'], other: ['Ignored', 'gray'],
+  meeting_request: ['Meeting', 'green'], more_info: ['Question', 'blue'], objection: ['Objection', 'orange'], referral: ['Referral', 'purple'],
+  wrong_person: ['Wrong person', 'gray'], out_of_office: ['Out of office', 'purple'],
 };
+/** Reply labels in display order, for filters and the re-label menu. */
+export const REPLY_LABELS: { id: string; label: string }[] = [
+  'interested', 'meeting_request', 'more_info', 'objection', 'not_interested', 'referral', 'wrong_person', 'out_of_office', 'auto_reply', 'unsubscribe', 'reply', 'bounce',
+].map((id) => ({ id, label: CATEGORY[id]![0] }));
 const SCHEDULED: Record<string, [string, Tone]> = { scheduled: ['Scheduled', 'blue'], sending: ['Sending', 'blue'], sent: ['Sent', 'green'], failed: ['Failed', 'red'], cancelled: ['Cancelled', 'gray'] };
 
 function make(map: Record<string, [string, Tone]>) {

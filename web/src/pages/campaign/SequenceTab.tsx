@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Braces, ChevronDown, Clock, CornerDownRight, Eye, Plus, Save, Send, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Braces, ChevronDown, Clock, CornerDownRight, Eye, Plus, Save, Send, Trash2, Trophy, X } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api.ts';
 import { useAuth } from '../../lib/auth.tsx';
 import { Alert, Badge, Button, Card, Field, Input, Loading, Modal, Select, Textarea, Toggle, cx, useUi } from '../../components/ui.tsx';
-import { type Campaign, type Step, type Variant, variantLetter } from './types.ts';
+import { AB_DEFAULTS, type Action, type Campaign, type Step, type Variant, variantLetter } from './types.ts';
+import { RuleSummary, StepRulesEditor } from './StepRules.tsx';
+import { AbTestPanel } from './AbTestPanel.tsx';
 
 const BUILTINS = [
   ['FIRST_NAME', 'First name'], ['LAST_NAME', 'Last name'], ['EMAIL', 'Email'], ['COMPANY', 'Company'], ['TITLE', 'Title'],
@@ -214,12 +216,21 @@ export function SequenceTab({ campaign }: { campaign: Campaign }) {
   const removeStep = async (i: number) => {
     if (steps.length === 1) return;
     if (!(await confirm({ title: `Delete step ${i + 1}?`, message: 'Leads who have not reached this step will skip it. Changes apply when you save.', confirmLabel: 'Delete step', danger: true }))) return;
-    update((d) => { d.splice(i, 1); });
+    update((d) => {
+      d.splice(i, 1);
+      // Keep "go to step N" targets pointing at the same emails; jumps to the deleted step continue instead.
+      const fix = (a: Action): Action => (a.type !== 'jump' ? a : a.step === i + 1 ? { type: 'continue' } : a.step > i + 1 ? { ...a, step: a.step - 1 } : a);
+      for (const s of d) if (s.branching) s.branching = { ...s.branching, else: fix(s.branching.else), rules: s.branching.rules.map((r) => ({ ...r, then: fix(r.then) })) };
+    });
     setSi(Math.max(0, i - 1));
     setVi(0);
   };
   const addVariant = () => {
-    update((d) => { const s = d[si]!; s.variants.push({ email_subject: s.email_subject, email_body: s.email_body, active: true }); });
+    update((d) => {
+      const s = d[si]!;
+      s.variants.push({ email_subject: s.email_subject, email_body: s.email_body, active: true });
+      if (!s.ab_test) s.ab_test = { ...AB_DEFAULTS };
+    });
     setVi(step.variants.length + 1);
   };
   const removeVariant = async () => {
@@ -268,6 +279,7 @@ export function SequenceTab({ campaign }: { campaign: Campaign }) {
                 <div className="mt-1 truncate text-[13px] text-slate-500">
                   {i > 0 && s.thread_reply ? <span className="flex items-center gap-1"><CornerDownRight className="size-3" />Same thread</span> : s.email_subject || <span className="italic text-slate-400">No subject</span>}
                 </div>
+                <RuleSummary branching={s.branching} />
               </button>
             </div>
           ))}
@@ -280,7 +292,7 @@ export function SequenceTab({ campaign }: { campaign: Campaign }) {
             <div className="flex flex-wrap items-center gap-1">
               {[step, ...step.variants].map((v, i) => (
                 <button key={i} onClick={() => setVi(i)} className={cx('flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium', i === vIndex ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100', !v.active && 'line-through opacity-60')}>
-                  Variant {variantLetter(i)}
+                  Variant {variantLetter(i)}{!!v.id && step.ab_winner_step_id === v.id && <Trophy className="size-3.5 text-amber-500" />}
                 </button>
               ))}
               <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={addVariant} title="A/B test this step">Add variant</Button>
@@ -344,6 +356,13 @@ export function SequenceTab({ campaign }: { campaign: Campaign }) {
                 </span>
               </p>
             </div>
+
+            {step.variants.length > 0 && (
+              <AbTestPanel campaign={campaign} stepId={step.id} config={step.ab_test} onConfig={(c) => updateStep({ ab_test: c })} dirty={dirty}
+                onChanged={() => { setSteps(null); setDirty(false); qc.invalidateQueries({ queryKey: ['campaign', campaign.id, 'sequence'] }); }} />
+            )}
+            <StepRulesEditor campaign={campaign} branching={step.branching} onChange={(b) => updateStep({ branching: b })}
+              stepIndex={si} stepCount={steps.length} nextWait={steps[si + 1]?.wait_in_days ?? null} />
           </div>
         </Card>
 

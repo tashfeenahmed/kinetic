@@ -12,6 +12,7 @@ import { emit } from '../events.ts';
 import { categorize, parseInbound, type InboundMessage } from '../mail/classify.ts';
 import { SPAM_FOLDER_NAMES } from '../mail/providers.ts';
 import { cancelScheduled, isAuthError, markDisconnected } from './sequencer.ts';
+import { afterReplyStored } from './replyAi.ts';
 import { ensureThread } from './threads.ts';
 import { handleWarmupMessage, isWarmupMessage } from './warmup.ts';
 
@@ -167,6 +168,7 @@ export async function processInbound(ctx: Ctx, sender: Row, msg: InboundMessage,
     });
     return id;
   });
+  afterReplyStored(ctx, replyId);
 
   const lead = leadId ? db.get('SELECT * FROM leads WHERE id = ?', [leadId]) : null;
   const data = {

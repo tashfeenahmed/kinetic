@@ -6,6 +6,7 @@ import { getJson } from '../lib/http.ts';
 import { fetchPage } from '../lib/html.ts';
 import { webSearch } from '../providers/search.ts';
 import type { Ctx } from '../providers/types.ts';
+import { knowledgeContext } from '../../knowledge/store.ts';
 
 export const DEFAULT_MODEL = 'anthropic/claude-haiku-5.5';
 export const MODELS = [
@@ -48,6 +49,8 @@ export interface AgentConfig {
   webSearch: boolean;
   fetchPages: boolean;
   maxSteps?: number;
+  /** Append the workspace's Knowledge Hub (what we sell, ICP, personas…) to the prompt. */
+  useKnowledge?: boolean;
 }
 
 export interface AgentResult {
@@ -79,9 +82,10 @@ export async function runAgent(cfg: AgentConfig, ctx: Ctx): Promise<AgentResult>
   if (cfg.webSearch) tools.push(fn('web_search', 'Search the web. Returns titles, URLs and snippets.', { query: { type: 'string' } }, ['query']));
   if (cfg.fetchPages) tools.push(fn('fetch_page', 'Fetch a web page and return its readable text (first ~12k chars).', { url: { type: 'string' } }, ['url']));
 
+  const kb = cfg.useKnowledge && ctx.workspaceId ? knowledgeContext({ db: ctx.settings.db }, ctx.workspaceId) : '';
   const messages: any[] = [
     { role: 'system', content: SYSTEM },
-    { role: 'user', content: `${cfg.prompt}\n\nReturn these fields via submit: ${outputs.map((o) => `${o.name} (${o.type}${o.description ? `: ${o.description}` : ''})`).join('; ')}` },
+    { role: 'user', content: `${cfg.prompt}${kb ? `\n\nAbout us (Knowledge Hub — use it to judge fit and personalise):\n${kb}` : ''}\n\nReturn these fields via submit: ${outputs.map((o) => `${o.name} (${o.type}${o.description ? `: ${o.description}` : ''})`).join('; ')}` },
   ];
   const result: AgentResult = { output: {}, sources: [], steps: [], usage: { prompt: 0, completion: 0, costUsd: 0 }, model };
 
@@ -143,7 +147,7 @@ export async function runAgent(cfg: AgentConfig, ctx: Ctx): Promise<AgentResult>
   throw new Error('Agent did not submit an answer');
 }
 
-async function readPage(url: string, ctx: Ctx): Promise<string> {
+export async function readPage(url: string, ctx: Ctx): Promise<string> {
   // Jina Reader renders JS-heavy pages; plain fetch is the free default.
   if (ctx.settings.has('JINA_API_KEY')) {
     const res = await fetch(`https://r.jina.ai/${url}`, { headers: { authorization: `Bearer ${ctx.settings.get('JINA_API_KEY')}` }, signal: AbortSignal.timeout(40_000) });

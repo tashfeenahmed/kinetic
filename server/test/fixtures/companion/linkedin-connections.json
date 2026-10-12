@@ -1,0 +1,35 @@
+{
+  "data": { "paging": { "start": 0, "count": 40 } },
+  "included": [
+    {
+      "$type": "com.linkedin.voyager.dash.relationships.Connection",
+      "entityUrn": "urn:li:fsd_connection:ACoAAA222",
+      "createdAt": 1717000000000,
+      "connectedMember": "urn:li:fsd_profile:ACoAAA222",
+      "*connectedMemberResolutionResult": "urn:li:fsd_profile:ACoAAA222"
+    },
+    {
+      "$type": "com.linkedin.voyager.dash.identity.profile.Profile",
+      "entityUrn": "urn:li:fsd_profile:ACoAAA222",
+      "publicIdentifier": "mock-personson",
+      "firstName": "Mock",
+      "lastName": "Personson",
+      "headline": "VP Sales @ Example Corp"
+    },
+    {
+      "$type": "com.linkedin.voyager.dash.relationships.Connection",
+      "entityUrn": "urn:li:fsd_connection:ACoAAA333",
+      "createdAt": 1716000000000,
+      "connectedMember": "urn:li:fsd_profile:ACoAAA333",
+      "*connectedMemberResolutionResult": "urn:li:fsd_profile:ACoAAA333"
+    },
+    {
+      "$type": "com.linkedin.voyager.dash.identity.profile.Profile",
+      "entityUrn": "urn:li:fsd_profile:ACoAAA333",
+      "publicIdentifier": "dummy-mctest",
+      "firstName": "Dummy",
+      "lastName": "McTest",
+      "headline": "Founder"
+    }
+  ]
+}

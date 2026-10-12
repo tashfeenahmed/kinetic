@@ -1,0 +1,26 @@
+{
+  "paging": { "start": 0, "count": 25, "total": 26 },
+  "elements": [
+    {
+      "entityUrn": "urn:li:fs_salesProfile:(ACwAAA111,NAME_SEARCH,abcd)",
+      "objectUrn": "urn:li:member:111",
+      "firstName": "Testa",
+      "lastName": "Fakename",
+      "fullName": "Testa Fakename",
+      "geoRegion": "Berlin, Germany",
+      "degree": 2,
+      "premium": true,
+      "currentPositions": [
+        { "title": "Head of Growth", "companyName": "Acme Widgets", "companyUrn": "urn:li:fs_salesCompany:5550001", "current": true, "tenureAtPosition": { "numYears": 2, "numMonths": 3 } }
+      ]
+    },
+    {
+      "entityUrn": "urn:li:fs_salesProfile:(ACwAAA222,NAME_SEARCH,efgh)",
+      "firstName": "Mock",
+      "lastName": "Personson",
+      "geoRegion": "London",
+      "degree": 3,
+      "currentPositions": [{ "title": "VP Sales", "companyName": "Example Corp", "tenureAtPosition": { "numMonths": 7 } }]
+    }
+  ]
+}

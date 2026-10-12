@@ -1,0 +1,22 @@
+{
+  "data": { "*elements": ["urn:li:fsd_company:5550001"] },
+  "included": [
+    {
+      "$type": "com.linkedin.voyager.dash.organization.Company",
+      "entityUrn": "urn:li:fsd_company:5550001",
+      "name": "Acme Widgets",
+      "universalName": "acme-widgets",
+      "websiteUrl": "https://www.acme-widgets.example/",
+      "description": "Acme makes pretend widgets for testing.",
+      "staffCount": 142,
+      "employeeCountRange": { "start": 51, "end": 200 },
+      "industry": ["urn:li:fsd_industry:4"],
+      "*industry": ["urn:li:fsd_industry:4"],
+      "headquarter": { "address": { "city": "Berlin", "geographicArea": "Berlin", "country": "DE" } },
+      "foundedOn": { "year": 2015 },
+      "specialities": ["Widgets", "Testing"],
+      "followingState": { "followerCount": 9876 }
+    },
+    { "$type": "com.linkedin.voyager.dash.common.Industry", "entityUrn": "urn:li:fsd_industry:4", "name": "Software Development" }
+  ]
+}

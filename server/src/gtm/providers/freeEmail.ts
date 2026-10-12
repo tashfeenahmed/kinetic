@@ -9,7 +9,7 @@
 import { getJson, HttpError } from '../lib/http.ts';
 import { fetchPage } from '../lib/html.ts';
 import { toDomain } from '../lib/sandbox.ts';
-import { smtpVerify } from '../lib/smtp.ts';
+import { smtpOptions, smtpVerify } from '../lib/smtp.ts';
 import { nameParts, type Ctx, type EnrichInput, type Hit } from './types.ts';
 
 interface Sample { email: string; name?: string; source: string }
@@ -116,7 +116,7 @@ export async function freeEmailFinder(input: EnrichInput, ctx: Ctx): Promise<Hit
   // 3. SMTP check, up to 4 candidates.
   const checks: { email: string; verdict: string }[] = [];
   for (const email of candidates.slice(0, 4)) {
-    const r = await smtpVerify(email, { helo: ctx.settings.get('SMTP_HELO') });
+    const r = await smtpVerify(email, smtpOptions(ctx.settings));
     checks.push({ email, verdict: r.verdict });
     if (r.verdict === 'valid') return { value: email, confidence: 'verified (SMTP)', data: { ...data, checks, mailProvider: r.mailProvider } };
     if (r.verdict === 'catch_all' || r.verdict === 'unknown') {

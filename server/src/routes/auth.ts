@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Ctx } from '../context.ts';
 import { defineRoutes, HttpError, parse, auth, type Auth } from '../http.ts';
 import { hashPassword, randomToken, sha256, verifyPassword } from '../lib/crypto.ts';
+import { internalAuth } from '../agent/internalAuth.ts';
 
 export const SESSION_COOKIE = 'k_session';
 const SESSION_DAYS = 30;
@@ -10,6 +11,8 @@ const SESSION_DAYS = 30;
 /** Resolves the caller from a Bearer token or session cookie. */
 export function authenticate(ctx: Ctx, req: FastifyRequest): Auth | null {
   const { db } = ctx;
+  const agent = internalAuth(req); // Kinetic Agent's in-process calls (single-use internal token)
+  if (agent) return agent;
   const header = req.headers.authorization;
   if (header?.toLowerCase().startsWith('bearer ')) {
     const token = header.slice(7).trim();

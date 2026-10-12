@@ -1,0 +1,27 @@
+{
+  "data": { "paging": { "start": 0, "count": 2 } },
+  "included": [
+    {
+      "$type": "com.linkedin.voyager.dash.feed.Update",
+      "entityUrn": "urn:li:fsd_update:(urn:li:activity:7100000000000000001,MEMBER_SHARES,EMPTY,DEFAULT,false)",
+      "metadata": { "backendUrn": "urn:li:activity:7100000000000000001" },
+      "actor": {
+        "name": { "text": "Testa Fakename" },
+        "navigationContext": { "actionTarget": "https://www.linkedin.com/in/testa-fakename-123?trk=x" }
+      },
+      "commentary": { "text": { "text": "We just shipped imaginary widgets v2." } }
+    },
+    {
+      "$type": "com.linkedin.voyager.dash.feed.SocialActivityCounts",
+      "entityUrn": "urn:li:fsd_socialActivityCounts:urn:li:activity:7100000000000000001",
+      "numLikes": 42, "numComments": 7, "numShares": 3
+    },
+    {
+      "$type": "com.linkedin.voyager.dash.feed.Update",
+      "entityUrn": "urn:li:fsd_update:(urn:li:activity:7100000000000000002,MEMBER_SHARES,EMPTY,DEFAULT,false)",
+      "metadata": { "backendUrn": "urn:li:activity:7100000000000000002" },
+      "actor": { "name": { "text": "Testa Fakename" }, "navigationContext": { "actionTarget": "https://www.linkedin.com/in/testa-fakename-123" } },
+      "commentary": { "text": { "text": "Hiring pretend engineers." } }
+    }
+  ]
+}

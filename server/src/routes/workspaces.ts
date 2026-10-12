@@ -4,6 +4,7 @@ import type { Ctx } from '../context.ts';
 import { auth, bool, defineRoutes, forbidden, HttpError, idParam, notFound, parse, requireAdmin } from '../http.ts';
 import { hashPassword, randomToken, sha256 } from '../lib/crypto.ts';
 import { seedWorkspaceDefaults, userJson } from './auth.ts';
+import { inboxAiBody, inboxAiSettings } from '../engine/replyAi.ts';
 
 function memberOf(ctx: Ctx, userId: number, workspaceId: number) {
   return ctx.db.get('SELECT role FROM workspace_members WHERE user_id = ? AND workspace_id = ?', [userId, workspaceId]);
@@ -121,15 +122,15 @@ export function workspaceRoutes(app: FastifyInstance, ctx: Ctx) {
   // ---- master inbox settings ----
   r.get('/api/workspaces/v1.1/master-inbox-settings', 'Get master inbox settings', (req) => {
     const w = workspaceJson(ctx, auth(req).workspaceId);
-    return { data: { sync_all_emails: w.sync_all_emails, smart_warmup_filter: w.smart_warmup_filter, auto_interested_categorization: w.auto_interested_categorization } };
+    return { data: { sync_all_emails: w.sync_all_emails, smart_warmup_filter: w.smart_warmup_filter, auto_interested_categorization: w.auto_interested_categorization, ...inboxAiSettings(ctx, w) } };
   });
 
-  const inboxBody = z.object({ sync_all_emails: bool.optional(), smart_warmup_filter: bool.optional(), auto_interested_categorization: bool.optional() });
+  const inboxBody = z.object({ sync_all_emails: bool.optional(), smart_warmup_filter: bool.optional(), auto_interested_categorization: bool.optional(), ...inboxAiBody });
   r.patch('/api/workspaces/v1.1/master-inbox-settings', 'Update master inbox settings', (req) => {
     const a = requireAdmin(req);
     db.update('workspaces', a.workspaceId, parse(inboxBody, req.body));
     const w = workspaceJson(ctx, a.workspaceId);
-    return { data: { sync_all_emails: w.sync_all_emails, smart_warmup_filter: w.smart_warmup_filter, auto_interested_categorization: w.auto_interested_categorization } };
+    return { data: { sync_all_emails: w.sync_all_emails, smart_warmup_filter: w.smart_warmup_filter, auto_interested_categorization: w.auto_interested_categorization, ...inboxAiSettings(ctx, w) } };
   }, { body: inboxBody });
 
   // ---- API tokens ----

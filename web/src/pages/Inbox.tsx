@@ -1,12 +1,12 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
-import { AlertOctagon, ChevronDown, ChevronLeft, ChevronRight, CircleSlash, Inbox as InboxIcon, PenSquare, Search, Send, X } from 'lucide-react';
-import { api, type Paginated } from '../lib/api.ts';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertOctagon, ChevronDown, ChevronLeft, ChevronRight, CircleSlash, Inbox as InboxIcon, PenSquare, Search, Send, Sparkles, X } from 'lucide-react';
+import { api, errorMessage, type Paginated } from '../lib/api.ts';
 import { avatarColor, fmtRelative, initials } from '../lib/format.ts';
-import { Checkbox, cx, EmptyState, IconButton, Loading } from '../components/ui.tsx';
+import { Checkbox, cx, EmptyState, IconButton, Loading, useUi } from '../components/ui.tsx';
 import { Resizer, usePaneWidth } from '../components/Resizer.tsx';
-import { ReplyCategory } from '../components/status.tsx';
+import { REPLY_LABELS, ReplyCategory } from '../components/status.tsx';
 import { Conversation, SentDetail } from './inbox/Conversation.tsx';
 import { ComposeModal } from './inbox/ComposeModal.tsx';
 
@@ -34,7 +34,7 @@ function useDebounced<T>(value: T, ms = 300) {
 
 interface ReplyRow {
   id: number; from_name: string; from_email: string; subject: string; preview: string; received_at: string; read: boolean;
-  category: string; sender_email: string | null; campaign_name: string | null; thread_count: number; interested: boolean;
+  category: string; label?: string; sender_email: string | null; campaign_name: string | null; thread_count: number; interested: boolean;
 }
 interface SentRow {
   id: number; to_email: string; subject: string; preview: string; sent_at: string; campaign_name: string | null; sender_email: string | null; kind: string; latest_reply_id: number | null; opens: number;
@@ -70,9 +70,11 @@ export function InboxPage() {
   const senders = useQuery({ queryKey: ['sender-emails'], queryFn: () => api.get('/api/sender-emails').then((r) => r.data as { id: number; email: string }[]) });
   const campaigns = useQuery({ queryKey: ['campaigns', 'all'], queryFn: () => api.get('/api/campaigns', { per_page: 200 }).then((r) => r.data as { id: number; name: string }[]) });
 
+  // "label:meeting_request" filters by reply label; anything else is a status.
+  const labelFilter = status.startsWith('label:') ? status.slice(6) : undefined;
   const replies = useQuery({
     queryKey: ['inbox', 'replies', { folder, q, status, senderId, campaignId, page }],
-    queryFn: () => api.get<Paginated<ReplyRow> & { counts: { unread_inbox: number } }>('/api/replies', { folder, search: q, status, sender_email_id: senderId, campaign_id: campaignId, page, per_page: 25 }),
+    queryFn: () => api.get<Paginated<ReplyRow> & { counts: { unread_inbox: number } }>('/api/replies', { folder, search: q, status: labelFilter ? undefined : status, label: labelFilter, sender_email_id: senderId, campaign_id: campaignId, page, per_page: 25 }),
     enabled: folder !== 'sent',
     refetchInterval: 30_000,
     placeholderData: (prev) => prev,
@@ -88,6 +90,19 @@ export function InboxPage() {
     queryKey: ['inbox', 'counts'],
     queryFn: () => api.get('/api/replies', { folder: 'inbox', per_page: 1 }).then((r) => r.counts as { unread_inbox: number; unread_interested: number }),
     refetchInterval: 30_000,
+  });
+
+  const qc = useQueryClient();
+  const { toast } = useUi();
+  const aiStatus = useQuery({ queryKey: ['reply-ai-status'], queryFn: () => api.get('/api/replies/ai-status').then((r) => r.data as { active: boolean }) });
+  const resort = useMutation({
+    mutationFn: async (ids: number[]) => { const r = await api.post('/api/replies/reclassify', { reply_ids: ids }); await api.post('/api/replies/ai-queue/run'); return r.data as { queued: number; skipped_manual: number }; },
+    onSuccess: (d) => {
+      toast(`${d.queued} re-sorted${d.skipped_manual ? ` · ${d.skipped_manual} kept your label` : ''}`);
+      setChecked(new Set());
+      qc.invalidateQueries({ queryKey: ['inbox'] }); qc.invalidateQueries({ queryKey: ['thread'] });
+    },
+    onError: (e) => toast(errorMessage(e), 'error'),
   });
 
   const list = folder === 'sent' ? sent : replies;
@@ -129,6 +144,9 @@ export function InboxPage() {
               <option value="not_automated">Not automated</option>
               <option value="automated">Automated</option>
               <option value="unsubscribe">Unsubscribe</option>
+              <optgroup label="Category">
+                {REPLY_LABELS.filter((l) => l.id !== 'bounce').map((l) => <option key={l.id} value={`label:${l.id}`}>{l.label}</option>)}
+              </optgroup>
             </FilterSelect>
           )}
           <FilterSelect value={senderId} onChange={setSenderId} placeholder="Any mailbox">
@@ -162,6 +180,12 @@ export function InboxPage() {
               className="h-8 w-full rounded-md bg-transparent pl-7 pr-2 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-400 hover:bg-zinc-50 focus:bg-zinc-50" />
           </div>
           {checked.size > 0 && <span className="shrink-0 text-[12px] text-zinc-600">{checked.size} selected</span>}
+          {checked.size > 0 && aiStatus.data?.active && (
+            <button onClick={() => resort.mutate([...checked])} disabled={resort.isPending} title="Classify the selected conversations again with AI (your manual labels are kept)"
+              className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[12px] text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50">
+              <Sparkles className="size-3.5" /> Re-sort
+            </button>
+          )}
           {meta && meta.total > 0 && <span className="shrink-0 text-[12px] tabular-nums text-zinc-400">{meta.total.toLocaleString()}</span>}
           <IconButton label="Compose" className="md:hidden" onClick={() => setComposing(true)}><PenSquare className="size-4" /></IconButton>
         </div>
@@ -218,7 +242,7 @@ export function InboxPage() {
                     <div className={cx('truncate text-[13px]', !r.read ? 'text-zinc-900' : 'text-zinc-700')}>{r.subject || '(no subject)'}</div>
                     <div className="flex items-center gap-1.5">
                       <span className="min-w-0 flex-1 truncate text-[12.5px] text-zinc-400">{r.preview}</span>
-                      {r.category !== 'reply' && <ReplyCategory status={r.category} />}
+                      {(r.label ?? r.category) !== 'reply' && <ReplyCategory status={r.label ?? r.category} />}
                       {providerTag && <Tag>{providerTag}</Tag>}
                     </div>
                   </div>

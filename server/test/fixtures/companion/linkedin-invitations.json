@@ -1,0 +1,20 @@
+{
+  "data": { "paging": { "start": 0, "count": 100 } },
+  "included": [
+    {
+      "$type": "com.linkedin.voyager.relationships.invitation.Invitation",
+      "entityUrn": "urn:li:fs_relInvitation:6900000000000000001",
+      "sharedSecret": "s3cretA",
+      "sentTime": 1715000000000,
+      "*toMember": "urn:li:fs_miniProfile:ACoAAA444"
+    },
+    {
+      "$type": "com.linkedin.voyager.identity.shared.MiniProfile",
+      "entityUrn": "urn:li:fs_miniProfile:ACoAAA444",
+      "publicIdentifier": "pending-person",
+      "firstName": "Pending",
+      "lastName": "Person",
+      "occupation": "CTO at Nowhere Inc"
+    }
+  ]
+}

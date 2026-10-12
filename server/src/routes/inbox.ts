@@ -45,6 +45,8 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
     interested: !!row.interested,
     automated: !!row.automated,
     read: !!row.read,
+    label: row.label ?? row.category,
+    ai_details: row.ai_details ? JSON.parse(row.ai_details) : null,
     attachments: JSON.parse(row.attachments || '[]').map((a: any, i: number) => ({ filename: a.filename, size: a.size, content_type: a.content_type, url: `/api/replies/${row.id}/attachments/${i}` })),
   });
 
@@ -55,6 +57,7 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
     campaign_id: z.coerce.number().int().optional(),
     lead_id: z.coerce.number().int().optional(),
     search: z.string().optional(),
+    label: z.string().optional().describe('Comma-separated reply labels, e.g. meeting_request,more_info'),
   });
   r.get('/api/replies', 'Get all replies (master inbox)', (req) => {
     const a = auth(req);
@@ -71,6 +74,8 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
     if (q.sender_email_id) { where.push('r.sender_email_id = ?'); params.push(q.sender_email_id); }
     if (q.campaign_id) { where.push('r.campaign_id = ?'); params.push(q.campaign_id); }
     if (q.lead_id) { where.push('r.lead_id = ?'); params.push(q.lead_id); }
+    const labels = q.label?.split(',').map((x) => x.trim()).filter(Boolean) ?? [];
+    if (labels.length) { where.push(`COALESCE(r.label, r.category) IN (${labels.map(() => '?').join(',')})`); params.push(...labels); }
     if (q.search) { where.push('(r.from_email LIKE ? OR r.from_name LIKE ? OR r.subject LIKE ? OR r.body_text LIKE ?)'); params.push(...Array(4).fill(`%${q.search}%`)); }
     // One row per conversation: the newest matching message.
     const sql = `SELECT r.*, s.email AS sender_email, c.name AS campaign_name,
@@ -224,7 +229,7 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
     const reply = getReply(a.workspaceId, idParam(req));
     const b = parse(skipBody, req.body);
     db.tx(() => {
-      db.update('replies', reply.id, { interested: interested ? 1 : 0, category: interested ? 'interested' : 'not_interested' });
+      db.update('replies', reply.id, { interested: interested ? 1 : 0, category: interested ? 'interested' : 'not_interested', label: interested ? 'interested' : 'not_interested', label_source: 'manual' });
       if (reply.lead_id && reply.campaign_id) {
         db.run(`UPDATE campaign_leads SET status = ? WHERE lead_id = ? AND campaign_id = ? AND status IN ('pending','in_sequence','replied','interested','completed')`,
           [interested ? 'interested' : 'replied', reply.lead_id, reply.campaign_id]);
@@ -252,7 +257,7 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
     const a = canWrite(req);
     const reply = getReply(a.workspaceId, idParam(req));
     const automated = parse(autoBody, req.body).automated;
-    db.update('replies', reply.id, { automated: automated ? 1 : 0, category: automated ? 'auto_reply' : 'reply' });
+    db.update('replies', reply.id, { automated: automated ? 1 : 0, category: automated ? 'auto_reply' : 'reply', label: automated ? 'auto_reply' : 'reply', label_source: 'manual' });
     return { data: replyJson(getReply(a.workspaceId, reply.id)) };
   }, { body: autoBody });
 
@@ -265,7 +270,7 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
       lead = db.get('SELECT * FROM leads WHERE id = ?', [id]);
     }
     unsubscribeLead(ctx, lead!, 'inbox');
-    db.update('replies', reply.id, { category: 'unsubscribe' });
+    db.update('replies', reply.id, { category: 'unsubscribe', label: 'unsubscribe', label_source: 'manual' });
     return { data: replyJson(getReply(a.workspaceId, reply.id)) };
   });
 

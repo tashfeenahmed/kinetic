@@ -31,6 +31,12 @@ const DomainsPage = page(() => import('./pages/Domains.tsx'), 'DomainsPage');
 const GtmTablePage = page(() => import('./gtm/index.tsx'), 'GtmTablePage');
 const GtmSignalsPage = page(() => import('./gtm/index.tsx'), 'GtmSignalsPage');
 const GtmActivityPage = page(() => import('./gtm/index.tsx'), 'GtmActivityPage');
+const GtmFunctionsPage = page(() => import('./gtm/index.tsx'), 'GtmFunctionsPage');
+const VisitorsPage = page(() => import('./pages/Visitors.tsx'), 'VisitorsPage');
+const SearchesPage = page(() => import('./pages/Searches.tsx'), 'SearchesPage');
+const AgentPage = page(() => import('./pages/Agent.tsx'), 'AgentPage');
+const KnowledgePage = page(() => import('./pages/Knowledge.tsx'), 'KnowledgePage');
+const AutomationsPage = page(() => import('./pages/automations/AutomationsPage.tsx'), 'AutomationsPage');
 
 function Gate() {
   const { me, loading, needsSetup } = useAuth();
@@ -42,13 +48,18 @@ function Gate() {
     <Routes>
       <Route element={<AppLayout />}>
         <Route index element={<HomePage />} />
+        <Route path="agent/:sessionId?" element={<AgentPage />} />
+        <Route path="knowledge" element={<KnowledgePage />} />
         <Route path="tables/:id" element={<GtmTablePage />} />
         <Route path="signals" element={<GtmSignalsPage />} />
         <Route path="activity" element={<GtmActivityPage />} />
+        <Route path="functions/:id?" element={<GtmFunctionsPage />} />
+        <Route path="searches" element={<SearchesPage />} />
         <Route path="dashboard" element={<Navigate to="/" replace />} />
         <Route path="leads" element={<LeadsPage />} />
         <Route path="campaigns" element={<CampaignsPage />} />
         <Route path="campaigns/:id/:tab?" element={<CampaignDetailPage />} />
+        <Route path="automations/*" element={<AutomationsPage />} />
         <Route path="inbox" element={<InboxPage />} />
         <Route path="domains" element={<DomainsPage />} />
         <Route path="sender-emails" element={<SenderEmailsPage />} />
@@ -61,6 +72,7 @@ function Gate() {
         <Route path="developers/webhooks" element={<WebhooksPage />} />
         <Route path="settings/:section?" element={<SettingsPage />} />
         <Route path="help" element={<HelpPage />} />
+        <Route path="visitors" element={<VisitorsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

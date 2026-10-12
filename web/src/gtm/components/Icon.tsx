@@ -36,6 +36,9 @@ const PATHS: Record<string, string> = {
   alert: 'M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z',
   panelLeft: 'M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM9 3v18',
   layers: 'm12 2 10 5-10 5L2 7zM2 17l10 5 10-5M2 12l10 5 10-5',
+  blocks: 'M10 21V8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H3M15 3h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z',
+  lookup: 'M3 5h8M3 10h6M3 15h5M15.5 18a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM18 17.5l3 3',
+  tableOut: 'M3 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4M3 9h14M9 3v18M3 15h6M3 5v14a2 2 0 0 0 2 2h4M14 17h7M18 14l3 3-3 3',
 };
 
 export function Icon({ name, size = 16, className = '', fill = false }: { name: string; size?: number; className?: string; fill?: boolean }) {

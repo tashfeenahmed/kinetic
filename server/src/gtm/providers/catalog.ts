@@ -7,6 +7,7 @@ import { freeEmailFinder } from './freeEmail.ts';
 import * as open from './openData.ts';
 import { smtpVerifyStep } from './freeVerify.ts';
 import * as v from './vendors.ts';
+import { lookalikeStep } from '../../sourcing/lookalikeStep.ts';
 import type { EnrichKind, ProviderStep } from './types.ts';
 
 const step = (s: ProviderStep) => s;
@@ -120,6 +121,14 @@ export const ENRICH_KINDS: EnrichKind[] = [
       step({ id: 'website', label: 'Website footer link (free)', requires: [], cost: 'free', run: async (i) => { const h = await free.websiteCompany(i); const url = h?.data?.linkedin; return url ? { value: url } : null; } }),
       step({ id: 'search', label: 'Web search (free)', requires: [], cost: 'free / 1 search', run: free.searchCompanyLinkedin }),
     ],
+  },
+  {
+    id: 'lookalike_companies',
+    label: 'Find lookalike companies',
+    description: 'Companies similar to this one, scored 0–100. Value = list of domains; details hold names, scores and reasons.',
+    inputs: ['domain'],
+    needs: [['domain']],
+    steps: [lookalikeStep],
   },
 ];
 

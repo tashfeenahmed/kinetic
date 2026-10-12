@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ListPlus, Pencil, Plus, Search, Table2, Tag as TagIcon, Trash2, Upload, Users, X } from 'lucide-react';
+import { Download, ListPlus, Pencil, Plus, Search, Table2, Tag as TagIcon, Trash2, Upload, Users, X } from 'lucide-react';
 import { useOpenInTable } from '../components/openInTable.ts';
-import { api, errorMessage, type Paginated } from '../lib/api.ts';
-import { avatarColor, fmtDate, fmtNumber, fullName, initials } from '../lib/format.ts';
+import { api, errorMessage, withQuery, type Paginated } from '../lib/api.ts';
+import { avatarColor, fmtDate, fmtNumber, fmtRelative, fullName, initials } from '../lib/format.ts';
 import { Page, PageHeader } from '../components/Layout.tsx';
 import {
   Badge, Button, Card, Checkbox, cx, EmptyState, Field, IconButton, Input, Loading, Menu, Modal, Pagination, Select, Table, Td, Th, useUi,
@@ -14,6 +14,7 @@ import { LeadFormModal } from './leads/LeadFormModal.tsx';
 import { LeadDrawer } from './leads/LeadDrawer.tsx';
 import { AddToCampaignModal, TagPickerModal, useTags } from './leads/Pickers.tsx';
 import { LEAD_STATUSES, type Lead, type LeadList } from './leads/types.ts';
+import { LeadFilterBar, type StatFilters } from './leads/LeadFilters.tsx';
 
 function useDebounced<T>(value: T, ms = 300) {
   const [v, setV] = useState(value);
@@ -89,17 +90,20 @@ export function LeadsPage() {
   const [status, setStatus] = useState('');
   const [listId, setListId] = useState('');
   const [tagId, setTagId] = useState('');
+  const [stat, setStat] = useState<StatFilters>({});
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [openLead, setOpenLead] = useState<number | null>(null);
   const [modal, setModal] = useState<'import' | 'add' | 'lists' | 'campaign' | 'tag-add' | 'tag-remove' | 'status' | null>(null);
   const q = useDebounced(search);
 
-  useEffect(() => { setPage(1); setSelected(new Set()); }, [q, status, listId, tagId]);
+  const statKey = JSON.stringify(stat);
+  useEffect(() => { setPage(1); setSelected(new Set()); }, [q, status, listId, tagId, statKey]);
 
+  const filters = { search: q, status, lead_list_id: listId, tag_id: tagId, ...stat };
   const leads = useQuery({
-    queryKey: ['leads', { q, status, listId, tagId, page }],
-    queryFn: () => api.get<Paginated<Lead>>('/api/leads', { search: q, status, lead_list_id: listId, tag_id: tagId, page, per_page: 50 }),
+    queryKey: ['leads', { q, status, listId, tagId, stat, page }],
+    queryFn: () => api.get<Paginated<Lead>>('/api/leads', { ...filters, page, per_page: 50 }),
     placeholderData: (prev) => prev,
   });
   const lists = useLists();
@@ -110,7 +114,19 @@ export function LeadsPage() {
   const toggleAll = (v: boolean) => setSelected(v ? new Set(rows.map((r) => r.id)) : new Set());
   const toggle = (id: number, v: boolean) => setSelected((s) => { const n = new Set(s); if (v) n.add(id); else n.delete(id); return n; });
   const ids = [...selected];
-  const filtered = !!(q || status || listId || tagId);
+  const statActive = Object.entries(stat).some(([k, v]) => k !== 'sort' && v !== '');
+  const filtered = !!(q || status || listId || tagId || statActive);
+  const total = leads.data?.meta.total ?? 0;
+  const clearAll = () => { setSearch(''); setStatus(''); setListId(''); setTagId(''); setStat({}); };
+  const selectAllMatching = useMutation({
+    mutationFn: () => api.get('/api/leads/ids', filters).then((r) => r.data as { ids: number[]; total: number }),
+    onSuccess: (d) => {
+      const ids = d.ids.slice(0, 10_000);
+      setSelected(new Set(ids));
+      if (d.total > ids.length) toast(`Selected the first ${fmtNumber(ids.length)} of ${fmtNumber(d.total)} leads`, 'info');
+    },
+    onError: (e) => toast(errorMessage(e), 'error'),
+  });
 
   const openInTable = useOpenInTable();
   const bulk = useMutation({
@@ -130,6 +146,10 @@ export function LeadsPage() {
         title="Leads"
         subtitle="Store and segment all your contacts"
         actions={<>
+          <a href={withQuery('/api/leads/export', filters)} download title="Download the leads matching these filters, with email stats"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+            <Download className="size-4" /> Export
+          </a>
           <Button icon={<Table2 className="size-4" />} loading={openInTable.isPending} onClick={() => openInTable.mutate(listId ? { list_id: Number(listId) } : { all: true })} title="Open these leads as a table to enrich, research and sync back">
             {listId ? 'Open list in table' : 'Open in table'}
           </Button>
@@ -163,9 +183,17 @@ export function LeadsPage() {
           </div>
         </div>
 
+        <LeadFilterBar value={stat} onChange={setStat} base={{ search, status, lead_list_id: listId, tag_id: tagId }}
+          onApplyBase={(b) => { setSearch(b.search ?? ''); setStatus(b.status ?? ''); setListId(b.lead_list_id ?? ''); setTagId(b.tag_id ?? ''); }} />
+
         {selected.size > 0 && (
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-brand-50/60 px-4 py-2.5">
-            <span className="mr-2 text-sm font-medium text-slate-800">{selected.size} selected</span>
+            <span className="mr-2 text-sm font-medium text-slate-800">{fmtNumber(selected.size)} selected</span>
+            {allSelected && total > selected.size && (
+              <button onClick={() => selectAllMatching.mutate()} disabled={selectAllMatching.isPending} className="mr-2 text-[13px] font-medium text-brand-600 hover:underline disabled:opacity-50">
+                Select all {fmtNumber(total)} matching
+              </button>
+            )}
             <Button size="sm" variant="primary" onClick={() => setModal('campaign')}>Add to campaign</Button>
             <Menu
               align="left"
@@ -182,7 +210,7 @@ export function LeadsPage() {
 
         {leads.isLoading ? <Loading /> : rows.length === 0 ? (
           filtered ? (
-            <EmptyState icon={<Search className="size-5" />} title="No leads match these filters" action={<Button onClick={() => { setSearch(''); setStatus(''); setListId(''); setTagId(''); }}>Clear filters</Button>} />
+            <EmptyState icon={<Search className="size-5" />} title="No leads match these filters" action={<Button onClick={clearAll}>Clear filters</Button>} />
           ) : (
             <EmptyState icon={<Users className="size-5" />} title="No leads yet" description="Import a CSV from your list builder or add leads one at a time. Unlimited storage — you never need to delete old leads."
               action={<Button variant="primary" icon={<Upload className="size-4" />} onClick={() => setModal('import')}>Import CSV</Button>} />
@@ -199,7 +227,9 @@ export function LeadsPage() {
                   <Th>Tags</Th>
                   <Th>List</Th>
                   <Th className="text-right">Sent</Th>
+                  <Th className="text-right">Opens</Th>
                   <Th className="text-right">Replies</Th>
+                  <Th>Last contacted</Th>
                   <Th>Added</Th>
                 </tr>
               </thead>
@@ -229,7 +259,9 @@ export function LeadsPage() {
                     </Td>
                     <Td className="max-w-[160px] truncate text-[13px]">{l.lead_list?.name ?? <span className="text-slate-400">—</span>}</Td>
                     <Td className="text-right tabular-nums">{fmtNumber(l.overall_stats.emails_sent)}</Td>
+                    <Td className="text-right tabular-nums">{fmtNumber(l.overall_stats.opens)}</Td>
                     <Td className="text-right tabular-nums">{fmtNumber(l.overall_stats.replies)}</Td>
+                    <Td className="whitespace-nowrap text-[13px] text-slate-500">{l.email_stats?.last_sent_at ? fmtRelative(l.email_stats.last_sent_at) : '—'}</Td>
                     <Td className="whitespace-nowrap text-[13px] text-slate-500">{fmtDate(l.created_at)}</Td>
                   </tr>
                 ))}
