@@ -35,6 +35,20 @@ describe('find prospects', () => {
     expect(t.columns.some((c: any) => c.name === 'Name')).toBe(false); // no empty placeholder column
   });
 
+  it('adds further searches to the same table, skipping rows already there', async () => {
+    const first = await env.api('POST', '/api/gtm/find', { mode: 'companies', query: 'POS', table_name: 'Irish POS' });
+    expect(first.body).toMatchObject({ rows: 2 });
+    const tables = () => env.api('GET', '/api/gtm/tables').then((r) => (r.body.data ?? r.body).length);
+    const before = await tables();
+    const again = await env.api('POST', '/api/gtm/find', { mode: 'companies', query: 'restaurant', table_id: first.body.id });
+    expect(again.status, JSON.stringify(again.body)).toBe(200);
+    expect(again.body).toMatchObject({ id: first.body.id, rows: 0, duplicates: 2, appended: true });
+    const more = await env.api('POST', '/api/gtm/find', { mode: 'companies', query: 'accounting', table_id: first.body.id });
+    expect(more.body).toMatchObject({ id: first.body.id, rows: 1, duplicates: 0 });
+    expect(await tables()).toBe(before);
+    expect((await env.api('GET', `/api/gtm/tables/${first.body.id}`)).body.rows).toHaveLength(3);
+  });
+
   it('explains a miss instead of creating an empty table', async () => {
     const r = await env.api('POST', '/api/gtm/find', { mode: 'companies', query: 'underwater basket weaving' });
     expect(r.status).toBe(404);

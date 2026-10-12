@@ -7,7 +7,7 @@ import { auth, canWrite, defineRoutes } from '../http.ts';
 import * as ex from './exclusions.ts';
 import { geocode, mapsSearch } from './maps.ts';
 import { ID_KINDS, type IdKind } from './normalize.ts';
-import { insertRows, providerCtx, runSource, SOURCE_IDS, SOURCES, type SourceId } from './sources.ts';
+import { appendNewRows, insertRows, providerCtx, runSource, SOURCE_IDS, SOURCES, type SourceId } from './sources.ts';
 import { companyProfile } from './lookalikes.ts';
 import * as saved from './savedSearches.ts';
 
@@ -44,7 +44,7 @@ export const SOURCING_FIND_MODES = ['google_maps', 'company_lookalikes', 'people
 export const isSourcingMode = (m: string): m is (typeof SOURCING_FIND_MODES)[number] => (SOURCING_FIND_MODES as readonly string[]).includes(m);
 
 /** Find prospects for the sourcing modes: search, drop exclusions, open a new table. */
-export async function sourcingFind(ctx: Ctx, workspaceId: number, b: { mode: (typeof SOURCING_FIND_MODES)[number]; query: string; limit: number; params?: Record<string, unknown>; table_name?: string }, reply: FastifyReply) {
+export async function sourcingFind(ctx: Ctx, workspaceId: number, b: { mode: (typeof SOURCING_FIND_MODES)[number]; query: string; limit: number; params?: Record<string, unknown>; table_name?: string; table_id?: number }, reply: FastifyReply) {
   const r = await runSource(ctx, workspaceId, b.mode, { query: b.query, ...b.params }, b.limit);
   const f = ex.filterExcluded(ctx.db, workspaceId, r.records);
   if (!f.kept.length) {
@@ -54,6 +54,11 @@ export async function sourcingFind(ctx: Ctx, workspaceId: number, b: { mode: (ty
         : b.mode === 'company_lookalikes' ? `No lookalikes found for ${b.query}. Add more seed companies, or an Apollo/PDL or OpenRouter key on the Integrations page for wider search.`
           : `No similar people found for "${b.query}". Add target companies, or a search key (Serper/Brave) on the Integrations page.`;
     return reply.code(404).send({ error: 'no_results', message, excluded: f.excluded });
+  }
+  if (b.table_id) {
+    const tableId = ctx.gtm!.store.tableIn(b.table_id, workspaceId).id;
+    const { ids, duplicates } = appendNewRows(ctx, tableId, f.kept, SOURCES[b.mode].shape);
+    return { id: tableId, rows: ids.length, duplicates, appended: true, source: r.label, excluded: f.excluded };
   }
   const label = b.mode === 'google_maps' ? 'Local' : b.mode === 'company_lookalikes' ? 'Lookalikes' : 'People like';
   const tableId = ctx.gtm!.store.createTable(workspaceId, b.table_name ?? `${label} · ${b.query}`.slice(0, 60));

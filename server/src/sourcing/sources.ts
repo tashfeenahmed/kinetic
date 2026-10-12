@@ -10,7 +10,7 @@ import { aiCompanySearch } from '../gtm/providers/aiSearch.ts';
 import { tableRows } from './exclusions.ts';
 import { mapsSearch, type MapsQuery } from './maps.ts';
 import { companyLookalikes, peopleLookalikes, type PersonSeed } from './lookalikes.ts';
-import { rowIds, type SourceShape } from './normalize.ts';
+import { dedupeKey, rowIds, type SourceShape } from './normalize.ts';
 
 export const SOURCES = {
   google_maps: { label: 'Local businesses (Google Maps / OpenStreetMap)', shape: 'place' },
@@ -102,6 +102,13 @@ export async function runSource(app: AppCtx, workspaceId: number, source: Source
 }
 
 /** Rows into a table, then every auto-run column runs on them (same as the tables API). */
+/** Adds only records not already in the table (same dedupe key as saved searches). */
+export function appendNewRows(app: AppCtx, tableId: number, records: Record<string, unknown>[], shape: SourceShape): { ids: number[]; duplicates: number } {
+  const seen = new Set(tableRows(app.db, tableId).map((r) => dedupeKey(r, shape)));
+  const fresh = records.filter((r) => { const k = dedupeKey(r, shape); if (seen.has(k)) return false; seen.add(k); return true; });
+  return { ids: fresh.length ? insertRows(app, tableId, fresh) : [], duplicates: records.length - fresh.length };
+}
+
 export function insertRows(app: AppCtx, tableId: number, records: Record<string, unknown>[]): number[] {
   const { store, engine, bus } = app.gtm!;
   const ids = store.addRows(tableId, records);

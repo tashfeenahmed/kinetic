@@ -31,7 +31,7 @@ Maps URL, Place ID` (Google) or `OSM ID` (OSM), `Source`. `Company domain` is bl
 links to Facebook/Instagram/booking sites instead of its own website.
 
 ## 2. Put results in a table
-- Create a new table directly: `POST /api/gtm/find` `{ "mode": "google_maps", "query": "dentist", "params": { "location": "Berlin", "radius_km": 5 }, "limit": 200, "table_name": "Dentists · Berlin" }` → `{ id, rows, source, excluded }`. Pass `table_name` whenever the user named the table; otherwise it is called "Local · <query>".
+- Create a new table directly: `POST /api/gtm/find` `{ "mode": "google_maps", "query": "dentist", "params": { "location": "Berlin", "radius_km": 5 }, "limit": 200, "table_name": "Dentists · Berlin" }` → `{ id, rows, source, excluded }`. Pass `table_name` whenever the user named the table; otherwise it is called "Local · <query>". For a wider area or another category in the same list, call find again with `"table_id": <id>` — it adds only new businesses (never make a second table).
 - Or add previewed rows: `POST /api/sources/to-table` `{ "name": "Dentists · Berlin", "rows": [...] }` (or `"table_id"` to append).
 - Or into an existing table: `POST /api/gtm/tables/{id}/import/source` `{ "source": "google_maps", "params": { "query": "dentist", "location": "Berlin" }, "limit": 200 }`.
 - To keep watching the area for new businesses, save it — see the `saved-searches-and-watchers` skill (source `google_maps`, same params).
