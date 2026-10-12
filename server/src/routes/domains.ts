@@ -32,7 +32,7 @@ export function domainRoutes(app: FastifyInstance, ctx: Ctx) {
   const r = defineRoutes(app, 'Sending Domains');
   const needCf = () => {
     const cf = cloudflare(ctx);
-    if (!cf) throw badRequest('Connect Cloudflare first: add an API token on the Integrations page (or on the Domains page).');
+    if (!cf) throw badRequest('Connect Cloudflare first: add an API token on the Integrations page (or from Add domain on the Sender Emails page).');
     return cf;
   };
 

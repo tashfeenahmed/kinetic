@@ -51,9 +51,9 @@ export function IntegrationsPage() {
           <GtmKeysSection />
         </Section>
 
-        <Section id="domains" title="Sending domains" description="Connect Cloudflare (key above, under Email infrastructure) and set up each sending domain's MX, SPF, DKIM and DMARC from the Domains page.">
-          <Link to="/domains" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-800 hover:border-slate-300">
-            <BrandIcon domain="cloudflare.com" size={28} /> Open Domains <ArrowRight className="size-4" />
+        <Section id="domains" title="Sending domains" description="Connect Cloudflare (key above, under Email infrastructure) and set up each sending domain's MX, SPF, DKIM and DMARC with Add domain on the Sender Emails page.">
+          <Link to="/sender-emails" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-800 hover:border-slate-300">
+            <BrandIcon domain="cloudflare.com" size={28} /> Open Sender Emails <ArrowRight className="size-4" />
           </Link>
         </Section>
 
