@@ -57,7 +57,7 @@ export const TYPE_META: Record<ColumnType, { icon: string; label: string; hint: 
   formula: { icon: 'fn', label: 'Formula', hint: 'JavaScript over the row' },
   extract: { icon: 'extract', label: 'Extract field', hint: 'Pull one field out of a result' },
   enrich: { icon: 'database', label: 'Enrichment', hint: 'Waterfall across data providers' },
-  ai: { icon: 'sparkles', label: 'AI research', hint: 'Agent with web search' },
+  ai: { icon: 'brain', label: 'AI research', hint: 'Agent with web search' },
   http: { icon: 'code', label: 'HTTP API', hint: 'Call any API' },
   signal: { icon: 'radar', label: 'Signal', hint: 'Hiring, news, funding, tech…' },
   action: { icon: 'send', label: 'Action', hint: 'Slack, webhook, HubSpot, Salesforce' },

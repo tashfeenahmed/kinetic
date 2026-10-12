@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Sparkles } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api.ts';
 import { Alert, Button, Drawer, Field, Input, Select, Textarea, Toggle, cx, useUi } from '../../components/ui.tsx';
 import { CategoryChip, NetworkIcon, useTableColumns, useTables, splitLines, type Job, type Phantom, type PhantomField } from './shared.tsx';
@@ -190,7 +190,7 @@ export function TemplateInput({ field: f, value, onChange, aiInstructions, label
     <Field label={<>{label ?? f.label}{f.required && <span className="text-red-500"> *</span>}</>} hint={f.help}>
       <Textarea rows={4} placeholder={f.placeholder} value={value} onChange={(e) => onChange(e.target.value)} className="font-mono text-[13px]" />
       <div className="mt-1 flex items-center justify-between text-[11.5px] text-zinc-400">
-        <span>{usesAi && <button type="button" onClick={(e) => { e.preventDefault(); setAiPreview((v) => !v); }} className="inline-flex items-center gap-1 text-zinc-600 hover:text-zinc-900"><Sparkles className="size-3" />{aiPreview ? 'Hide AI preview' : 'Preview AI line'}</button>}</span>
+        <span>{usesAi && <button type="button" onClick={(e) => { e.preventDefault(); setAiPreview((v) => !v); }} className="inline-flex items-center gap-1 text-zinc-600 hover:text-zinc-900"><Eye className="size-3" />{aiPreview ? 'Hide AI preview' : 'Preview AI line'}</button>}</span>
         {f.max ? <span className={cx(over && 'text-red-600')}>{value.length} / {f.max}</span> : null}
       </div>
       {preview && (

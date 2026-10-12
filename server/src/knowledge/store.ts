@@ -1,127 +1,155 @@
 /**
- * Knowledge Hub: one structured record per workspace describing what the business
- * sells and to whom, plus free-form source docs. `knowledgeContext` turns it into a
- * compact text block for prompts (the agent, AI research columns, anything else).
+ * Knowledge Hub: plain markdown documents per workspace (company overview, ICP,
+ * personas, tone…), written by the user, the agent or "fill from website".
+ * `knowledgeContext` turns them into a compact text block for prompts (the agent,
+ * AI research columns, AI reply drafts) — pinned docs first, then the user's order.
  */
-import { z } from 'zod';
 import { nowIso, type Db } from '../db/db.ts';
 
-const str = z.string().max(20_000).default('');
-const list = z.array(z.string().max(500)).max(100).default([]);
+export type DocSource = 'user' | 'agent' | 'autofill';
 
-export const hubSchema = z.object({
-  company: z.object({ name: str, website: str, overview: str }).default({ name: '', website: '', overview: '' }),
-  offers: z.array(z.object({ name: str, description: str, pricing: str })).max(50).default([]),
-  icp: z.object({ industries: list, sizes: list, geos: list, tech: list, triggers: list, notes: str })
-    .default({ industries: [], sizes: [], geos: [], tech: [], triggers: [], notes: '' }),
-  personas: z.array(z.object({ title: str, pains: str, goals: str, objections: str })).max(50).default([]),
-  positioning: str,
-  competitors: z.array(z.object({ name: str, domain: str, notes: str })).max(50).default([]),
-  proof: z.array(z.object({ title: str, summary: str, url: str })).max(50).default([]),
-  tone: str,
-  exclusions: str,
-});
-export type Hub = z.infer<typeof hubSchema>;
-
-/** Same shape, every field optional: a PUT replaces only the sections (and company/ICP fields) it sends. */
-const pstr = z.string().max(20_000).optional();
-const plist = z.array(z.string().max(500)).max(100).optional();
-export const hubPatchSchema = z.object({
-  company: z.object({ name: pstr, website: pstr, overview: pstr }).optional(),
-  offers: hubSchema.shape.offers.unwrap().optional(),
-  icp: z.object({ industries: plist, sizes: plist, geos: plist, tech: plist, triggers: plist, notes: pstr }).optional(),
-  personas: hubSchema.shape.personas.unwrap().optional(),
-  positioning: pstr,
-  competitors: hubSchema.shape.competitors.unwrap().optional(),
-  proof: hubSchema.shape.proof.unwrap().optional(),
-  tone: pstr,
-  exclusions: pstr,
-});
-export type HubPatch = z.infer<typeof hubPatchSchema>;
-
-export const SECTIONS = ['company', 'offers', 'icp', 'personas', 'positioning', 'competitors', 'proof', 'tone', 'exclusions'] as const;
-
-export function emptyHub(): Hub {
-  return hubSchema.parse({});
+export interface KnowledgeDoc {
+  id: number;
+  workspace_id: number;
+  title: string;
+  source_url: string | null;
+  content: string;
+  summary: string | null;
+  position: number;
+  pinned: number;
+  created_by: DocSource;
+  created_at: string;
+  updated_at: string;
 }
 
-export function getHub(db: Db, workspaceId: number): Hub & { updated_at: string | null } {
-  const row = db.get<{ data: string; updated_at: string }>('SELECT data, updated_at FROM knowledge_hub WHERE workspace_id = ?', [workspaceId]);
-  let data: unknown = {};
-  try { data = row ? JSON.parse(row.data) : {}; } catch { /* corrupt: start over */ }
-  const parsed = hubSchema.safeParse(data);
-  return { ...(parsed.success ? parsed.data : emptyHub()), updated_at: row?.updated_at ?? null };
+const ORDER = 'pinned DESC, position ASC, id DESC';
+
+export function listDocs(db: Db, workspaceId: number, q = ''): KnowledgeDoc[] {
+  const docs = db.all<KnowledgeDoc>(`SELECT * FROM knowledge_docs WHERE workspace_id = ? ORDER BY ${ORDER}`, [workspaceId]);
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return docs;
+  return docs.filter((d) => { const hay = `${d.title}\n${d.content}`.toLowerCase(); return terms.every((t) => hay.includes(t)); });
 }
 
-export function saveHub(db: Db, workspaceId: number, patch: HubPatch): Hub {
-  const { updated_at: _u, ...cur } = getHub(db, workspaceId);
-  const next: Hub = hubSchema.parse({
-    ...cur,
-    ...patch,
-    company: { ...cur.company, ...(patch.company ?? {}) },
-    icp: { ...cur.icp, ...(patch.icp ?? {}) },
+export function getDoc(db: Db, workspaceId: number, id: number): KnowledgeDoc | undefined {
+  return db.get<KnowledgeDoc>('SELECT * FROM knowledge_docs WHERE id = ? AND workspace_id = ?', [id, workspaceId]);
+}
+
+/** By id, exact title (case-insensitive), then title prefix/substring. */
+export function findDoc(db: Db, workspaceId: number, ref: string | number): KnowledgeDoc | undefined {
+  const s = String(ref).trim();
+  if (/^\d+$/.test(s)) { const d = getDoc(db, workspaceId, Number(s)); if (d) return d; }
+  const docs = listDocs(db, workspaceId);
+  const l = s.toLowerCase().replace(/^#/, '');
+  return docs.find((d) => d.title.toLowerCase() === l) ?? docs.find((d) => d.title.toLowerCase().startsWith(l)) ?? docs.find((d) => d.title.toLowerCase().includes(l));
+}
+
+export function createDoc(db: Db, workspaceId: number, d: { title?: string; content?: string; source_url?: string | null; pinned?: boolean; created_by?: DocSource }): KnowledgeDoc {
+  const now = nowIso();
+  // New docs go to the top of the list.
+  const top = db.get<{ p: number | null }>('SELECT MIN(position) p FROM knowledge_docs WHERE workspace_id = ?', [workspaceId])!.p;
+  const content = d.content ?? '';
+  const id = db.insert('knowledge_docs', {
+    workspace_id: workspaceId, title: d.title?.trim() || titleFrom(content), source_url: d.source_url ?? null, content, summary: null,
+    position: top == null ? 0 : top - 1, pinned: d.pinned ? 1 : 0, created_by: d.created_by ?? 'user', created_at: now, updated_at: now,
   });
-  db.run(`INSERT INTO knowledge_hub (workspace_id, data, updated_at) VALUES (?, ?, ?)
-    ON CONFLICT(workspace_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`, [workspaceId, JSON.stringify(next), nowIso()]);
-  return next;
+  return getDoc(db, workspaceId, id)!;
 }
 
-/** Fills only what's empty — AI drafts never overwrite what the user wrote. */
-export function mergeDraft(cur: Hub, draft: HubPatch): HubPatch {
-  const out: HubPatch = {};
-  const fill = (a: string, b?: string) => (a?.trim() ? a : b ?? a);
-  if (draft.company) out.company = { name: fill(cur.company.name, draft.company.name), website: fill(cur.company.website, draft.company.website), overview: fill(cur.company.overview, draft.company.overview) };
-  if (draft.icp) {
-    const l = (k: 'industries' | 'sizes' | 'geos' | 'tech' | 'triggers') => (cur.icp[k].length ? cur.icp[k] : draft.icp?.[k] ?? []);
-    out.icp = { industries: l('industries'), sizes: l('sizes'), geos: l('geos'), tech: l('tech'), triggers: l('triggers'), notes: fill(cur.icp.notes, draft.icp.notes) };
-  }
-  for (const k of ['offers', 'personas', 'competitors', 'proof'] as const) {
-    if (draft[k]?.length && !cur[k].length) (out as any)[k] = draft[k];
-  }
-  for (const k of ['positioning', 'tone', 'exclusions'] as const) {
-    if (draft[k] && !cur[k].trim()) out[k] = draft[k];
-  }
-  return out;
+/** First heading or line of the markdown, else "Untitled". */
+export function titleFrom(content: string): string {
+  const line = content.split('\n').map((l) => l.replace(/^#+\s*|^[-*>]\s+/, '').trim()).find(Boolean);
+  return line ? line.slice(0, 80) : 'Untitled';
 }
 
-export function isEmptyHub(h: Hub): boolean {
-  return !h.company.name && !h.company.overview && !h.offers.length && !h.personas.length && !h.positioning && !h.icp.industries.length && !h.icp.notes && !h.tone && !h.exclusions && !h.competitors.length && !h.proof.length;
+/** Sets positions to the given order; ids not listed keep their relative order after them. */
+export function reorderDocs(db: Db, workspaceId: number, ids: number[]) {
+  const all = listDocs(db, workspaceId).map((d) => d.id);
+  const order = [...ids.filter((id) => all.includes(id)), ...all.filter((id) => !ids.includes(id))];
+  db.tx(() => order.forEach((id, i) => db.run('UPDATE knowledge_docs SET position = ? WHERE id = ? AND workspace_id = ?', [i, id, workspaceId])));
 }
 
-const join = (xs: string[]) => xs.filter(Boolean).join(', ');
-const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-const one = (s: string) => s.replace(/\s+/g, ' ').trim();
+/** Starter documents: just markdown with headings and prompts to fill in. */
+export const TEMPLATES: { key: string; title: string; content: string }[] = [
+  { key: 'company', title: 'Company overview', content: '## What we do\n\nOne or two sentences: what you sell and the outcome it gives customers.\n\n## Who it is for\n\n- \n\n## Products & pricing\n\n- **Product** — what it does, price\n\n## Key facts\n\n- Founded, team size, HQ, notable customers\n' },
+  { key: 'icp', title: 'Ideal customer profile', content: '## Firmographics\n\n- **Industries:** \n- **Company size:** \n- **Geographies:** \n- **Tech they use:** \n\n## Buying triggers\n\n- Events that make a company likely to buy now (hiring, funding, new location…)\n\n## Good fit signals\n\n- \n\n## Bad fit signals\n\n- \n' },
+  { key: 'personas', title: 'Buyer personas', content: '## Persona: Title / role\n\n**Pains:** \n\n**Goals:** \n\n**Objections:** \n\n**What they care about in an email:** \n' },
+  { key: 'positioning', title: 'Positioning & messaging', content: '## One-liner\n\n\n\n## Value propositions\n\n1. \n2. \n3. \n\n## Differentiators\n\n- Why customers pick us over the alternatives\n' },
+  { key: 'competitors', title: 'Competitors', content: '## Competitor name (domain.com)\n\n- **Where they win:** \n- **Where we win:** \n- **How to position against them:** \n' },
+  { key: 'proof', title: 'Case studies', content: '## Customer name\n\n**Problem:** \n\n**What we did:** \n\n**Result:** a concrete number (e.g. cut lunch queues by 30%)\n\n[Link to the case study](https://)\n' },
+  { key: 'tone', title: 'Tone of voice', content: '## How we sound\n\n- Friendly and direct, no buzzwords\n\n## Cold email rules\n\n- Under 90 words\n- One clear question as the call to action\n- Sign off with first name only\n\n## Words we avoid\n\n- \n' },
+  { key: 'exclusions', title: 'Do-not-target list', content: '## Never contact\n\n- Existing customers\n- Competitors\n- \n\n## Out of scope\n\n- Company types, sizes or regions we do not serve\n' },
+];
 
-/** Compact plain-text summary for prompts. Empty string when nothing is filled in. */
-export function hubText(h: Hub, docs: { title: string; summary: string | null }[] = [], maxChars = 4000): string {
+const clipAt = (s: string, n: number) => {
+  if (s.length <= n) return s;
+  const cut = s.slice(0, n);
+  const nl = cut.lastIndexOf('\n');
+  return `${(nl > n * 0.6 ? cut.slice(0, nl) : cut).trimEnd()} …`;
+};
+
+/** Markdown kept readable but compact: no blank-line runs, trailing spaces or empty bullets. */
+export function compactMarkdown(md: string): string {
+  return md.replace(/\r/g, '').split('\n').map((l) => l.trimEnd()).filter((l) => !/^\s*([-*+]|\d+\.)(\s+\[[ xX]\])?\s*$/.test(l))
+    .join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
+ * Compact prompt text from the docs ('' when there are none with content). Pinned docs
+ * come first and get a bigger share; the rest split what's left. Docs that don't fit are
+ * listed by title so the model knows to read them with the knowledge tool.
+ */
+export function docsText(docs: Pick<KnowledgeDoc, 'id' | 'title' | 'content' | 'pinned'>[], maxChars = 5000): string {
+  const items = docs.map((d) => ({ ...d, body: compactMarkdown(d.content) })).filter((d) => d.body);
+  if (!items.length) return '';
   const out: string[] = [];
-  const c = h.company;
-  if (c.name || c.overview) out.push(`Company: ${c.name || '(unnamed)'}${c.website ? ` (${c.website})` : ''}${c.overview ? ` — ${clip(one(c.overview), 600)}` : ''}`);
-  if (h.offers.length) out.push(`Offers:\n${h.offers.map((o) => `- ${o.name}${o.description ? `: ${clip(one(o.description), 300)}` : ''}${o.pricing ? ` (pricing: ${one(o.pricing)})` : ''}`).join('\n')}`);
-  const icp = h.icp;
-  const icpBits = [
-    icp.industries.length && `industries: ${join(icp.industries)}`, icp.sizes.length && `company sizes: ${join(icp.sizes)}`,
-    icp.geos.length && `geos: ${join(icp.geos)}`, icp.tech.length && `tech: ${join(icp.tech)}`,
-    icp.triggers.length && `buying triggers: ${join(icp.triggers)}`, icp.notes && clip(one(icp.notes), 400),
-  ].filter(Boolean);
-  if (icpBits.length) out.push(`ICP: ${icpBits.join('; ')}`);
-  if (h.personas.length) out.push(`Buyer personas:\n${h.personas.map((p) => `- ${p.title}${p.pains ? ` — pains: ${clip(one(p.pains), 200)}` : ''}${p.goals ? `; goals: ${clip(one(p.goals), 200)}` : ''}${p.objections ? `; objections: ${clip(one(p.objections), 200)}` : ''}`).join('\n')}`);
-  if (h.positioning) out.push(`Positioning / value props: ${clip(one(h.positioning), 700)}`);
-  if (h.competitors.length) out.push(`Competitors: ${h.competitors.map((x) => `${x.name}${x.notes ? ` (${clip(one(x.notes), 120)})` : ''}`).join('; ')}`);
-  if (h.proof.length) out.push(`Proof / case studies:\n${h.proof.map((p) => `- ${p.title}${p.summary ? `: ${clip(one(p.summary), 250)}` : ''}`).join('\n')}`);
-  if (h.tone) out.push(`Tone of voice & email guidelines: ${clip(one(h.tone), 600)}`);
-  if (h.exclusions) out.push(`Do NOT target: ${clip(one(h.exclusions), 400)}`);
-  const withSummary = docs.filter((d) => d.summary);
-  if (withSummary.length) out.push(`Notes from docs:\n${withSummary.slice(0, 8).map((d) => `- ${d.title}: ${clip(one(d.summary!), 300)}`).join('\n')}`);
-  return clip(out.join('\n'), maxChars);
+  const skipped: string[] = [];
+  const reserve = items.length > 1 ? 240 : 0; // for the "More docs" line
+  let left = maxChars - reserve;
+  items.forEach((d, i) => {
+    const head = `### ${d.title} (doc #${d.id})\n`;
+    const rest = items.length - i;
+    const share = d.pinned ? Math.max(left * 0.6, Math.floor(left / rest)) : Math.floor(left / rest);
+    const room = Math.min(share, left) - head.length - 2;
+    if (room < 120) { skipped.push(`#${d.id} ${d.title}`); return; }
+    const block = head + clipAt(d.body, room);
+    out.push(block);
+    left -= block.length + 2;
+  });
+  if (skipped.length) {
+    const names: string[] = [];
+    for (const s of skipped) if ([...names, s].join('; ').length <= reserve - 70) names.push(s);
+    const more = skipped.length - names.length;
+    out.push(`(More docs — read with the knowledge tool: ${names.join('; ')}${more ? `; +${more} more` : ''})`);
+  }
+  return clipAt(out.join('\n\n'), maxChars);
 }
 
 /** The workspace's Knowledge Hub as compact prompt text ('' when empty). For any module. */
-export function knowledgeContext(ctx: { db: Db }, workspaceId: number, maxChars = 4000): string {
+export function knowledgeContext(ctx: { db: Db }, workspaceId: number, maxChars = 5000): string {
   try {
-    const docs = ctx.db.all<{ title: string; summary: string | null }>('SELECT title, summary FROM knowledge_docs WHERE workspace_id = ? ORDER BY id DESC LIMIT 20', [workspaceId]);
-    return hubText(getHub(ctx.db, workspaceId), docs, maxChars);
+    return docsText(listDocs(ctx.db, workspaceId), maxChars);
   } catch {
     return ''; // e.g. migrations not applied in a unit-test DB
   }
+}
+
+/** Matching lines (with their nearest heading) per doc, for search results. */
+export function searchDocs(docs: KnowledgeDoc[], q: string, maxPerDoc = 6): { id: number; title: string; hits: string[] }[] {
+  const terms = q.toLowerCase().split(/\s+/).filter((t) => t.length > 1);
+  if (!terms.length) return [];
+  const out: { id: number; title: string; hits: string[]; score: number }[] = [];
+  for (const d of docs) {
+    let heading = '';
+    const hits: string[] = [];
+    let score = terms.filter((t) => d.title.toLowerCase().includes(t)).length * 3;
+    for (const line of d.content.split('\n')) {
+      if (/^#{1,6}\s/.test(line)) heading = line.replace(/^#+\s*/, '');
+      const l = line.toLowerCase();
+      const n = terms.filter((t) => l.includes(t)).length;
+      if (n && line.trim()) { score += n; if (hits.length < maxPerDoc) hits.push(`${heading && !/^#/.test(line) ? `[${heading}] ` : ''}${line.trim().slice(0, 300)}`); }
+    }
+    if (score) out.push({ id: d.id, title: d.title, hits, score });
+  }
+  return out.sort((a, b) => b.score - a.score).map(({ score: _s, ...r }) => r);
 }

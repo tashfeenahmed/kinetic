@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookOpen, Lock, Pencil, Plus, Trash2, Wand2 } from 'lucide-react';
+import { BookOpen, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api.ts';
 import { fmtRelative } from '../../lib/format.ts';
 import { Badge, Button, EmptyState, Field, Input, Loading, Textarea, cx, useUi } from '../../components/ui.tsx';
@@ -133,7 +133,7 @@ function SkillForm({ skill, onDone }: { skill: AgentSkill | null; onDone: (name?
   return (
     <div>
       <div className="mb-4 flex items-center gap-2">
-        <Wand2 className="size-4 text-zinc-500" />
+        <BookOpen className="size-4 text-zinc-500" />
         <h2 className="text-[15px] font-semibold text-zinc-900">{skill ? `Edit ${skill.name}` : 'New skill'}</h2>
       </div>
       <div className="space-y-4">

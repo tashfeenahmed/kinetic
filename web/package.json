@@ -9,25 +9,34 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.16",
-    "@types/leaflet": "^1.9.12",
     "@types/papaparse": "^5.3.16",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
+    "@types/turndown": "5.0.6",
     "@vitejs/plugin-react": "^6.1.2",
     "tailwindcss": "^4.1.16",
     "typescript": "^5.9.3",
     "vite": "^8.3.4"
   },
   "dependencies": {
+    "@handsontable/react-wrapper": "^18.1.2",
     "@tanstack/react-query": "^5.90.5",
+    "@tiptap/core": "3.31.3",
+    "@tiptap/extension-bubble-menu": "3.31.3",
+    "@tiptap/extension-floating-menu": "3.31.3",
+    "@tiptap/extension-list": "3.31.3",
+    "@tiptap/extensions": "3.31.3",
+    "@tiptap/pm": "3.31.3",
+    "@tiptap/react": "3.31.3",
+    "@tiptap/starter-kit": "3.31.3",
+    "handsontable": "^18.1.2",
     "lucide-react": "^0.546.0",
+    "marked": "18.0.14",
     "papaparse": "^5.5.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router": "^7.18.4",
     "recharts": "^3.3.0",
-    "handsontable": "^18.1.2",
-    "@handsontable/react-wrapper": "^18.1.2",
-    "leaflet": "^1.9.4"
+    "turndown": "7.2.4"
   }
 }

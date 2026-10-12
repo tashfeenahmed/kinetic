@@ -183,10 +183,15 @@ export function Spinner({ className }: { className?: string }) {
   return <Loader2 className={cx('size-5 animate-spin text-slate-400', className)} />;
 }
 
+/** Loading text with a moving grey sweep (see `.text-shimmer` in index.css). */
+export function Shimmer({ children, className }: { children: ReactNode; className?: string }) {
+  return <span className={cx('text-shimmer', className)} role="status">{children}</span>;
+}
+
 export function Loading({ label = 'Loading…' }: { label?: string }) {
   return (
-    <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
-      <Spinner /> {label}
+    <div className="flex items-center justify-center py-16 text-sm">
+      <Shimmer>{label}</Shimmer>
     </div>
   );
 }

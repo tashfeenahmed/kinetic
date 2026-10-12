@@ -56,3 +56,26 @@ body {
 .email-body blockquote {
   @apply border-l-2 border-slate-200 pl-3 ml-0;
 }
+
+/* Loading text: a light → dark → light grey band sweeping left to right */
+.text-shimmer {
+  color: transparent;
+  background-image: linear-gradient(90deg, #a1a1aa 0%, #a1a1aa 35%, #27272a 50%, #a1a1aa 65%, #a1a1aa 100%);
+  background-size: 250% 100%;
+  background-position: 120% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: text-shimmer 1.6s linear infinite;
+}
+@keyframes text-shimmer {
+  to {
+    background-position: -20% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .text-shimmer {
+    animation: none;
+    background: none;
+    color: #71717a;
+  }
+}

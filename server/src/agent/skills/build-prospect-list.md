@@ -4,7 +4,7 @@ description: Use when the user wants a list of companies or people to prospect (
 ---
 # Build a prospect list
 
-Goal: one table with the right companies/people, a verified work email per person, and a short AI research note per row. Read the Knowledge Hub first (`knowledge` tool) so targeting matches the ICP and respects "Do NOT target".
+Goal: one table with the right companies/people, a verified work email per person, and a short AI research note per row. Read the Knowledge Hub first (`knowledge` tool) so targeting matches the ICP and respects the do-not-target list.
 
 ## 1. Find the prospects (creates the table — ONE table per request)
 `POST /api/gtm/find` (add `"table_name"` when the user named the table) → `{ "id": <tableId>, "rows": n, "source": "..." }` (404 `no_results` with a helpful message when nothing matched)

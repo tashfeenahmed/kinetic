@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertOctagon, ChevronDown, ChevronLeft, ChevronRight, CircleSlash, Inbox as InboxIcon, PenSquare, Search, Send, Sparkles, X } from 'lucide-react';
+import { AlertOctagon, ChevronDown, ChevronLeft, ChevronRight, CircleSlash, Inbox as InboxIcon, PenSquare, Search, Send, ArrowDownUp, X } from 'lucide-react';
 import { api, errorMessage, type Paginated } from '../lib/api.ts';
 import { avatarColor, fmtRelative, initials } from '../lib/format.ts';
 import { Checkbox, cx, EmptyState, IconButton, Loading, useUi } from '../components/ui.tsx';
@@ -183,7 +183,7 @@ export function InboxPage() {
           {checked.size > 0 && aiStatus.data?.active && (
             <button onClick={() => resort.mutate([...checked])} disabled={resort.isPending} title="Classify the selected conversations again with AI (your manual labels are kept)"
               className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[12px] text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50">
-              <Sparkles className="size-3.5" /> Re-sort
+              <ArrowDownUp className="size-3.5" /> Re-sort
             </button>
           )}
           {meta && meta.total > 0 && <span className="shrink-0 text-[12px] tabular-nums text-zinc-400">{meta.total.toLocaleString()}</span>}

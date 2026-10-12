@@ -290,7 +290,7 @@ describe('Knowledge Hub context', () => {
       const setupRes = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: { name: 'A', email: 'a@bear.test', password: 'password123' } });
       const cookie = String(setupRes.headers['set-cookie']).split(';')[0]!;
       ctx.gtm!.settings.set('OPENROUTER_API_KEY', 'sk-or-test');
-      const put = await app.inject({ method: 'PUT', url: '/api/knowledge', headers: { cookie }, payload: { positioning: 'Fact: we integrate with HubSpot both ways.' } });
+      const put = await app.inject({ method: 'POST', url: '/api/knowledge/docs', headers: { cookie }, payload: { title: 'Positioning', content: 'Fact: we integrate with HubSpot both ways.' } });
       expect(put.statusCode, put.body).toBe(200);
       const ws = db.get('SELECT id FROM workspaces');
       const id = db.insert('replies', { workspace_id: ws.id, message_id: 'k1@x', from_email: 'x@y.test', subject: 'HubSpot?', body_text: 'Does it work with HubSpot?', received_at: MONDAY_10AM_NY.toISOString() });
