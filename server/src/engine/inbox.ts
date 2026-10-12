@@ -30,7 +30,33 @@ export async function findFolders(client: ImapFlow): Promise<{ inbox: string; sp
 
 /** Syncs one sender mailbox. Returns number of new messages processed. */
 export async function syncSender(ctx: Ctx, sender: Row): Promise<number> {
+  return (await syncSenderResult(ctx, sender)).processed;
+}
+
+export interface SyncResult { processed: number; error: string | null }
+
+/** Syncs in flight, per context and mailbox id: a second caller joins the running pass instead of opening another IMAP session. */
+const inFlight = new WeakMap<Ctx, Map<number, Promise<SyncResult>>>();
+
+/** True while a sync pass for this mailbox is running (background job, "Sync now" or "Sync all"). */
+export function isSyncing(ctx: Ctx, senderId: number): boolean {
+  return !!inFlight.get(ctx)?.has(senderId);
+}
+
+/** Like syncSender, but also reports the error (if any). Concurrent calls for the same mailbox share one pass. */
+export function syncSenderResult(ctx: Ctx, sender: Row): Promise<SyncResult> {
+  let map = inFlight.get(ctx);
+  if (!map) inFlight.set(ctx, (map = new Map()));
+  const running = map.get(sender.id);
+  if (running) return running;
+  const p = runSync(ctx, sender).finally(() => map.delete(sender.id));
+  map.set(sender.id, p);
+  return p;
+}
+
+async function runSync(ctx: Ctx, sender: Row): Promise<SyncResult> {
   let processed = 0;
+  let error: string | null = null;
   try {
     processed = await ctx.mail.withImap(sender, async (client) => {
       const { inbox, spam } = await findFolders(client);
@@ -48,11 +74,12 @@ export async function syncSender(ctx: Ctx, sender: Row): Promise<number> {
     ctx.db.update('sender_emails', sender.id, update);
   } catch (err: any) {
     const msg = String(err?.responseText ?? err?.message ?? err);
+    error = msg;
     ctx.log.warn({ sender: sender.email, err: msg }, 'imap sync failed');
     if (isAuthError(err)) markDisconnected(ctx, sender, msg);
     else ctx.db.update('sender_emails', sender.id, { last_error: msg.slice(0, 500) });
   }
-  return processed;
+  return { processed, error };
 }
 
 async function syncFolder(ctx: Ctx, sender: Row, client: ImapFlow, folder: string, kind: FolderKind): Promise<number> {
