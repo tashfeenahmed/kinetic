@@ -6,7 +6,7 @@ description: Use when the user wants a list of companies or people to prospect (
 
 Goal: one table with the right companies/people, a verified work email per person, and a short AI research note per row. Read the Knowledge Hub first (`knowledge` tool) so targeting matches the ICP and respects "Do NOT target".
 
-## 1. Find the prospects (creates the table)
+## 1. Find the prospects (creates the table — ONE table per request)
 `POST /api/gtm/find` (add `"table_name"` when the user named the table) → `{ "id": <tableId>, "rows": n, "source": "..." }` (404 `no_results` with a helpful message when nothing matched)
 ```json
 { "mode": "companies", "query": "point of sale software Ireland", "limit": 50 }
@@ -18,7 +18,13 @@ Goal: one table with the right companies/people, a verified work email per perso
 - Apollo (needs APOLLO_API_KEY): create a table, then `POST /api/gtm/tables/{id}/import/source` with `{ "source": "apollo_people", "params": { "titles": "CEO, Founder", "domains": "a.com, b.com", "locations": "Ireland" }, "limit": 100 }` (or `apollo_companies`).
 - For CSV or other shapes see the `table-building` skill.
 
-Keep row counts modest (≤100) unless the user asks for more. If more rows are needed than one AI search returns, run a second find with a narrower query and copy rows over with `POST /api/gtm/tables/{id}/rows`.
+Keep row counts modest (≤100) unless the user asks for more.
+
+**One request = one table.** The first find creates the table; every further search for the same list MUST go into that table by passing `"table_id": <id>` — never create a second table for "batch 2". With `table_id`, find adds only rows not already in the table and returns `{ id, rows: <added>, duplicates, appended: true }`:
+```json
+{ "mode": "companies", "query": "EPOS systems Ireland", "ai": true, "limit": 40, "table_id": 12 }
+```
+Vary the wording between searches (AI web search returns overlapping results); stop when `rows` comes back 0–2 twice — say how many you reached instead of looping. Add enrichment columns once, after the rows are in (new rows pick up auto-run columns automatically).
 
 ## 2. People: who to contact at each company
 A companies table has no person yet. Cheapest options first:

@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { unwrap, stringify } from './lib/template.ts';
 import { filterExcluded } from '../sourcing/exclusions.ts';
 import { isSourcingMode, sourcingFind } from '../sourcing/routes.ts';
-import { runSource } from '../sourcing/sources.ts';
+import { appendNewRows, runSource } from '../sourcing/sources.ts';
 
 const id = z.coerce.number().int().positive();
 const COLUMN_TYPES = ['text', 'formula', 'extract', 'enrich', 'ai', 'http', 'signal', 'action', 'lookup', 'function'] as const;
@@ -120,8 +120,9 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
     limit: z.number().int().min(1).max(500).default(100),
     ai: z.boolean().optional(), // force the AI web search for companies
     table_name: z.string().trim().min(1).max(120).optional(), // name for the new table (default: "<Kind> · <query>")
+    table_id: z.number().int().positive().optional(), // add to this existing table instead (skips rows already in it)
   });
-  r.post('/api/gtm/find', 'Find prospects and open them in a new table', async (req, reply) => {
+  r.post('/api/gtm/find', 'Find prospects and open them in a new table (or add them to an existing one with table_id, skipping duplicates)', async (req, reply) => {
     const a = canWrite(req);
     const b = findBody.parse(req.body ?? {});
     if (isSourcingMode(b.mode)) return sourcingFind(ctx, a.workspaceId, { ...b, mode: b.mode }, reply);
@@ -152,6 +153,11 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
           ? `No public members found for "${b.query}" on GitHub. Many companies keep membership private — try their GitHub org name (e.g. "vercel").`
           : `No open roles found for "${b.query}" on public job boards (Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Recruitee, Personio).`;
       return reply.code(404).send({ error: 'no_results', message: why, ai_available: aiReady });
+    }
+    if (b.table_id) {
+      const tableId = store.tableIn(b.table_id, a.workspaceId).id;
+      const { ids, duplicates } = appendNewRows(ctx, tableId, records, b.mode === 'companies' ? 'company' : b.mode === 'people' ? 'person' : 'job');
+      return { id: tableId, rows: ids.length, duplicates, appended: true, source, excluded: excl.excluded };
     }
     const label = b.mode === 'companies' ? 'Companies' : b.mode === 'people' ? 'People' : 'Jobs';
     const tableId = store.createTable(a.workspaceId, b.table_name ?? `${label} · ${b.query}`.slice(0, 60));
