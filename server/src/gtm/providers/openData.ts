@@ -131,7 +131,7 @@ export async function githubPeople(token: string | undefined, q: { org?: string;
   const members: any[] = [];
   for (let page = 1; members.length < q.limit && page <= 10; page++) {
     const batch = await getJson<any[]>(`https://api.github.com/orgs/${org}/public_members`, { headers, query: { per_page: 100, page } }).catch((e) => {
-      if (e instanceof HttpError && e.status === 403) throw new Error('GitHub rate limit reached (60/hour without a token) — add a free GITHUB_TOKEN in Settings');
+      if (e instanceof HttpError && e.status === 403) throw new Error('GitHub rate limit reached (60/hour without a token) — add a free GITHUB_TOKEN on the Integrations page');
       if (e instanceof HttpError && e.status === 404) throw new Error(`No GitHub org "${org}"`);
       throw e;
     });

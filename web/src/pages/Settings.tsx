@@ -1,19 +1,17 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { NavLink, useParams } from 'react-router';
+import { Navigate, NavLink, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, AlertTriangle, XCircle, Plus, Trash2, Search } from 'lucide-react';
 import { api, errorMessage } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import { fmtDate } from '../lib/format.ts';
 import { Page, PageHeader } from '../components/Layout.tsx';
-import { GtmKeysSection } from '../gtm/index.tsx';
 import {
   Alert, Badge, Button, Card, CopyText, EmptyState, Field, Input, Loading, Modal, Pagination, Select, Table, Td, Textarea, Th, Toggle, cx, useUi,
 } from '../components/ui.tsx';
 
 const SECTIONS = [
   { id: 'profile', label: 'Profile' },
-  { id: 'keys', label: 'Data, AI & integrations' },
   { id: 'workspace', label: 'Workspace & team' },
   { id: 'inbox', label: 'Master inbox' },
   { id: 'blacklist', label: 'Blacklist' },
@@ -27,10 +25,12 @@ const SECTIONS = [
 
 export function SettingsPage() {
   const { section = 'profile' } = useParams();
+  // Provider keys moved to the Integrations page.
+  if (section === 'keys') return <Navigate to="/integrations#providers" replace />;
   const current = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]!;
   return (
     <Page>
-      <PageHeader title="Settings" subtitle="Your account, workspace, sending rules, and the data & AI providers behind your tables." />
+      <PageHeader title="Settings" subtitle="Your account, workspace and sending rules." />
       <div className="flex flex-col gap-8 lg:flex-row">
         <nav className="flex shrink-0 gap-1 overflow-x-auto lg:w-52 lg:flex-col scroll-thin">
           {SECTIONS.map((s) => (
@@ -41,7 +41,6 @@ export function SettingsPage() {
         </nav>
         <div className="min-w-0 flex-1 space-y-6">
           {current.id === 'profile' && <Profile />}
-          {current.id === 'keys' && <GtmKeysSection />}
           {current.id === 'workspace' && <Workspace />}
           {current.id === 'inbox' && <InboxSettings />}
           {current.id === 'blacklist' && <Blacklist />}

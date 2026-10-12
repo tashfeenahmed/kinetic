@@ -188,7 +188,7 @@ export function SignalPackDialog({ tableId, columns, catalog, onClose, onDone }:
       </div>
       {alert === 'slack' && (slackReady
         ? <label>Channel (optional — needs a bot token; otherwise your incoming webhook's channel)<input value={channel} onChange={(e) => setChannel(e.target.value)} placeholder="#signals" /></label>
-        : <p className="warn">Add a Slack incoming webhook URL in Settings for alerts to send.</p>)}
+        : <p className="warn">Add a Slack incoming webhook URL on the Integrations page for alerts to send.</p>)}
       {alert === 'webhook' && <label>Webhook URL<input value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} placeholder="https://n8n.example.com/webhook/…" /></label>}
     </Modal>
   );

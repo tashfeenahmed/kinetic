@@ -70,7 +70,7 @@ export async function runAgent(cfg: AgentConfig, ctx: Ctx): Promise<AgentResult>
   const base = (ctx.settings.get('AI_BASE_URL') || 'https://openrouter.ai/api/v1').replace(/\/$/, '');
   const local = !base.includes('openrouter.ai');
   const key = ctx.settings.get('OPENROUTER_API_KEY');
-  if (!key && !local) throw new Error('Set OPENROUTER_API_KEY in Settings, or AI_BASE_URL for a local model');
+  if (!key && !local) throw new Error('Set OPENROUTER_API_KEY on the Integrations page, or AI_BASE_URL for a local model');
   const model = cfg.model || ctx.settings.get('AI_MODEL') || DEFAULT_MODEL;
   const outputs = cfg.outputs.length ? cfg.outputs : [{ name: 'answer', type: 'string' as const }];
   const maxSteps = Math.min(cfg.maxSteps ?? 8, 20);

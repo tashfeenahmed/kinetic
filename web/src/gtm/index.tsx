@@ -3,10 +3,9 @@
  * app router. Pages render inside a `.gtm` wrapper that scopes their styles.
  */
 import { useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useGtmCatalog, useGtmTables } from './lib/queries';
-import { Home } from './pages/Home';
 import { TablePage } from './pages/TablePage';
 import { Signals } from './pages/Signals';
 import { Logs } from './pages/Logs';
@@ -24,15 +23,6 @@ function useRefresh(key: string) {
 
 const Shell = ({ children }: { children: React.ReactNode }) => <div className="gtm">{children}</div>;
 const Waiting = () => <div className="loading">Loading…</div>;
-
-export function GtmHomePage() {
-  const catalog = useGtmCatalog();
-  const tables = useGtmTables();
-  const refresh = useRefresh('gtm-tables');
-  const navigate = useNavigate();
-  if (!catalog.data) return <Shell><Waiting /></Shell>;
-  return <Shell><Home tables={tables.data ?? []} onOpen={(id) => navigate(`/tables/${id}`)} onChanged={refresh} catalog={catalog.data} /></Shell>;
-}
 
 export function GtmTablePage() {
   const { id } = useParams();

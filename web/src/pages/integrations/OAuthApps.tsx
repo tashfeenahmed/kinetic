@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api.ts';
+import { BrandIcon } from '../../components/BrandIcon.tsx';
 import { Alert, Badge, Button, Card, CopyText, Field, Input, Loading, useUi } from '../../components/ui.tsx';
 
 interface Settings {
@@ -63,7 +64,7 @@ export function OAuthApps() {
 
       <div className="grid gap-8 lg:grid-cols-2">
         <section>
-          <div className="mb-3 flex items-center justify-between"><h4 className="font-semibold text-slate-900">Google</h4>{configured(s.google_client_id, s.google_client_secret_set)}</div>
+          <div className="mb-3 flex items-center justify-between"><h4 className="flex items-center gap-2 font-semibold text-slate-900"><BrandIcon domain="google.com" size={26} />Google</h4>{configured(s.google_client_id, s.google_client_secret_set)}</div>
           <p className="text-[13px] text-slate-500">Optional — Google mailboxes work with app passwords without this.</p>
           <div className="my-3">
             <Steps items={[
@@ -81,7 +82,7 @@ export function OAuthApps() {
         </section>
 
         <section>
-          <div className="mb-3 flex items-center justify-between"><h4 className="font-semibold text-slate-900">Microsoft</h4>{configured(s.microsoft_client_id, s.microsoft_client_secret_set)}</div>
+          <div className="mb-3 flex items-center justify-between"><h4 className="flex items-center gap-2 font-semibold text-slate-900"><BrandIcon domain="microsoft.com" size={26} />Microsoft</h4>{configured(s.microsoft_client_id, s.microsoft_client_secret_set)}</div>
           <p className="text-[13px] text-slate-500">Recommended for Microsoft 365 — password SMTP is switched off by default from the end of 2026.</p>
           <div className="my-3">
             <Steps items={[

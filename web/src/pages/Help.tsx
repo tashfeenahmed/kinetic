@@ -14,7 +14,7 @@ const FAQ = [
   ['Does a reply stop the sequence?', 'Yes, for that lead in that campaign (you can turn this off in campaign Settings). Out-of-office replies never stop a sequence. Unsubscribe requests stop every campaign for the lead.'],
   ['Why did a follow-up not thread?', 'Turn on “Reply in same thread” for that step. Threaded follow-ups reuse the subject and reply to the previous email from the same mailbox.'],
   ['How do Tables and Outreach connect?', 'In any table, “Send to campaign” turns rows into leads (enrichment and AI columns become custom variables you can use in sequences) and adds them to a campaign. An “Outreach status” column then updates live as emails send and replies arrive. From Leads or a campaign, “Open in table” goes the other way.'],
-  ['Where do I add keys for enrichment, AI and search?', 'Settings → Data, AI & integrations. Every key is optional — most enrichments and all core signals have free built-in sources, and keys are stored encrypted.'],
+  ['Where do I add keys for enrichment, AI and search?', 'The Integrations page (Data, AI & CRM providers). Every key is optional — most enrichments and all core signals have free built-in sources, and keys are stored encrypted.'],
   ['Where do warmup emails go?', 'They are rescued from spam, marked read and moved into a “Kinetic Warmup” folder in each mailbox. They never appear in the Master Inbox.'],
   ['Do opens count accurately?', 'Opens are approximate — Apple Mail and security scanners load images automatically. Kinetic ignores hits in the first seconds after sending, but replies are the metric to trust. Plain text without tracking gives the best deliverability.'],
 ];

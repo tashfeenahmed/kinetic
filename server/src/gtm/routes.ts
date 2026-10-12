@@ -428,7 +428,9 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
   });
 
   /** Integration logos: fetched once from Google's favicon service, then served from disk. */
-  const iconDomains = new Set(SETTINGS_META.map((m) => m.domain).filter(Boolean) as string[]);
+  // Provider logos plus the other brands shown on the Integrations page.
+  const EXTRA_ICONS = ['google.com', 'microsoft.com', 'gmail.com', 'outlook.com', 'yahoo.com', 'n8n.io', 'make.com', 'zapier.com', 'ycombinator.com', 'wikidata.org', 'news.google.com', 'cloudflare.com'];
+  const iconDomains = new Set([...SETTINGS_META.map((m) => m.domain).filter(Boolean) as string[], ...EXTRA_ICONS]);
   r.get('/api/gtm/icon/:domain', 'Integration logo', async (req, reply) => {
     const domain = String((req.params as any).domain).toLowerCase();
     if (!iconDomains.has(domain)) return reply.code(404).send({ error: 'unknown integration' });

@@ -61,7 +61,7 @@ export function DocsPage() {
               <li><b>Signals</b> watch hiring, news, Hacker News, SEC filings, government contracts, tech stack, page changes, GitHub and new subdomains on a schedule; changes appear in <Link className="text-brand-600 underline" to="/signals">Signals</Link>.</li>
               <li><b>Actions</b> post to Slack, webhooks, HubSpot, Salesforce — or into your campaigns.</li>
             </ul>
-            <p>Use <span className="font-mono text-sm">{'{{Column}}'}</span> in any input. Auto-run columns re-run when their inputs change; <span className="font-mono text-sm">changed("Column")</span> in a run-if turns them into alerts. Provider keys live in <Link className="text-brand-600 underline" to="/settings/keys">Settings → Data, AI &amp; integrations</Link>.</p>
+            <p>Use <span className="font-mono text-sm">{'{{Column}}'}</span> in any input. Auto-run columns re-run when their inputs change; <span className="font-mono text-sm">changed("Column")</span> in a run-if turns them into alerts. Provider keys live in the <Link className="text-brand-600 underline" to="/integrations">Integrations</Link> page.</p>
           </DocSection>
           <DocSection id="tables-outreach" title="Tables → campaigns → replies">
             <ol className="list-decimal space-y-1.5 pl-5">

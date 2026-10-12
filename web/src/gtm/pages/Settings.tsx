@@ -54,7 +54,7 @@ export function Settings({ onSaved, embedded }: { onSaved: () => void; embedded?
     <div className={embedded ? 'settings embedded' : 'page'}><div className={embedded ? '' : 'page-inner settings'}>
       <div className="settings-head">
         <div>
-          <h1>{embedded ? 'Data, AI & integrations' : 'Settings'}</h1>
+          <h1>{embedded ? 'Providers & keys' : 'Settings'}</h1>
           <span className="muted" style={{ fontSize: 13 }}>{configured} of {keys.length} configured · {starters.filter((k) => k.set).length}/{starters.length} “start here” keys set</span>
         </div>
         <span style={{ flex: 1 }} />

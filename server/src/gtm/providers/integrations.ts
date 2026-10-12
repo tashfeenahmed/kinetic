@@ -39,7 +39,7 @@ export async function callHttp(opts: { url: string; method?: string; headers?: R
 const HS = 'https://api.hubapi.com';
 const hsHeaders = (s: Settings) => {
   const t = s.get('HUBSPOT_TOKEN');
-  if (!t) throw new Error('Set HUBSPOT_TOKEN (private app access token) in Settings');
+  if (!t) throw new Error('Set HUBSPOT_TOKEN (private app access token) on the Integrations page');
   return { authorization: `Bearer ${t}` };
 };
 

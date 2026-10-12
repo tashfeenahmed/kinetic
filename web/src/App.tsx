@@ -8,7 +8,7 @@ import { LoginPage, SetupPage } from './pages/Auth.tsx';
 // Pages load on demand so the first paint stays small.
 const page = <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) =>
   lazy(() => load().then((m) => ({ default: m[name] })));
-const DashboardPage = page(() => import('./pages/Dashboard.tsx'), 'DashboardPage');
+const HomePage = page(() => import('./pages/Home.tsx'), 'HomePage');
 const LeadsPage = page(() => import('./pages/Leads.tsx'), 'LeadsPage');
 const CampaignsPage = page(() => import('./pages/Campaigns.tsx'), 'CampaignsPage');
 const CampaignDetailPage = page(() => import('./pages/CampaignDetail.tsx'), 'CampaignDetailPage');
@@ -22,7 +22,6 @@ const DeveloperApiPage = page(() => import('./pages/Developers.tsx'), 'Developer
 const WebhooksPage = page(() => import('./pages/Developers.tsx'), 'WebhooksPage');
 const SettingsPage = page(() => import('./pages/Settings.tsx'), 'SettingsPage');
 const HelpPage = page(() => import('./pages/Help.tsx'), 'HelpPage');
-const GtmHomePage = page(() => import('./gtm/index.tsx'), 'GtmHomePage');
 const GtmTablePage = page(() => import('./gtm/index.tsx'), 'GtmTablePage');
 const GtmSignalsPage = page(() => import('./gtm/index.tsx'), 'GtmSignalsPage');
 const GtmActivityPage = page(() => import('./gtm/index.tsx'), 'GtmActivityPage');
@@ -36,11 +35,11 @@ function Gate() {
     <Suspense fallback={<Loading />}>
     <Routes>
       <Route element={<AppLayout />}>
-        <Route index element={<GtmHomePage />} />
+        <Route index element={<HomePage />} />
         <Route path="tables/:id" element={<GtmTablePage />} />
         <Route path="signals" element={<GtmSignalsPage />} />
         <Route path="activity" element={<GtmActivityPage />} />
-        <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="dashboard" element={<Navigate to="/" replace />} />
         <Route path="leads" element={<LeadsPage />} />
         <Route path="campaigns" element={<CampaignsPage />} />
         <Route path="campaigns/:id/:tab?" element={<CampaignDetailPage />} />

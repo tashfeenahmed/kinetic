@@ -2,7 +2,7 @@ import { Suspense, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  BarChart3, Users, Send, Inbox, AtSign, Flame, Clock, Puzzle, Code2, ChevronDown, Settings, HelpCircle, LogOut,
+  Users, Send, Inbox, AtSign, Flame, Clock, Puzzle, Code2, ChevronDown, Settings, HelpCircle, LogOut,
   PanelLeftClose, PanelLeft, Check, Plus, ChevronRight, Menu as MenuIcon, X, Home as HomeIcon, Radar, Table2, Activity,
 } from 'lucide-react';
 import { useGtmTables } from '../gtm/lib/queries';
@@ -12,7 +12,6 @@ import { initials } from '../lib/format.ts';
 import { cx, Button, Field, Input, Loading, Modal, useUi } from './ui.tsx';
 
 const OUTREACH_NAV = [
-  { to: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   { to: '/campaigns', label: 'Campaigns', icon: Send },
   { to: '/leads', label: 'Leads', icon: Users },
   { to: '/inbox', label: 'Master Inbox', icon: Inbox, badge: 'unread' as const },

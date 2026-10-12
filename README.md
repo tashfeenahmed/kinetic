@@ -36,7 +36,7 @@ Spreadsheets (Handsontable) whose columns do work. Column types: text, formula (
 - **Automation:** auto-run columns, run-if conditions (`changed("Col")`), scheduled refresh, one-click signal pack with Slack/webhook alerts, Signals feed.
 - **Actions:** Slack, webhooks, HubSpot, Salesforce, **Add to campaign**, **Create/update lead**.
 
-Provider keys: **Settings → Data, AI & integrations** (stored encrypted). See `docs/RESEARCH.md` and `docs/FREE_ALTERNATIVES.md` for pricing and free options.
+Provider keys: the **Integrations** page (stored encrypted). See `docs/RESEARCH.md` and `docs/FREE_ALTERNATIVES.md` for pricing and free options.
 
 ## Outreach
 

@@ -56,7 +56,7 @@ async function duckduckgo(query: string, count: number): Promise<SearchResult[]>
   });
   const html = await res.text();
   if (!res.ok || /anomaly|captcha/i.test(html.slice(0, 5000)) && !html.includes('result__a')) {
-    throw new Error('DuckDuckGo blocked the request; add a Serper or Brave key in Settings for reliable search');
+    throw new Error('DuckDuckGo blocked the request; add a Serper or Brave key on the Integrations page for reliable search');
   }
   const out: SearchResult[] = [];
   const blocks = html.split(/<div class="result[ _]/).slice(1);

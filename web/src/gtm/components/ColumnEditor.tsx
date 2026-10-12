@@ -182,7 +182,7 @@ export function ColumnEditor(props: Props) {
 
         {type === 'ai' && (
           <>
-            {!catalog.aiReady && <p className="warn">Add an OpenRouter key in Settings to run AI columns.</p>}
+            {!catalog.aiReady && <p className="warn">Add an OpenRouter key on the Integrations page to run AI columns.</p>}
             <label>Prompt
               <TemplateInput multiline rows={7} value={config.prompt ?? ''} onChange={(v) => set({ prompt: v })} columns={others}
                 placeholder={'Research {{Company}} ({{Company domain}}). What do they sell, who is their ICP, and are they likely to need an outbound data tool? Cite sources.'} />
@@ -430,7 +430,7 @@ function ActionForm({ config, set, others, catalog }: { config: any; set: (p: an
           {catalog.actions.map((a) => <option key={a.id} value={a.id}>{a.label}{a.ready ? '' : ' (not configured)'}</option>)}
         </select>
       </label>
-      {action && !action.ready && <p className="warn">Configure this integration in Settings first.</p>}
+      {action && !action.ready && <p className="warn">Configure this integration on the Integrations page first.</p>}
       <p className="hint">Actions fire once per run. Turn on auto-run + a run-if to make them alerts (e.g. post to Slack when a signal changes).</p>
       {config.kind === 'slack' && (
         <>
