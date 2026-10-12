@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { AlertOctagon, CircleSlash, Inbox as InboxIcon, PenSquare, Search, Send } from 'lucide-react';
+import { AlertOctagon, ChevronDown, ChevronLeft, ChevronRight, CircleSlash, Inbox as InboxIcon, PenSquare, Search, Send, X } from 'lucide-react';
 import { api, type Paginated } from '../lib/api.ts';
 import { avatarColor, fmtRelative, initials } from '../lib/format.ts';
-import { Badge, Button, Checkbox, cx, EmptyState, Input, Loading, Select } from '../components/ui.tsx';
+import { Checkbox, cx, EmptyState, IconButton, Loading } from '../components/ui.tsx';
+import { Resizer, usePaneWidth } from '../components/Resizer.tsx';
 import { ReplyCategory } from '../components/status.tsx';
 import { Conversation, SentDetail } from './inbox/Conversation.tsx';
 import { ComposeModal } from './inbox/ComposeModal.tsx';
@@ -50,6 +51,8 @@ export function InboxPage() {
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [composing, setComposing] = useState(false);
   const q = useDebounced(search);
+  const folderPane = usePaneWidth('inbox-folders', 200, 160, 320);
+  const listPane = usePaneWidth('inbox-list', 380, 280, 680);
 
   const replyParam = params.get('reply');
   const sentParam = params.get('sent');
@@ -91,84 +94,98 @@ export function InboxPage() {
   const meta = list.data?.meta;
   const detailOpen = !!(openReply || openSent);
 
+  const filtered = !!(q || status || senderId || campaignId);
+  const toggleChecked = (id: number, v: boolean) => setChecked((s) => { const n = new Set(s); if (v) n.add(id); else n.delete(id); return n; });
+
   return (
     <div className="flex h-full min-h-0 bg-white">
       {/* Folders & filters */}
-      <aside className={cx('w-64 shrink-0 flex-col gap-2 overflow-y-auto border-r border-slate-200 px-4 py-5 scroll-thin', detailOpen ? 'hidden xl:flex' : 'hidden md:flex')}>
-        <Button variant="primary" className="mb-2 w-full" icon={<PenSquare className="size-4" />} onClick={() => setComposing(true)}>Compose</Button>
-        {FOLDERS.map((f) => {
-          const Icon = f.icon;
-          const active = folder === f.id;
-          return (
-            <button key={f.id} onClick={() => { setFolder(f.id); select(null); }}
-              className={cx('flex items-center gap-3 rounded-xl border px-4 py-2.5 text-[15px] transition-colors', active ? 'border-brand-200 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-700 hover:bg-slate-50')}>
-              <Icon className="size-[18px]" strokeWidth={1.75} />
-              <span className="flex-1 text-left">{f.label}</span>
-              {f.id === 'inbox' && !!counts.data?.unread_inbox && <span className="rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{counts.data.unread_inbox}</span>}
+      <aside style={{ width: folderPane.width }} className={cx('shrink-0 flex-col overflow-y-auto px-2 py-3 scroll-thin', detailOpen ? 'hidden xl:flex' : 'hidden md:flex')}>
+        <button onClick={() => setComposing(true)}
+          className="mb-3 flex h-8 items-center justify-center gap-2 rounded-[7px] bg-zinc-900 px-3 text-[13px] font-medium text-white hover:bg-zinc-800">
+          <PenSquare className="size-3.5" /> Compose
+        </button>
+        <nav className="flex flex-col gap-px">
+          {FOLDERS.map((f) => {
+            const Icon = f.icon;
+            const active = folder === f.id;
+            return (
+              <button key={f.id} onClick={() => { setFolder(f.id); select(null); }}
+                className={cx('flex h-8 items-center gap-2.5 rounded-[7px] px-2 text-[13px] transition-colors', active ? 'bg-zinc-100 font-medium text-zinc-900' : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900')}>
+                <Icon className="size-4 shrink-0" strokeWidth={1.75} />
+                <span className="flex-1 truncate text-left">{f.label}</span>
+                {f.id === 'inbox' && !!counts.data?.unread_inbox && <span className="text-[11.5px] font-semibold text-brand-600">{counts.data.unread_inbox}</span>}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="px-2 pb-1.5 pt-5 text-[11px] font-semibold uppercase tracking-[.06em] text-zinc-400">Filters</div>
+        <div className="flex flex-col gap-1.5">
+          {folder !== 'sent' && (
+            <FilterSelect value={status} onChange={setStatus} placeholder="Any status">
+              <option value="interested">Interested</option>
+              <option value="not_interested">Not interested</option>
+              <option value="unread">Unread</option>
+              <option value="not_automated">Not automated</option>
+              <option value="automated">Automated</option>
+              <option value="unsubscribe">Unsubscribe</option>
+            </FilterSelect>
+          )}
+          <FilterSelect value={senderId} onChange={setSenderId} placeholder="Any mailbox">
+            {senders.data?.map((s) => <option key={s.id} value={s.id}>{s.email}</option>)}
+          </FilterSelect>
+          {folder !== 'sent' && (
+            <FilterSelect value={campaignId} onChange={setCampaignId} placeholder="Any campaign">
+              {campaigns.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </FilterSelect>
+          )}
+          {filtered && (
+            <button onClick={() => { setSearch(''); setStatus(''); setSenderId(''); setCampaignId(''); }} className="flex h-7 items-center gap-1.5 px-2 text-[12.5px] text-zinc-500 hover:text-zinc-900">
+              <X className="size-3.5" /> Clear filters
             </button>
-          );
-        })}
-        <div className="mt-5 text-xs font-semibold uppercase tracking-wider text-slate-400">Filters</div>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-          <Input className="pl-9" placeholder="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
+          )}
         </div>
-        {folder !== 'sent' && (
-          <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">Message status</option>
-            <option value="interested">Interested</option>
-            <option value="not_interested">Not interested</option>
-            <option value="unread">Unread</option>
-            <option value="not_automated">Not automated</option>
-            <option value="automated">Automated</option>
-            <option value="unsubscribe">Unsubscribe</option>
-          </Select>
-        )}
-        <Select value={senderId} onChange={(e) => setSenderId(e.target.value)}>
-          <option value="">Sender email</option>
-          {senders.data?.map((s) => <option key={s.id} value={s.id}>{s.email}</option>)}
-        </Select>
-        {folder !== 'sent' && (
-          <Select value={campaignId} onChange={(e) => setCampaignId(e.target.value)}>
-            <option value="">Campaign</option>
-            {campaigns.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </Select>
-        )}
       </aside>
+      <Resizer pane={folderPane} className={detailOpen ? 'hidden xl:block' : 'hidden md:block'} />
 
       {/* Thread list */}
-      <section className={cx('min-h-0 w-full flex-col border-r border-slate-200 lg:w-[400px] lg:shrink-0 2xl:w-[460px]', detailOpen ? 'hidden lg:flex' : 'flex')}>
-        <div className="flex items-center justify-between gap-2 px-4 pb-3 pt-5">
+      <section style={{ '--list-w': `${listPane.width}px` } as CSSProperties}
+        className={cx('min-h-0 w-full flex-col lg:w-[var(--list-w)] lg:shrink-0', detailOpen ? 'hidden lg:flex' : 'flex')}>
+        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-slate-200 px-3">
           {/* Folder switch for small screens */}
-          <Select className="w-36 md:hidden" value={folder} onChange={(e) => { setFolder(e.target.value as Folder); select(null); }}>
+          <select className="h-8 rounded-md bg-transparent px-1 text-[13px] font-medium text-zinc-900 outline-none md:hidden" value={folder} onChange={(e) => { setFolder(e.target.value as Folder); select(null); }}>
             {FOLDERS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-          </Select>
-          <span className="hidden text-sm text-slate-500 md:inline">{folder === 'sent' ? 'Sent emails' : 'Unified threads'}</span>
-          <div className="flex items-center gap-3 text-sm text-slate-500">
-            {checked.size > 0 && <span className="text-slate-700">{checked.size} selected</span>}
-            <span>Page {meta?.current_page ?? 1}</span>
-            <Button size="sm" className="md:hidden" variant="primary" onClick={() => setComposing(true)} aria-label="Compose"><PenSquare className="size-4" /></Button>
+          </select>
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={folder === 'sent' ? 'Search sent' : 'Search threads'}
+              className="h-8 w-full rounded-md bg-transparent pl-7 pr-2 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-400 hover:bg-zinc-50 focus:bg-zinc-50" />
           </div>
+          {checked.size > 0 && <span className="shrink-0 text-[12px] text-zinc-600">{checked.size} selected</span>}
+          {meta && meta.total > 0 && <span className="shrink-0 text-[12px] tabular-nums text-zinc-400">{meta.total.toLocaleString()}</span>}
+          <IconButton label="Compose" className="md:hidden" onClick={() => setComposing(true)}><PenSquare className="size-4" /></IconButton>
         </div>
-        <div className="flex-1 space-y-2 overflow-y-auto px-4 pb-4 scroll-thin">
+        <div className="flex-1 overflow-y-auto scroll-thin">
           {list.isLoading ? <Loading /> : !list.data?.data.length ? (
-            <EmptyState icon={<InboxIcon className="size-5" />} title={EMPTY[folder][0]} description={q || status || senderId || campaignId ? 'Nothing matches these filters.' : EMPTY[folder][1]} />
+            <EmptyState icon={<InboxIcon className="size-5" />} title={EMPTY[folder][0]} description={filtered ? 'Nothing matches these filters.' : EMPTY[folder][1]} />
           ) : folder === 'sent' ? (
             (sent.data?.data ?? []).map((s) => {
               const active = s.latest_reply_id ? openReply === s.latest_reply_id : openSent === s.id;
               return (
                 <button key={s.id} onClick={() => (s.latest_reply_id ? select('reply', s.latest_reply_id) : select('sent', s.id))}
-                  className={cx('flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition-colors', active ? 'border-brand-300 bg-brand-50/60' : 'border-slate-200 hover:bg-slate-50')}>
-                  <div className={cx('mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white', avatarColor(s.to_email))}>{initials(s.to_email)}</div>
+                  className={cx(rowClass(active), 'w-full text-left')}>
+                  <Avatar seed={s.to_email} name={s.to_email} />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate font-medium text-slate-900">To: {s.to_email}</span>
-                      {s.campaign_name ? <Badge className="max-w-[120px] truncate">{s.campaign_name}</Badge> : <Badge tone="blue">{s.kind === 'reply' ? 'Reply' : 'Manual'}</Badge>}
+                    <div className="flex items-baseline gap-2">
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-zinc-900"><span className="font-normal text-zinc-400">To </span>{s.to_email}</span>
+                      <span className="shrink-0 text-[11.5px] text-zinc-400">{fmtRelative(s.sent_at)}</span>
                     </div>
-                    <div className="truncate text-sm text-slate-700">{s.subject}</div>
-                    <div className="truncate text-[13px] text-slate-500">{s.preview}</div>
+                    <div className="truncate text-[13px] text-zinc-700">{s.subject}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-zinc-400">{s.preview}</span>
+                      <Tag>{s.campaign_name ?? (s.kind === 'reply' ? 'Reply' : 'Manual')}</Tag>
+                    </div>
                   </div>
-                  <div className="shrink-0 text-xs text-slate-500">{fmtRelative(s.sent_at)}</div>
                 </button>
               );
             })
@@ -177,28 +194,33 @@ export function InboxPage() {
               const active = openReply === r.id;
               const name = r.from_name || r.from_email;
               const providerTag = r.campaign_name ?? (r.sender_email ? r.sender_email.split('@')[1] : null);
+              const isChecked = checked.has(r.id);
               return (
-                <div key={r.id} onClick={() => select('reply', r.id)} role="button"
-                  className={cx('flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-colors', active ? 'border-brand-300 bg-brand-50/60' : 'border-slate-200 hover:bg-slate-50')}>
-                  <Checkbox checked={checked.has(r.id)} label={`Select ${name}`}
-                    onChange={(v) => setChecked((s) => { const n = new Set(s); if (v) n.add(r.id); else n.delete(r.id); return n; })} />
-                  <div className={cx('flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white', avatarColor(r.from_email))}>{initials(name)}</div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      {!r.read && <span className="size-2 shrink-0 rounded-full bg-brand-600" aria-label="Unread" />}
-                      <span className={cx('min-w-0 flex-1 truncate text-slate-900', !r.read ? 'font-semibold' : 'font-medium')}>
-                        {name}
-                        {r.thread_count > 1 && <span className="ml-1.5 text-xs font-normal text-slate-400">{r.thread_count}</span>}
-                      </span>
-                      <span className="shrink-0 text-xs text-slate-500">{fmtRelative(r.received_at)}</span>
+                <div key={r.id} onClick={() => select('reply', r.id)} role="button" tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter') select('reply', r.id); }}
+                  className={cx(rowClass(active), 'group cursor-pointer')}>
+                  {/* Avatar turns into a checkbox on hover, or while anything is selected */}
+                  <div className="relative mt-0.5 size-7 shrink-0">
+                    <div className={cx('transition-opacity', checked.size > 0 ? 'opacity-0' : 'group-hover:opacity-0')}><Avatar seed={r.from_email} name={name} /></div>
+                    <div className={cx('absolute inset-0 flex items-center justify-center transition-opacity', checked.size > 0 ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
+                      <Checkbox checked={isChecked} label={`Select ${name}`} onChange={(v) => toggleChecked(r.id, v)} />
                     </div>
-                    {(r.category !== 'reply' || providerTag) && (
-                      <div className="mt-1 flex min-w-0 items-center gap-1.5">
-                        {r.category !== 'reply' && <ReplyCategory status={r.category} />}
-                        {providerTag && <Badge className="min-w-0 truncate">{providerTag}</Badge>}
-                      </div>
-                    )}
-                    <div className={cx('mt-1 truncate text-sm', !r.read ? 'text-slate-800' : 'text-slate-600')}>{r.subject || '(no subject)'} <span className="text-slate-400">— {r.preview}</span></div>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-1.5">
+                      {!r.read && <span className="size-1.5 shrink-0 -translate-y-0.5 rounded-full bg-brand-600" aria-label="Unread" />}
+                      <span className={cx('min-w-0 flex-1 truncate text-[13px] text-zinc-900', !r.read ? 'font-semibold' : 'font-medium')}>
+                        {name}
+                        {r.thread_count > 1 && <span className="ml-1 text-[11.5px] font-normal text-zinc-400">{r.thread_count}</span>}
+                      </span>
+                      <span className="shrink-0 text-[11.5px] text-zinc-400">{fmtRelative(r.received_at)}</span>
+                    </div>
+                    <div className={cx('truncate text-[13px]', !r.read ? 'text-zinc-900' : 'text-zinc-700')}>{r.subject || '(no subject)'}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-zinc-400">{r.preview}</span>
+                      {r.category !== 'reply' && <ReplyCategory status={r.category} />}
+                      {providerTag && <Tag>{providerTag}</Tag>}
+                    </div>
                   </div>
                 </div>
               );
@@ -206,15 +228,16 @@ export function InboxPage() {
           )}
         </div>
         {meta && meta.last_page > 1 && (
-          <div className="flex items-center justify-between border-t border-slate-200 px-4 py-2.5 text-[13px] text-slate-600">
-            <span>{meta.total.toLocaleString()} total</span>
-            <div className="flex gap-2">
-              <Button size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
-              <Button size="sm" disabled={page >= meta.last_page} onClick={() => setPage((p) => p + 1)}>Next</Button>
+          <div className="flex h-10 shrink-0 items-center justify-between border-t border-slate-200 px-3 text-[12px] text-zinc-500">
+            <span className="tabular-nums">Page {meta.current_page} of {meta.last_page}</span>
+            <div className="flex gap-1">
+              <IconButton label="Previous page" className="disabled:pointer-events-none disabled:opacity-30" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}><ChevronLeft className="size-4" /></IconButton>
+              <IconButton label="Next page" className="disabled:pointer-events-none disabled:opacity-30" disabled={page >= meta.last_page} onClick={() => setPage((p) => p + 1)}><ChevronRight className="size-4" /></IconButton>
             </div>
           </div>
         )}
       </section>
+      <Resizer pane={listPane} className="hidden lg:block" />
 
       {/* Conversation */}
       <section className={cx('min-h-0 min-w-0 flex-1 flex-col', detailOpen ? 'flex' : 'hidden lg:flex')}>
@@ -223,13 +246,39 @@ export function InboxPage() {
         ) : openSent ? (
           <SentDetail key={openSent} sentId={openSent} onBack={() => select(null)} />
         ) : (
-          <div className="flex h-full items-center justify-center bg-slate-50/60">
+          <div className="flex h-full items-center justify-center">
             <EmptyState icon={<InboxIcon className="size-5" />} title="Select a conversation" description="Pick a thread on the left to read it and reply." />
           </div>
         )}
       </section>
 
       <ComposeModal open={composing} onClose={() => setComposing(false)} />
+    </div>
+  );
+}
+
+const rowClass = (active: boolean) => cx(
+  'relative flex items-start gap-3 border-b border-zinc-100 px-4 py-2.5 transition-colors',
+  active ? 'bg-zinc-100/80 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-brand-600' : 'hover:bg-zinc-50',
+);
+
+function Avatar({ seed, name }: { seed: string; name: string }) {
+  return <div className={cx('flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white', avatarColor(seed))}>{initials(name)}</div>;
+}
+
+function Tag({ children }: { children: ReactNode }) {
+  return <span className="max-w-[45%] shrink-0 truncate rounded bg-zinc-100 px-1.5 py-px text-[11px] text-zinc-500">{children}</span>;
+}
+
+function FilterSelect({ value, onChange, placeholder, children }: { value: string; onChange: (v: string) => void; placeholder: string; children: ReactNode }) {
+  return (
+    <div className="relative">
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        className={cx('h-8 w-full appearance-none truncate rounded-[7px] bg-transparent pl-2 pr-7 text-[13px] outline-none hover:bg-zinc-50 focus:bg-zinc-50', value ? 'font-medium text-zinc-900' : 'text-zinc-500')}>
+        <option value="">{placeholder}</option>
+        {children}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
     </div>
   );
 }

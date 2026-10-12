@@ -39,28 +39,28 @@ function MessageCard({ m }: { m: Message }) {
   const mine = m.direction === 'sent';
   const name = m.from_name || m.from_email || 'Unknown';
   return (
-    <article className={cx('rounded-xl border px-5 py-4', mine ? 'ml-6 border-brand-100 bg-brand-50/50' : 'mr-6 border-slate-200 bg-white')}>
+    <article className="border-b border-slate-100 px-5 py-4 last:border-b-0">
       <header className="mb-3 flex items-start gap-3">
-        <div className={cx('flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white', avatarColor(m.from_email ?? name))}>{initials(name)}</div>
+        <div className={cx('flex size-8 shrink-0 items-center justify-center rounded-full text-[11.5px] font-semibold text-white', avatarColor(m.from_email ?? name))}>{initials(name)}</div>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-slate-900">{name}</span>
-            {mine && <Badge tone="blue">You</Badge>}
-            {m.kind === 'campaign' && <Badge>Campaign email</Badge>}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[13.5px] font-medium text-slate-900">{name}</span>
+            {mine && <Badge tone="blue" className="px-1.5 py-0 text-[11px]">You</Badge>}
+            {m.kind === 'campaign' && <Badge className="px-1.5 py-0 text-[11px]">Campaign</Badge>}
             {m.category && m.category !== 'reply' && <ReplyCategory status={m.category} />}
           </div>
           <div className="truncate text-xs text-slate-500">
             {m.from_email && <>{m.from_email} · </>}to {m.to_email}{m.cc ? `, cc ${m.cc}` : ''}
           </div>
         </div>
-        <div className="shrink-0 text-right text-xs text-slate-500">
+        <div className="shrink-0 text-right text-[11.5px] text-slate-400">
           {fmtDateTime(m.at)}
           {mine && !!m.opens && <div className="mt-0.5 inline-flex items-center gap-1"><MailOpen className="size-3" />{m.opens}</div>}
         </div>
       </header>
-      <EmailText text={m.body_text} html={m.body_html} />
+      <div className="pl-11"><EmailText text={m.body_text} html={m.body_html} /></div>
       {!!m.attachments?.length && (
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-2 pl-11">
           {m.attachments.map((a) => (
             <a key={a.url} href={a.url} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50">
               <Download className="size-3.5" /> {a.filename} <span className="text-slate-400">{Math.ceil(a.size / 1024)} KB</span>
@@ -91,7 +91,7 @@ function Composer({ thread, replyId, onSent }: { thread: Thread; replyId: number
 
   const to = thread.reply.from_email;
   return (
-    <div className="border-t border-slate-200 bg-white px-5 py-4">
+    <div className="border-t border-slate-200 bg-white px-4 py-3">
       <div className="mb-2 flex flex-wrap items-center gap-2 text-[13px] text-slate-500">
         <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
           <button onClick={() => setReplyAll(false)} className={cx('inline-flex items-center gap-1 rounded-md px-2 py-1', !replyAll ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600')}><Reply className="size-3.5" /> Reply</button>
@@ -108,7 +108,7 @@ function Composer({ thread, replyId, onSent }: { thread: Thread; replyId: number
         )}
       </div>
       {showCc && <Input className="mb-2" placeholder="Cc: name@company.com" value={cc} onChange={(e) => setCc(e.target.value)} />}
-      <Textarea rows={4} placeholder={`Reply to ${thread.reply.from_name || to}…`} value={body} onChange={(e) => setBody(e.target.value)}
+      <Textarea rows={3} className="resize-none border-slate-200 shadow-none" placeholder={`Reply to ${thread.reply.from_name || to}…`} value={body} onChange={(e) => setBody(e.target.value)}
         onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && body.trim()) send.mutate(); }} />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <AttachmentPicker att={att} className="flex-1" />
@@ -194,11 +194,11 @@ export function Conversation({ replyId, onBack, onDeleted }: { replyId: number; 
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="border-b border-slate-200 bg-white px-5 py-4">
+      <header className="border-b border-slate-200 bg-white px-5 py-3">
         <div className="flex items-start gap-2">
           <IconButton label="Back" className="lg:hidden" onClick={onBack}><ArrowLeft className="size-4" /></IconButton>
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-lg font-semibold text-slate-900">{r.subject || '(no subject)'}</h2>
+            <h2 className="truncate text-[15px] font-semibold text-slate-900">{r.subject || '(no subject)'}</h2>
             <div className="mt-1 flex flex-wrap items-center gap-2"><ReplyCategory status={r.category} />{r.folder !== 'inbox' && <Badge tone={r.folder === 'spam' ? 'orange' : 'red'}>{r.folder === 'spam' ? 'Spam' : 'Bounced'}</Badge>}</div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
@@ -230,7 +230,7 @@ export function Conversation({ replyId, onBack, onDeleted }: { replyId: number; 
           </div>
         </div>
         {(t.lead || t.campaign) && (
-          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg bg-slate-50 px-3 py-2 text-[13px]">
+          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[12.5px]">
             {t.lead && (
               <div className="flex min-w-0 items-center gap-2">
                 <span className="font-medium text-slate-800">{fullName(t.lead)}</span>
@@ -246,7 +246,7 @@ export function Conversation({ replyId, onBack, onDeleted }: { replyId: number; 
           </div>
         )}
       </header>
-      <div className="flex-1 space-y-4 overflow-y-auto bg-slate-50/60 px-5 py-5 scroll-thin">
+      <div className="flex-1 overflow-y-auto scroll-thin">
         {t.messages.map((m) => <MessageCard key={`${m.direction}-${m.id}`} m={m} />)}
       </div>
       {r.folder !== 'bounced' && <Composer thread={t} replyId={r.id} onSent={refresh} />}
@@ -264,14 +264,14 @@ export function SentDetail({ sentId, onBack }: { sentId: number; onBack: () => v
   if (!s) return null;
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-start gap-2 border-b border-slate-200 bg-white px-5 py-4">
+      <header className="flex items-start gap-2 border-b border-slate-200 bg-white px-5 py-3">
         <IconButton label="Back" className="lg:hidden" onClick={onBack}><ArrowLeft className="size-4" /></IconButton>
         <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold text-slate-900">{s.subject}</h2>
+          <h2 className="truncate text-[15px] font-semibold text-slate-900">{s.subject}</h2>
           <p className="mt-0.5 text-[13px] text-slate-500">No replies yet{s.kind === 'campaign' ? ' · sent by a campaign' : ''}</p>
         </div>
       </header>
-      <div className="flex-1 overflow-y-auto bg-slate-50/60 px-5 py-5 scroll-thin">
+      <div className="flex-1 overflow-y-auto scroll-thin">
         <MessageCard m={{ id: s.id, direction: 'sent', at: s.sent_at, from_name: s.sender_name, from_email: s.sender_email, to_email: s.to_email, cc: s.cc, subject: s.subject, body_text: s.body_text, body_html: s.body_html, kind: s.kind, opens: s.opens }} />
       </div>
     </div>

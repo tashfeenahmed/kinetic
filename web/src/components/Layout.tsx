@@ -47,6 +47,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
   const qc = useQueryClient();
   const { toast } = useUi();
   const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const navigate = useNavigate();
@@ -82,25 +83,22 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
   const row = 'flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[13px] text-zinc-700 hover:bg-zinc-50';
 
   return (
-    <div className="relative border-t border-zinc-200/80 py-2">
-      <button onClick={() => setOpen((o) => !o)} title={collapsed ? `${me?.name} · ${me?.team?.name}` : undefined} aria-haspopup="menu" aria-expanded={open}
-        className={cx('flex w-full items-center gap-2.5 rounded-[7px] px-1 py-1.5 text-left hover:bg-zinc-200/50', open && 'bg-zinc-200/50', collapsed && 'justify-center px-0')}>
+    <div className="border-t border-zinc-200/80 px-2 py-2">
+      <button onClick={(e) => { setAnchor(e.currentTarget.getBoundingClientRect()); setOpen((o) => !o); }} title={collapsed ? `${me?.name} · ${me?.team?.name}` : undefined} aria-haspopup="menu" aria-expanded={open}
+        className={cx('flex w-full items-center gap-2.5 rounded-[7px] px-1 py-1.5 text-left hover:bg-zinc-200/50', open && 'bg-zinc-200/50')}>
         <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-200 text-[11px] font-semibold text-zinc-700">{initials(me?.name ?? '')}</span>
-        {!collapsed && (
-          <>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium text-zinc-800">{me?.name}</span>
-              <span className="block truncate text-[11.5px] text-zinc-500">{me?.team?.name ?? 'Workspace'}</span>
-            </span>
-            <ChevronsUpDown className="size-3.5 shrink-0 text-zinc-400" />
-          </>
-        )}
+        <span className={cx('min-w-0 flex-1 whitespace-nowrap transition-opacity duration-200', collapsed && 'opacity-0')}>
+          <span className="block truncate text-[13px] font-medium text-zinc-800">{me?.name}</span>
+          <span className="block truncate text-[11.5px] text-zinc-500">{me?.team?.name ?? 'Workspace'}</span>
+        </span>
+        <ChevronsUpDown className={cx('size-3.5 shrink-0 text-zinc-400 transition-opacity duration-200', collapsed && 'opacity-0')} />
       </button>
 
       {open && (
         <>
           <div className="fixed inset-0 z-40" onMouseDown={() => setOpen(false)} />
-          <div role="menu" className={cx('absolute z-50 w-60 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg', collapsed ? 'bottom-2 left-full ml-2' : 'bottom-full left-0 mb-1')}>
+          <div role="menu" className="fixed z-50 w-60 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg"
+            style={anchor ? (collapsed ? { left: anchor.right + 8, bottom: window.innerHeight - anchor.bottom } : { left: anchor.left, bottom: window.innerHeight - anchor.top + 4 }) : undefined}>
             <div className="border-b border-zinc-100 px-3 pb-2 pt-1.5">
               <div className="truncate text-[13px] font-medium text-zinc-900">{me?.name}</div>
               <div className="truncate text-[12px] text-zinc-500">{me?.email}</div>
@@ -134,27 +132,30 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-const itemClass = (active: boolean, collapsed: boolean) => cx(
-  'flex h-8 items-center gap-2.5 rounded-[7px] px-2 text-[13.5px] font-medium transition-colors',
+const itemClass = (active: boolean) => cx(
+  'flex h-8 items-center gap-2.5 whitespace-nowrap rounded-[7px] px-2.5 text-[13.5px] font-medium transition-colors',
   active ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200' : 'text-zinc-600 hover:bg-zinc-200/50 hover:text-zinc-900',
-  collapsed && 'justify-center px-0',
 );
+const fade = (collapsed: boolean) => cx('transition-opacity duration-200', collapsed && 'pointer-events-none opacity-0');
 
 function NavItem({ to, label, icon: Icon, end, collapsed, badge, count }: { to: string; label: string; icon: any; end?: boolean; collapsed: boolean; badge?: number; count?: number }) {
   return (
-    <NavLink to={to} end={end} title={collapsed ? label : undefined} className={({ isActive }) => itemClass(isActive, collapsed)}>
+    <NavLink to={to} end={end} title={collapsed ? label : undefined} className={({ isActive }) => itemClass(isActive)}>
       <Icon className="size-4 shrink-0" strokeWidth={1.75} />
-      {!collapsed && <span className="flex-1 truncate">{label}</span>}
-      {!collapsed && !!badge && <span className="rounded-full bg-zinc-900 px-1.5 text-[10.5px] font-semibold text-white">{badge > 99 ? '99+' : badge}</span>}
-      {!collapsed && count != null && <span className="text-[11.5px] font-normal text-zinc-400">{count}</span>}
+      <span className={cx('min-w-0 flex-1 truncate', fade(collapsed))}>{label}</span>
+      {!!badge && <span className={cx('rounded-full bg-zinc-900 px-1.5 text-[10.5px] font-semibold text-white', fade(collapsed))}>{badge > 99 ? '99+' : badge}</span>}
+      {count != null && <span className={cx('text-[11.5px] font-normal text-zinc-400', fade(collapsed))}>{count}</span>}
     </NavLink>
   );
 }
 
-function SectionLabel({ children, action }: { children: ReactNode; action?: ReactNode }) {
+/** Section heading; collapses to a short rule so the items below don't move. */
+function SectionLabel({ children, action, collapsed }: { children: ReactNode; action?: ReactNode; collapsed: boolean }) {
   return (
-    <div className="flex items-center justify-between px-2 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-[.06em] text-zinc-400">
-      <span>{children}</span>{action}
+    <div className="relative flex h-[38px] items-end justify-between whitespace-nowrap px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-[.06em] text-zinc-400">
+      <span className={fade(collapsed)}>{children}</span>
+      {action && <span className={fade(collapsed)}>{action}</span>}
+      <span className={cx('absolute bottom-[11px] left-2.5 h-px w-4 bg-zinc-300 transition-opacity duration-200', collapsed ? 'opacity-100' : 'opacity-0')} />
     </div>
   );
 }
@@ -191,25 +192,29 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
   };
 
   return (
-    <aside className={cx('flex h-full flex-col border-r border-zinc-200/80 bg-[#fafafa] px-2', collapsed ? 'w-[60px]' : 'w-[236px]')} onClick={(e) => { if ((e.target as HTMLElement).closest('a')) onNavigate?.(); }}>
-      <div className={cx('flex h-14 items-center px-2', collapsed ? 'justify-center' : 'justify-between')}>
-        {!collapsed && (
-          <Link to="/" className="flex items-center gap-2">
-            <Logo size={24} />
-            <span className="text-[15px] font-semibold tracking-tight text-zinc-900">Kinetic</span>
-          </Link>
+    <aside className={cx('flex h-full flex-col overflow-hidden border-r border-zinc-200/80 bg-[#fafafa] transition-[width] duration-200 ease-out motion-reduce:transition-none', collapsed ? 'w-[52px]' : 'w-[236px]')} onClick={(e) => { if ((e.target as HTMLElement).closest('a')) onNavigate?.(); }}>
+      <div className="flex h-14 shrink-0 items-center whitespace-nowrap px-[10px]">
+        {collapsed ? (
+          <button onClick={onToggle} title="Expand sidebar" aria-label="Expand sidebar" className="group/logo relative flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-zinc-200/60">
+            <span className="transition-opacity group-hover/logo:opacity-0"><Logo size={24} /></span>
+            <PanelLeft className="absolute size-4 text-zinc-600 opacity-0 transition-opacity group-hover/logo:opacity-100" />
+          </button>
+        ) : (
+          <Link to="/" className="flex size-8 shrink-0 items-center justify-center"><Logo size={24} /></Link>
         )}
-        <button onClick={onToggle} className="hidden rounded-md p-1.5 text-zinc-500 hover:bg-zinc-200/60 lg:block" aria-label="Toggle sidebar">
-          {collapsed ? <PanelLeft className="size-4" /> : <PanelLeftClose className="size-4" />}
+        <Link to="/" tabIndex={collapsed ? -1 : 0} className={cx('ml-1 text-[15px] font-semibold tracking-tight text-zinc-900', fade(collapsed))}>Kinetic</Link>
+        <button onClick={onToggle} tabIndex={collapsed ? -1 : 0} className={cx('ml-auto hidden rounded-md p-1.5 text-zinc-500 hover:bg-zinc-200/60 lg:block', fade(collapsed))} aria-label="Collapse sidebar" title="Collapse sidebar">
+          <PanelLeftClose className="size-4" />
         </button>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto scroll-thin">
-        <nav className="mt-1 flex flex-col gap-px">
+      {/* Padding lives inside the scroller, so the active item's ring and shadow aren't clipped. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-2 pb-2 scroll-thin">
+        <nav className="mt-1 flex flex-col gap-px pt-px">
           <NavItem to="/" end label="Home" icon={HomeIcon} collapsed={collapsed} />
           <NavItem to="/signals" label="Signals" icon={Radar} collapsed={collapsed} />
         </nav>
 
-        {!collapsed && <SectionLabel action={<button title="New table" onClick={() => navigate('/')} className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200/60 hover:text-zinc-700"><Plus className="size-3.5" /></button>}>Tables</SectionLabel>}
+        <SectionLabel collapsed={collapsed} action={<button title="New table" onClick={() => navigate('/')} className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200/60 hover:text-zinc-700"><Plus className="size-3.5" /></button>}>Tables</SectionLabel>
         <nav className="flex flex-col gap-px">
           {(tables.data ?? []).map((t) => (
             <div key={t.id} onContextMenu={(e) => { e.preventDefault(); setMenu({ id: t.id, name: t.name, x: e.clientX, y: e.clientY }); }}>
@@ -219,20 +224,20 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
           {!collapsed && tables.data?.length === 0 && <span className="px-2 py-1 text-[12.5px] text-zinc-400">No tables yet</span>}
         </nav>
 
-        {!collapsed && <SectionLabel>Outreach</SectionLabel>}
+        <SectionLabel collapsed={collapsed}>Outreach</SectionLabel>
         <nav className="flex flex-col gap-px">
           {OUTREACH_NAV.map((n) => <NavItem key={n.to} {...n} collapsed={collapsed} badge={n.badge === 'unread' ? unread.data : undefined} />)}
         </nav>
       </div>
 
-      <nav className="flex flex-col gap-px border-t border-zinc-200/80 py-2">
+      <nav className="flex flex-col gap-px border-t border-zinc-200/80 px-2 py-2">
         <NavItem to="/activity" label="Activity" icon={Activity} collapsed={collapsed} />
         <NavItem to="/integrations" label="Integrations" icon={Puzzle} collapsed={collapsed} />
         {collapsed ? (
           <NavItem to="/developers/api" label="Developers" icon={Code2} collapsed />
         ) : (
           <>
-            <button onClick={() => setDevOpen((o) => !o)} className={itemClass(false, false)}>
+            <button onClick={() => setDevOpen((o) => !o)} className={itemClass(false)}>
               <Code2 className="size-4" strokeWidth={1.75} />
               <span className="flex-1 text-left">Developers</span>
               {devOpen ? <ChevronDown className="size-3.5 text-zinc-400" /> : <ChevronRight className="size-3.5 text-zinc-400" />}
