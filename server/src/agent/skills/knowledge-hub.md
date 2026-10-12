@@ -1,6 +1,6 @@
 ---
 name: knowledge-hub
-description: Use to read, write or reorganise the Knowledge Hub — markdown documents in nested folders about what the business sells and to whom (company overview, offers, ICP, personas, positioning, competitors, case studies, tone of voice, do-not-target list) — including filling it from the user's website, and to apply it to targeting and copy.
+description: Use to read, write or reorganise the Knowledge Hub — markdown documents in nested folders about what the business sells and to whom (company overview, offers, ICP, personas, positioning, competitors, proof, tone of voice, objections, do-not-target list) — including researching and filling it from the user's website (multi-step crawl + web research), asking the agent to write inside a doc, and applying it to targeting and copy.
 ---
 # Knowledge Hub (documents)
 
@@ -19,10 +19,25 @@ AI research columns include it with `"useKnowledge": true`; AI reply drafts use 
 - `GET /api/knowledge/templates` → starter docs: `company`, `icp`, `personas`, `positioning`, `competitors`, `proof`, `tone`, `exclusions`
 
 ## Fill from the website (best first step when the hub is empty)
-`POST /api/knowledge/autofill` `{ "domain": "acme.com" }` → `{ data: { drafts: [{ key, title, content, exists }], pages, ai, summary } }`
-- Crawls the home page plus about/product/pricing/customers pages and drafts up to 9 docs (Company overview, Products & offers, Ideal customer profile, Buyer personas, Positioning & messaging, Competitors, Case studies, Tone of voice, Do-not-target list). Without an AI key it only drafts a short Company overview.
-- Nothing is saved unless you pass `"apply": true`, which creates every draft whose title doesn't exist yet (`exists: false`) — it never overwrites a doc — inside a folder named after the site (`"acme.com"`; reused if it exists). Pass `"folder": "Company"` (a name or path) or `"folder_id": 4` to file them elsewhere. The response has `created` and `folder`. Either apply and tell the user which docs were created and where, or show the titles first (ask_user) and create the chosen ones with the bulk call below.
+This is a multi-step research run, not a single page read. It:
+1. crawls the site — home page, then up to ~20 important pages found in the menu, footer and sitemap.xml (about, product, pricing, solutions/industries, customers/case studies, a few recent blog posts, careers, contact, comparison pages);
+2. web-searches competitors, alternatives, category leaders in their region, reviews, LinkedIn/company info, press, and the customers named in case studies;
+3. picks the real competitors and reads each one's home page;
+4. writes 9 detailed docs with tables: Company overview (key facts table), Products & offers, Ideal customer profile (firmographics + example customers tables, says what is inferred), Buyer personas (3-5, each with goals, pains, objections, messaging angle and an example opening line), Positioning & messaging, Competitors (comparison table + how to win), Proof & case studies, Tone of voice (do/don't, vocabulary, email guidelines), Objection handling.
+
+It takes **1-3 minutes** and uses the default model (Haiku) with capped tokens — typically a few cents; `usage.cost_usd` says what it cost. Without an AI key it only crawls and drafts a short Company overview (`ai: false`, with a note); tell the user to add an OpenRouter key for the full research.
+
+**One call (simplest for you):** `POST /api/knowledge/autofill` `{ "domain": "acme.com" }` waits for the whole run → `{ data: { drafts: [{ key, title, content, exists }], pages, searches, competitors, usage: { cost_usd }, notes, ai, summary } }`.
+- Nothing is saved unless you pass `"apply": true`, which creates every draft whose title doesn't exist yet (`exists: false`) — it never overwrites a doc — inside a folder named after the site (`"acme.com"`; reused if it exists). Pass `"folder": "Company"` (a name or path) or `"folder_id": 4` to file them elsewhere. The response has `created` and `folder`. Either apply and tell the user which docs were created and where (plus pages read, competitors found and the cost), or show the titles first (ask_user) and create the chosen ones with the bulk call below.
 - `POST /api/knowledge/docs/bulk` `{ "docs": [{ "title": "Buyer personas", "content": "## Café owner\n\n**Pains:** …" }], "created_by": "autofill", "source_url": "https://acme.com", "folder": "acme.com" }`
+
+**Background (what the UI uses):** `POST /api/knowledge/research` `{ "domain": "acme.com" }` → `{ data: { id, status: "running", steps } }`; then `GET /api/knowledge/research/{id}` → `status` (`running` | `done` | `failed` | `stopped`), `steps` (live labels such as "Reading /pricing…", "Searching competitors…", "Writing buyer personas…") and, when done, `result` (same shape as autofill: drafts, pages, searches, competitors, usage). `POST /api/knowledge/research/{id}/stop` stops it. Don't poll more than every ~20 seconds; prefer the one-call autofill.
+
+## Write inside a document with the agent ("@Agent")
+`POST /api/knowledge/docs/{id}/agent` `{ "instruction": "fill the comparison table with 5 competitors", "mode": "auto" }` → `{ data: { markdown, mode, note, steps, usage } }`
+- It reads the whole doc, its folder, the rest of the hub, and can web-search and read pages. It returns markdown plus a placement: `insert` (at `cursor`, a character offset in the markdown; else at the end), `replace` (swaps the exact `selection` text you pass), `append` (new section at the end) or `rewrite` (whole doc). Pass `"mode"` to force one.
+- `"apply": true` saves the edit to the doc (409 if `selection` is no longer in the doc). Without it nothing is saved — useful to preview. Confirm with the user before a `rewrite`.
+- Use it to deepen a doc ("expand the personas with objections", "research their pricing and add a plans table") instead of rewriting the doc yourself.
 
 ## Write documents
 - Create: `POST /api/knowledge/docs` `{ "title": "Ideal customer profile", "content": "## Firmographics\n\n- **Industries:** Hospitality\n- **Geographies:** Ireland, UK\n\n## Buying triggers\n\n- Opening a new site" }`
@@ -47,7 +62,7 @@ Organising rules:
 - Keep it shallow (2–3 levels). Only reorganise the user's existing folders when they ask.
 
 ## Writing good docs
-- Markdown only: `##` / `###` headings (no `#` title — the doc title is separate), `-` bullets, `1.` numbered lists, `- [ ]` task items, `**bold**` labels, `[links](https://…)`, `>` quotes. Keep each doc focused on one topic and short enough to scan (aim under ~3,000 chars; pinned docs are always in the prompt, so pin only the essentials such as the ICP and do-not-target list).
+- Markdown only: `##` / `###` headings (no `#` title — the doc title is separate), `-` bullets, `1.` numbered lists, `- [ ]` task items, `**bold**` labels, `[links](https://…)`, `>` quotes, and GFM tables (`| A | B |` then `| --- | --- |`; the first row is the header) for comparisons such as competitors or personas at a glance. Keep each doc focused on one topic and short enough to scan (aim under ~3,000 chars; pinned docs are always in the prompt, so pin only the essentials such as the ICP and do-not-target list).
 - Be factual: only write what the user said, the website says, or you verified; mark guesses as such.
 - When the user says "write our ICP doc from what you know", draft from the chat, existing docs and their site, create it, then summarise what you wrote and ask what to change.
 

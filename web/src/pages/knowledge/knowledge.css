@@ -55,3 +55,15 @@
 .kn-prose.kn-preview h3 { font-size: 1.05em; margin-top: 0.8em; }
 .kn-prose.kn-preview > * + * { margin-top: 0.45em; }
 .kn-prose.kn-preview > :first-child { margin-top: 0; }
+
+/* Tables (stored as GFM tables). */
+.kn-prose .tableWrapper { overflow-x: auto; margin: 0.9em 0; }
+.kn-prose table { border-collapse: collapse; width: 100%; font-size: 0.88em; line-height: 1.5; }
+.kn-prose th, .kn-prose td { border: 1px solid #e4e4e7; padding: 5px 9px; vertical-align: top; text-align: left; min-width: 64px; position: relative; }
+.kn-prose th { background: #fafafa; font-weight: 600; color: #18181b; }
+.kn-prose th p, .kn-prose td p { margin: 0; }
+.kn-prose .selectedCell::after { content: ''; position: absolute; inset: 0; background: rgba(24, 24, 27, 0.06); pointer-events: none; }
+.kn-prose.kn-preview table { font-size: 0.95em; }
+
+/* "@" while the mention menu is open. */
+.kn-prose .suggestion { background: #f4f4f5; border-radius: 4px; padding: 0 2px; }

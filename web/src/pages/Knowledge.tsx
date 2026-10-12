@@ -285,7 +285,7 @@ function DocPane({ row, autoFocus, onBack, onPin, onDuplicate, onDelete, onMoveT
         </div>
         {doc.isLoading || !doc.data ? <p className="text-shimmer text-[14px]">Loading document…</p> : (
           <Suspense fallback={<p className="text-shimmer text-[14px]">Loading editor…</p>}>
-            <DocEditor markdown={doc.data.content} autoFocus={autoFocus} onChange={(md) => queue({ content: md })} />
+            <DocEditor markdown={doc.data.content} docId={row.id} autoFocus={autoFocus} onChange={(md) => queue({ content: md })} />
           </Suspense>
         )}
       </div>

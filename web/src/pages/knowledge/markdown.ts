@@ -61,6 +61,26 @@ function turndown(): TurndownService {
     },
   });
   td.addRule('taskLabel', { filter: (n) => n.nodeName === 'LABEL' && !!n.parentElement?.getAttribute('data-type'), replacement: () => '' });
+  // GFM tables. The first row is always the header row (markdown tables need one); cells keep
+  // inline formatting, line breaks and paragraphs inside a cell become <br>, pipes are escaped.
+  td.addRule('tableCell', {
+    filter: ['th', 'td'],
+    replacement: (content) => `| ${content.trim().replace(/\s*\n+\s*/g, '<br>').replace(/(^|[^\\])\|/g, '$1\\|')} `,
+  });
+  td.addRule('tableRow', {
+    filter: 'tr',
+    replacement: (content, node) => {
+      const row = `${content}|`;
+      let table: Node | null = node.parentNode;
+      while (table && table.nodeName !== 'TABLE') table = table.parentNode;
+      const first = table && (table as HTMLElement).querySelector('tr') === node;
+      const cells = Array.prototype.filter.call(node.childNodes, (c: Node) => c.nodeName === 'TH' || c.nodeName === 'TD').length;
+      return `\n${row}${first ? `\n|${' --- |'.repeat(cells)}` : ''}`;
+    },
+  });
+  td.addRule('tableSection', { filter: ['thead', 'tbody', 'tfoot'], replacement: (content) => content });
+  td.addRule('tableColumns', { filter: (n) => n.nodeName === 'COLGROUP' || n.nodeName === 'COL', replacement: () => '' });
+  td.addRule('table', { filter: 'table', replacement: (content) => `\n\n${content.replace(/^\n+|\n+$/g, '')}\n\n` });
   return td;
 }
 

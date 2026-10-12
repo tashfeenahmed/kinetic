@@ -1,53 +1,87 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Folder, Globe } from 'lucide-react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { Check, ChevronDown, ChevronRight, Folder, Globe, Minus, X } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api.ts';
-import { Button, Checkbox, Input, Modal, Select, cx, useUi } from '../../components/ui.tsx';
+import { Button, Checkbox, Input, Modal, Select, Shimmer, cx, useUi } from '../../components/ui.tsx';
 import type { FolderRow } from './Tree.tsx';
 import './knowledge.css';
 
 const MarkdownPreview = lazy(() => import('./DocEditor.tsx').then((m) => ({ default: m.MarkdownPreview })));
 
 interface DraftDoc { key: string; title: string; content: string; exists: boolean }
-interface AutofillResult { drafts: DraftDoc[]; summary: string; ai: boolean; pages: string[]; host: string; folder_name?: string }
-
-const STEPS = ['Reading the home page', 'Following about, product and pricing pages', 'Drafting the documents', 'Tidying up the drafts'];
+interface AutofillResult {
+  drafts: DraftDoc[]; summary: string; ai: boolean; pages: string[]; host: string; folder_name?: string;
+  searches: string[]; competitors: { name: string; website: string }[]; notes: string[];
+  usage: { prompt_tokens: number; completion_tokens: number; cost_usd: number; calls: number };
+}
+interface Step { id: number; label: string; status: 'running' | 'done' | 'failed' | 'skipped'; detail?: string }
+interface ResearchRun { id: number; status: 'running' | 'done' | 'failed' | 'stopped'; steps: Step[]; error: string | null; result: AutofillResult | null }
 
 /** Where the drafts go: a new folder (named after the site by default), an existing folder, or the top level. */
 type Target = { kind: 'new'; name: string } | { kind: 'existing'; id: number } | { kind: 'root' };
 
-/** "Fill from website": domain -> crawl -> drafted docs -> tick the ones to create -> into a folder. */
+const money = (usd: number) => (usd >= 0.01 ? `$${usd.toFixed(2)}` : usd > 0 ? `$${usd.toFixed(3)}` : '$0');
+
+/** Follows a research run live (server-sent events, falling back to polling). */
+function useResearchRun(id: number | null, onUpdate: (r: ResearchRun) => void) {
+  const cb = useRef(onUpdate);
+  cb.current = onUpdate;
+  useEffect(() => {
+    if (id == null) return;
+    let finished = false;
+    let poll: ReturnType<typeof setInterval> | null = null;
+    const take = (r: ResearchRun) => {
+      if (finished) return;
+      cb.current(r);
+      if (r.status !== 'running') { finished = true; es.close(); if (poll) clearInterval(poll); }
+    };
+    const es = new EventSource(`/api/knowledge/research/${id}/events`);
+    es.onmessage = (e) => { try { take(JSON.parse(e.data)); } catch { /* ignore */ } };
+    es.onerror = () => {
+      es.close();
+      if (finished || poll) return;
+      poll = setInterval(() => { api.get(`/api/knowledge/research/${id}`).then((r) => take(r.data as ResearchRun)).catch(() => {}); }, 2000);
+    };
+    return () => { finished = true; es.close(); if (poll) clearInterval(poll); };
+  }, [id]);
+}
+
+/** "Fill from website": domain -> research run (live steps) -> drafted docs -> tick the ones to create -> into a folder. */
 export function AutofillModal({ open, folders, onClose, onCreated }: { open: boolean; folders: FolderRow[]; onClose: () => void; onCreated: (ids: number[], folderId: number | null) => void }) {
   const { toast } = useUi();
   const [domain, setDomain] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [step, setStep] = useState(0);
+  const [run, setRun] = useState<ResearchRun | null>(null);
   const [result, setResult] = useState<AutofillResult | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [target, setTarget] = useState<Target>({ kind: 'new', name: '' });
+  const busy = run?.status === 'running';
 
-  useEffect(() => {
-    if (!busy) return;
-    setStep(0);
-    const t = setInterval(() => setStep((s) => Math.min(s + 1, STEPS.length - 1)), 4500);
-    return () => clearInterval(t);
-  }, [busy]);
-  useEffect(() => { if (!open) { setResult(null); setBusy(false); setOpenKey(null); } }, [open]);
+  useEffect(() => { if (!open) { setResult(null); setRun(null); setOpenKey(null); } }, [open]);
+
+  useResearchRun(busy ? run!.id : null, (r) => {
+    setRun(r);
+    if (r.status === 'failed') toast(`Could not research ${domain.trim()}: ${r.error ?? 'unknown error'}`, 'error');
+    if (r.status !== 'done' || !r.result) return;
+    const res = r.result;
+    setResult(res);
+    setPicked(new Set(res.drafts.filter((d) => !d.exists).map((d) => d.key)));
+    setOpenKey(res.drafts[0]?.key ?? null);
+    const name = res.folder_name || res.host || 'Company';
+    // Re-running for the same site files into its existing folder.
+    const same = folders.find((f) => f.parent_id == null && f.name.toLowerCase() === name.toLowerCase());
+    setTarget(same ? { kind: 'existing', id: same.id } : { kind: 'new', name });
+  });
 
   const read = async () => {
-    setBusy(true);
     try {
-      const r = (await api.post('/api/knowledge/autofill', { domain: domain.trim() })).data as AutofillResult;
-      setResult(r);
-      setPicked(new Set(r.drafts.filter((d) => !d.exists).map((d) => d.key)));
-      setOpenKey(r.drafts[0]?.key ?? null);
-      const name = r.folder_name || r.host || 'Company';
-      // Re-running for the same site files into its existing folder.
-      const same = folders.find((f) => f.parent_id == null && f.name.toLowerCase() === name.toLowerCase());
-      setTarget(same ? { kind: 'existing', id: same.id } : { kind: 'new', name });
-      if (!r.ai) toast('No AI model is set up, so only a short company overview was read from the site. Add an OpenRouter key for full drafts.', 'info');
-    } catch (e) { toast(errorMessage(e), 'error'); } finally { setBusy(false); }
+      setResult(null);
+      setRun((await api.post('/api/knowledge/research', { domain: domain.trim() })).data as ResearchRun);
+    } catch (e) { toast(errorMessage(e), 'error'); }
+  };
+  const stop = async () => {
+    if (run && busy) await api.post(`/api/knowledge/research/${run.id}/stop`).catch(() => {});
+    setRun(null);
   };
 
   const create = async () => {
@@ -67,7 +101,14 @@ export function AutofillModal({ open, folders, onClose, onCreated }: { open: boo
   if (result) {
     return (
       <Modal open={open} onClose={onClose} size="xl" title="Review the drafts"
-        description={`Drafted from ${result.pages.length} page${result.pages.length === 1 ? '' : 's'} on ${result.host}. Tick the documents to create — nothing is saved until you do, and you can edit everything afterwards.`}
+        description={<>
+          {`Researched ${result.pages.length} page${result.pages.length === 1 ? '' : 's'} on ${result.host}`}
+          {result.searches.length > 0 && `, ${result.searches.length} web searches`}
+          {result.competitors.length > 0 && ` and ${result.competitors.length} competitor sites (${result.competitors.map((c) => c.name).join(', ')})`}
+          {result.ai && ` · cost ${money(result.usage.cost_usd)} (${Math.round((result.usage.prompt_tokens + result.usage.completion_tokens) / 1000)}k tokens)`}
+          {'. Tick the documents to create — nothing is saved until you do, and you can edit everything afterwards.'}
+          {result.notes.map((n) => <span key={n} className="mt-1 block text-amber-700">{n}</span>)}
+        </>}
         footer={<>
           <FolderPicker folders={folders} value={target} onChange={setTarget} />
           <Button onClick={() => setResult(null)}>Back</Button>
@@ -104,25 +145,45 @@ export function AutofillModal({ open, folders, onClose, onCreated }: { open: boo
 
   return (
     <Modal open={open} onClose={() => !busy && onClose()} title="Fill from website"
-      description="Kinetic reads your home, about, product, pricing and customer pages and drafts the core documents: company overview, offers, ICP, personas, positioning, competitors, case studies and tone of voice. You review them before anything is created."
+      description="Kinetic researches your company like an analyst: it reads ~20 pages of your site, searches the web for competitors, reviews and press, checks competitor sites, then writes detailed docs — company overview, products, ICP, buyer personas, positioning, competitors, proof, tone of voice and objection handling. Takes a minute or two; you review everything before it is saved."
       footer={<>
-        <Button onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button variant="primary" disabled={!domain.trim() || busy} onClick={read} icon={<Globe className="size-4" />}>Read website</Button>
+        {busy ? <Button onClick={stop}>Stop</Button> : <Button onClick={onClose}>Cancel</Button>}
+        <Button variant="primary" disabled={!domain.trim() || busy} onClick={read} icon={<Globe className="size-4" />}>Research website</Button>
       </>}>
       <form onSubmit={(e) => { e.preventDefault(); if (domain.trim() && !busy) void read(); }}>
         <Input autoFocus value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="yourcompany.com" disabled={busy} />
       </form>
-      {busy && (
-        <div className="mt-4 space-y-1.5" aria-live="polite">
-          {STEPS.map((s, i) => (
-            <div key={s} className={cx('flex items-center gap-2 text-[13px]', i > step && 'text-zinc-300')}>
-              {i < step ? <Check className="size-3.5 text-zinc-500" /> : <span className={cx('size-1.5 rounded-full', i === step ? 'bg-zinc-500' : 'bg-zinc-200')} style={{ margin: '0 4px' }} />}
-              <span className={cx(i === step ? 'text-shimmer font-medium' : i < step ? 'text-zinc-500' : '')}>{i === step ? `${s}…` : s}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {run && run.status !== 'stopped' && <Progress run={run} />}
     </Modal>
+  );
+}
+
+/** The run's steps as they happen: finished ones ticked, running ones shimmering. */
+function Progress({ run }: { run: ResearchRun }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { ref.current?.scrollTo({ top: ref.current.scrollHeight }); }, [run.steps.length]);
+  const pages = run.steps.filter((s) => s.label.startsWith('Reading /') && s.status === 'done').length;
+  const searches = run.steps.filter((s) => s.label.startsWith('Searching') && s.status === 'done').length;
+  const written = run.steps.filter((s) => s.label.startsWith('Writing') && s.status === 'done').length;
+  return (
+    <div className="mt-4" aria-live="polite">
+      <div className="mb-1.5 flex gap-3 text-[11.5px] text-zinc-400">
+        <span>{pages + (run.steps.length ? 1 : 0)} pages read</span><span>{searches} searches</span><span>{written} docs written</span>
+      </div>
+      <div ref={ref} className="max-h-[260px] space-y-1 overflow-y-auto pr-1 scroll-thin">
+        {run.steps.length === 0 && <Shimmer className="text-[13px]">Starting…</Shimmer>}
+        {run.steps.map((s) => (
+          <div key={s.id} className="flex items-center gap-2 text-[13px]">
+            {s.status === 'running' ? <span className="mx-1 size-1.5 shrink-0 rounded-full bg-zinc-500" />
+              : s.status === 'done' ? <Check className="size-3.5 shrink-0 text-zinc-400" />
+                : s.status === 'failed' ? <X className="size-3.5 shrink-0 text-zinc-300" /> : <Minus className="size-3.5 shrink-0 text-zinc-300" />}
+            {s.status === 'running' ? <Shimmer className="font-medium">{s.label}</Shimmer>
+              : <span className={cx('truncate', s.status === 'done' ? 'text-zinc-500' : 'text-zinc-400')}>{s.label.replace(/…$/, '')}</span>}
+            {s.detail && s.status !== 'running' && <span className="ml-auto shrink-0 truncate pl-2 text-[11.5px] text-zinc-400" style={{ maxWidth: '45%' }}>{s.detail}</span>}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

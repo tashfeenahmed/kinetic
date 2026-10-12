@@ -215,67 +215,7 @@ describe('migration 011', () => {
   });
 });
 
-describe('fill from website', () => {
-  const html = `<html><head><title>Tillr | Cloud POS</title><meta name="description" content="Cloud POS for cafés"></head>
-    <body><a href="/pricing">Pricing</a><a href="https://other.com/about">x</a><p>Tillr runs tills for cafés.</p></body></html>`;
-  const pages = { 'https://tillr.ie/pricing': '<title>Pricing</title><p>€49 a month</p>', 'https://tillr.ie': html };
-  const draft = {
-    company: '# Company overview\n\nTillr makes **cloud POS** for cafés.',
-    offers: '## Tillr POS\n\n€49/mo',
-    icp: { industries: ['Cafés'], geos: ['Ireland'] },
-    personas: '', tone: 'Warm and short.', summary: 'A POS company.',
-  };
-
-  it('drafts markdown docs for review; bulk creates the picked ones; apply skips existing titles', async () => {
-    const bodies: any[] = [];
-    const e = await setup((b) => {
-      bodies.push(b);
-      return Response.json({ choices: [{ message: { role: 'assistant', content: '', tool_calls: [{ id: 'x', type: 'function', function: { name: 'submit', arguments: JSON.stringify(draft) } }] } }] });
-    }, pages);
-    await e.api('POST', '/api/knowledge/docs', { title: 'Tone of voice', content: 'Mine.' });
-
-    const r = await e.api('POST', '/api/knowledge/autofill', { domain: 'tillr.ie' });
-    expect(r.status).toBe(200);
-    expect(r.body.data).toMatchObject({ ai: true, applied: false, host: 'tillr.ie', pages: ['https://tillr.ie', 'https://tillr.ie/pricing'], summary: 'A POS company.' });
-    expect(bodies[0].messages[1].content).toContain('€49 a month');
-    expect(bodies[0].tools[0].function.parameters.properties.icp.description).toContain('Ideal customer profile');
-    expect(r.body.data.drafts).toEqual([
-      { key: 'company', title: 'Company overview', content: 'Tillr makes **cloud POS** for cafés.', exists: false },
-      { key: 'offers', title: 'Products & offers', content: '## Tillr POS\n\n€49/mo', exists: false },
-      { key: 'icp', title: 'Ideal customer profile', content: '- **industries:** Cafés\n- **geos:** Ireland', exists: false },
-      { key: 'tone', title: 'Tone of voice', content: 'Warm and short.', exists: true },
-    ]);
-    expect(await titles(e)).toEqual(['Tone of voice']); // nothing saved yet
-
-    // What the review step does with the ticked drafts.
-    const picked = r.body.data.drafts.filter((d: any) => !d.exists).map((d: any) => ({ title: d.title, content: d.content }));
-    await e.api('POST', '/api/knowledge/docs/bulk', { docs: picked, created_by: 'autofill', source_url: 'https://tillr.ie' });
-    expect(await titles(e)).toEqual(['Company overview', 'Products & offers', 'Ideal customer profile', 'Tone of voice']);
-
-    // apply=true (the agent's one-call path) never overwrites or duplicates.
-    const again = await e.api('POST', '/api/knowledge/autofill', { domain: 'tillr.ie', apply: true });
-    expect(again.body.data.created).toEqual([]);
-    expect((await titles(e)).length).toBe(4);
-    expect((await e.api('GET', '/api/knowledge/docs/' + (await e.api('GET', '/api/knowledge/docs')).body.data[3].id)).body.data.content).toBe('Mine.');
-  });
-
-  it('apply=true creates the docs in one call', async () => {
-    const e = await setup(() => Response.json({ choices: [{ message: { role: 'assistant', content: '', tool_calls: [{ id: 'x', type: 'function', function: { name: 'submit', arguments: JSON.stringify(draft) } }] } }] }), pages);
-    const r = await e.api('POST', '/api/knowledge/autofill', { domain: 'tillr.ie', apply: true });
-    expect(r.body.data.created.map((d: any) => [d.title, d.created_by, d.source_url])).toEqual([
-      ['Company overview', 'autofill', 'https://tillr.ie'], ['Products & offers', 'autofill', 'https://tillr.ie'],
-      ['Ideal customer profile', 'autofill', 'https://tillr.ie'], ['Tone of voice', 'autofill', 'https://tillr.ie'],
-    ]);
-  });
-
-  it('without a key drafts a short company overview from page metadata', async () => {
-    const e = await setup(undefined, pages);
-    const r = await e.api('POST', '/api/knowledge/autofill', { domain: 'tillr.ie' });
-    expect(r.body.data.ai).toBe(false);
-    expect(r.body.data.drafts).toEqual([{ key: 'company', title: 'Company overview', content: '**Company:** Tillr\n**Website:** tillr.ie\n\nCloud POS for cafés', exists: false }]);
-    expect((await e.api('POST', '/api/knowledge/autofill', { domain: 'nope.example' })).status).toBe(400);
-  });
-
+describe('drafting from text (the multi-step website research is in knowledge-agent.test.ts)', () => {
   it('cleanDraft drops empty docs and keeps display order', () => {
     expect(cleanDraft({ tone: 'T', company: 'C', bogus: 'x', personas: ['Owner', { title: 'GM', pains: 'time' }] }).map((d) => [d.key, d.content]))
       .toEqual([['company', 'C'], ['personas', '- Owner\n- GM — time'], ['tone', 'T']]);
