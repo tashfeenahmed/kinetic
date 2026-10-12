@@ -42,6 +42,10 @@ Provider keys: the **Integrations** page (stored encrypted). See `docs/RESEARCH.
 
 Mailboxes (Google app password/OAuth, Microsoft 365 OAuth, any IMAP/SMTP), sending IPs, leads & lists, campaigns with A/B sequences, spintax and variables, timezone schedules and limits, master inbox with reply classification, private warmup pool, SPF/DKIM/DMARC checks, inbox placement tests, REST API (`/api/openapi.json`, reference at `/api/reference`) and 17 signed webhook events.
 
+## Sending domains (Cloudflare)
+
+Connect a Cloudflare API token (Zone → DNS → Edit, Zone → Zone → Read) and use **Domains** to set up each sending domain for **Google Workspace** or **Microsoft 365** mailboxes: pick a domain in your Cloudflare account (or add a new one — Kinetic shows the nameservers to set at your registrar), paste the verification and DKIM values from the provider's admin console, preview the exact record changes, apply. Kinetic writes MX, SPF (merged with any existing record, never duplicated), DKIM, DMARC, an optional open/click tracking CNAME and a website redirect, then verifies over Cloudflare's resolver. Mailboxes on those domains then connect in Sender Emails as usual.
+
 ## How the two connect
 
 | From | To | How |

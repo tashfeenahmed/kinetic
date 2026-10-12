@@ -17,6 +17,7 @@ import { inboxRoutes } from './routes/inbox.ts';
 import { opsRoutes } from './routes/ops.ts';
 import { trackingRoutes } from './routes/tracking.ts';
 import { docsRoutes } from './routes/docs.ts';
+import { domainRoutes } from './routes/domains.ts';
 import { ZodError } from 'zod';
 import { createGtm } from './gtm/index.ts';
 import { gtmHookRoutes, gtmRoutes } from './gtm/routes.ts';
@@ -71,6 +72,7 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
   ctx.gtm ??= createGtm(ctx);
   app.addHook('onClose', async () => ctx.gtm?.stop());
   gtmRoutes(app, ctx);
+  domainRoutes(app, ctx);
   gtmHookRoutes(app, ctx);
   docsRoutes(app, ctx);
 

@@ -36,6 +36,9 @@ export const SETTINGS_META: SettingMeta[] = [
   { key: 'EXA_API_KEY', domain: 'exa.ai', label: 'Exa', group: 'Web search', priority: 'optional', unlocks: 'Neural search API', cost: '$10 free credit', link: 'https://exa.ai' },
   { key: 'JINA_API_KEY', domain: 'jina.ai', label: 'Jina Reader', group: 'Web search', priority: 'optional', unlocks: 'Renders JavaScript-heavy pages for the agent', cost: 'Free tier', link: 'https://jina.ai/reader', free: 'Plain page fetch (built in)' },
 
+  // Email infrastructure
+  { key: 'CLOUDFLARE_API_TOKEN', domain: 'cloudflare.com', label: 'Cloudflare', group: 'Email infrastructure', priority: 'recommended', unlocks: 'One-click sending-domain setup on the Domains page: MX, SPF, DKIM, DMARC, tracking and redirects written to your Cloudflare DNS. Token permissions: Zone → DNS → Edit and Zone → Zone → Read (add Zone → Zone → Edit + Account Settings → Read to add new domains, Zone → Dynamic Redirect → Edit for redirects)', cost: 'Free', link: 'https://dash.cloudflare.com/profile/api-tokens', free: 'Copy the records from the Domains page into any DNS provider by hand' },
+
   // Alerts / compliance
   { key: 'SLACK_WEBHOOK_URL', domain: 'slack.com', label: 'Slack incoming webhook', group: 'Alerts', priority: 'start', unlocks: 'Signal alerts and Slack action columns', cost: 'Free', link: 'https://api.slack.com/messaging/webhooks', free: 'Webhook action to any URL (n8n, Discord, etc.)' },
   { key: 'SLACK_BOT_TOKEN', domain: 'slack.com', label: 'Slack bot token', group: 'Alerts', priority: 'optional', unlocks: 'Post to a channel chosen per column (chat:write scope)', cost: 'Free', link: 'https://api.slack.com/apps' },

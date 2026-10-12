@@ -87,6 +87,7 @@ export function DocsPage() {
               <li><b>DMARC</b>: TXT at <span className="font-mono text-sm">_dmarc.yourdomain.com</span>, start with <span className="font-mono text-sm">v=DMARC1; p=none</span>.</li>
             </ul>
             <p>Use “Check DNS” on any mailbox to verify. Send from separate domains, not your main company domain.</p>
+            <p><b>Automatic setup:</b> connect Cloudflare and use the <Link className="text-brand-600 underline" to="/domains">Domains</Link> page — pick or add a domain, choose Google Workspace or Microsoft 365, paste the verification and DKIM values from their admin console, preview the changes and apply. Kinetic writes MX, SPF (merged with any existing one), DKIM, DMARC, a tracking subdomain and an optional website redirect, then checks them.</p>
           </DocSection>
           <DocSection id="warmup" title="Warmup">
             <p>Your warmup-enabled mailboxes email each other with natural conversations. Each mailbox starts at 2 emails a day and adds 2 per day until its warmup limit. When a message lands in spam, Kinetic marks it read and moves it to the inbox — a strong positive signal. Some messages get replies, and handled messages are filed into a <b>Kinetic Warmup</b> folder so your inbox stays clean.</p>

@@ -10,6 +10,7 @@ import { SeedAccounts } from './integrations/SeedAccounts.tsx';
 
 const SECTIONS = [
   { id: 'providers', label: 'Data, AI & CRM' },
+  { id: 'domains', label: 'Sending domains' },
   { id: 'mailboxes', label: 'Mailbox sign-in' },
   { id: 'sending', label: 'Sending infrastructure' },
   { id: 'automation', label: 'Automation & API' },
@@ -48,6 +49,12 @@ export function IntegrationsPage() {
       <div className="space-y-10">
         <Section id="providers" title="Data, AI & CRM providers" description="Power your tables: AI research, web search, email finding and verification, company data, signals, Slack, HubSpot and Salesforce. Every key is optional and stored encrypted.">
           <GtmKeysSection />
+        </Section>
+
+        <Section id="domains" title="Sending domains" description="Connect Cloudflare (key above, under Email infrastructure) and set up each sending domain's MX, SPF, DKIM and DMARC from the Domains page.">
+          <Link to="/domains" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-800 hover:border-slate-300">
+            <BrandIcon domain="cloudflare.com" size={28} /> Open Domains <ArrowRight className="size-4" />
+          </Link>
         </Section>
 
         <Section id="mailboxes" title="Mailbox sign-in" description="Your own Google and Microsoft OAuth apps, so mailboxes can connect with “Sign in with Google/Microsoft”. App passwords and IMAP/SMTP work without this.">

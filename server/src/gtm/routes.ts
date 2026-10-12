@@ -426,6 +426,13 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
         const r = await smtpVerify(`kineticsand-port-check-${Date.now()}@gmail.com`, { helo: settings.get('SMTP_HELO'), timeoutMs: 10_000 });
         return r.verdict === 'invalid' ? { ok: true, detail: 'port 25 open — free SMTP verification works' } : { ok: false, detail: `port 25 check inconclusive (${r.reply ?? r.verdict}); your network may block outbound SMTP` };
       }
+      if (what === 'cloudflare') {
+        const { Cloudflare } = await import('../domains/cloudflare.ts');
+        const cf = new Cloudflare(settings.get('CLOUDFLARE_API_TOKEN') ?? '', ctx.fetch);
+        const t = await cf.verifyToken();
+        const zones = await cf.zones();
+        return { ok: t.status === 'active', detail: `token ${t.status} · ${zones.length} domain${zones.length === 1 ? '' : 's'} visible` };
+      }
       if (what === 'slack') { await integ.slackPost(settings, { text: ':wave: Kinetic test message' }); return { ok: true, detail: 'sent' }; }
       if (what === 'hubspot') { const r = await integ.hubspotImport(settings, 'contacts', ['email'], 1); return { ok: true, detail: `reachable (${r.length} sample)` }; }
       return { ok: false, detail: 'unknown test' };

@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
-  ArrowRight, AtSign, Briefcase, Building2, CheckCircle2, ChevronRight, Circle, FileText, Flame, Inbox, Loader2, Mail, Radar, Rocket,
+  ArrowRight, AtSign, Briefcase, Globe, Building2, CheckCircle2, ChevronRight, Circle, FileText, Flame, Inbox, Loader2, Mail, Radar, Rocket,
   Table2, User, Users,
 } from 'lucide-react';
 import { api, errorMessage } from '../lib/api.ts';
@@ -50,6 +50,7 @@ export function HomePage() {
   const campaigns = useQuery({ queryKey: ['dash-campaigns'], queryFn: () => api.get('/api/campaigns', { status: 'active', per_page: 5 }).then((r) => r.data as any[]) });
   const allCampaigns = useQuery({ queryKey: ['dash-campaign-count'], queryFn: () => api.get('/api/campaigns', { per_page: 1 }).then((r) => r.meta.total as number) });
   const warmup = useQuery({ queryKey: ['dash-warmup'], queryFn: () => api.get('/api/warmup/sender-emails').then((r) => (r.data as any[]).filter((s) => s.warmup_enabled).length) });
+  const domainCount = useQuery({ queryKey: ['domains-count'], queryFn: () => api.get('/api/domains').then((r) => (r.data as any[]).filter((d) => d.id).length) });
   const signals = useQuery({ queryKey: ['home-signals'], queryFn: () => api.get<any[]>('/api/gtm/signals', { limit: 6 }), refetchInterval: 60_000 });
 
   const s = stats.data;
@@ -74,6 +75,7 @@ export function HomePage() {
       {s && (
         <GetStarted counts={{
           lists: (tables.data?.length ?? 0) + (s.total_leads > 0 ? 1 : 0),
+          domains: (domainCount.data ?? 0) + (s.connected_senders + s.disconnected_senders > 0 ? 1 : 0),
           senders: s.connected_senders + s.disconnected_senders, warmup: warmup.data ?? 0,
           campaigns: allCampaigns.data ?? 0, active: s.launched_campaigns,
         }} />
@@ -235,9 +237,10 @@ function Stage({ to, icon: Icon, label, value, hint, tone, last }: { to: string;
   );
 }
 
-function GetStarted({ counts }: { counts: { lists: number; senders: number; warmup: number; campaigns: number; active: number } }) {
+function GetStarted({ counts }: { counts: { lists: number; domains: number; senders: number; warmup: number; campaigns: number; active: number } }) {
   const steps = [
     { done: counts.lists > 0, title: 'Build a prospect list', text: 'Search below, import a CSV or start from a template.', to: '#find', icon: Table2 },
+    { done: counts.domains > 0, title: 'Set up a sending domain', text: 'Connect Cloudflare and Kinetic configures the DNS.', to: '/domains', icon: Globe },
     { done: counts.senders > 0, title: 'Connect a mailbox', text: 'Add the inboxes you will send from.', to: '/sender-emails', icon: AtSign },
     { done: counts.warmup > 0, title: 'Turn on warmup', text: 'Build reputation for 2–4 weeks first.', to: '/warmup', icon: Flame },
     { done: counts.campaigns > 0, title: 'Create a campaign', text: 'Write the sequence; send table rows to it.', to: '/campaigns', icon: FileText },
@@ -248,7 +251,7 @@ function GetStarted({ counts }: { counts: { lists: number; senders: number; warm
   return (
     <Card title="Get started" description={`${done} of ${steps.length} steps done`} className="mb-6">
       <ProgressBar value={(done / steps.length) * 100} />
-      <div className="mt-4 grid gap-3 pb-5 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="mt-4 grid gap-3 pb-5 sm:grid-cols-3 lg:grid-cols-6">
         {steps.map((s) => {
           const inner = (
             <>

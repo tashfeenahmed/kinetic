@@ -15,6 +15,7 @@ const GROUP_TESTS: Record<string, { id: string; label: string }> = {
   Alerts: { id: 'slack', label: 'Send Slack test' },
   'Email finding & verification': { id: 'smtp', label: 'Check free SMTP (port 25)' },
   CRM: { id: 'hubspot', label: 'Test HubSpot' },
+  'Email infrastructure': { id: 'cloudflare', label: 'Test Cloudflare' },
 };
 
 export function Settings({ onSaved, embedded }: { onSaved: () => void; embedded?: boolean }) {
