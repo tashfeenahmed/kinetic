@@ -221,8 +221,15 @@ describe('knowledge folders', () => {
 describe('fill from website files the docs in a folder', () => {
   const html = `<html><head><title>Tillr | Cloud POS</title><meta name="description" content="Cloud POS for cafés"></head><body><p>Tillr runs tills.</p></body></html>`;
   const pages = { 'https://tillr.ie': html };
-  const draft = { company: 'Tillr makes cloud POS.', offers: '## Tillr POS\n\n€49/mo', tone: 'Warm.', summary: 'POS.' };
-  const llm = () => Response.json({ choices: [{ message: { role: 'assistant', content: '', tool_calls: [{ id: 'x', type: 'function', function: { name: 'submit', arguments: JSON.stringify(draft) } }] } }] });
+  // The research run writes one doc per call; this model only has something to say for three of them.
+  const draft: Record<string, string> = { 'Company overview': 'Tillr makes cloud POS.', 'Products & offers': '## Tillr POS\n\n€49/mo', 'Tone of voice': 'Warm.' };
+  const llm = (b: any) => {
+    const tool = b.tool_choice?.function?.name;
+    const message = tool
+      ? { role: 'assistant', content: '', tool_calls: [{ id: 'x', type: 'function', function: { name: tool, arguments: '{}' } }] }
+      : { role: 'assistant', content: draft[String(b.messages.at(-1).content).match(/DOCUMENT: (.+)/)?.[1] ?? ''] ?? '' };
+    return Response.json({ choices: [{ message }] });
+  };
 
   it('apply=true creates a folder named after the site; folder overrides; bulk takes a folder', async () => {
     const e = await setup(llm, pages);
@@ -246,13 +253,13 @@ describe('fill from website files the docs in a folder', () => {
     const c = await e.api('POST', '/api/knowledge/docs/bulk', { docs: [{ title: 'Personas', content: 'y' }], folder_id: b.body.folder.id });
     expect(c.body.data[0].folder_path).toBe('Company');
     expect(await tree(e)).toEqual(['F Company', '  D Personas', '  D ICP', 'F tillr.ie', '  D Company overview', '  D Products & offers', '  D Tone of voice']);
-  });
+  }, 120_000);
 
   it('apply=true honours a folder path', async () => {
     const e = await setup(llm, pages);
     const a = await e.api('POST', '/api/knowledge/autofill', { domain: 'tillr.ie', apply: true, folder: 'Company / Website' });
     expect(a.body.data.folder.path).toBe('Company / Website');
-  });
+  }, 120_000);
 });
 
 describe('agent sees folders', () => {

@@ -1,10 +1,7 @@
 /**
- * "Fill from website" for the Knowledge Hub. Reads a few pages of the user's site
- * (home, about, product, pricing, customers), then asks the model to draft a set of
- * markdown documents in one forced tool call. Without an AI key it still drafts a
- * short "Company overview" doc from the page's own metadata.
+ * Quick drafting of Knowledge Hub documents from source text (pasted material) in
+ * one forced tool call. "Fill from website" is the multi-step run in research.ts.
  */
-import { fetchPage, decode } from '../gtm/lib/html.ts';
 import type { Settings } from '../gtm/settings.ts';
 import { aiReady, chat, fnTool, agentModel } from '../agent/llm.ts';
 
@@ -63,46 +60,4 @@ export function cleanDraft(args: any): DraftDoc[] {
     return String(v).trim();
   };
   return DRAFT_DOCS.map((d) => ({ key: d.key, title: d.title, content: md(args?.[d.key]) })).filter((d) => d.content);
-}
-
-const INTERESTING = /\/(about|company|product|products|platform|solutions?|features|pricing|customers|case-studies|case_studies|stories|why|use-cases|industries)(\/|$)/i;
-
-/** Home page plus up to `extra` same-site pages that usually describe the offer. */
-export async function crawlSite(domain: string, extra = 4): Promise<{ pages: { url: string; title: string; text: string; description: string }[] }> {
-  const start = domain.includes('://') ? domain : `https://${domain.replace(/^\/+/, '')}`;
-  const home = await fetchPage(start, 20_000);
-  if (home.status >= 400) throw new Error(`${start} returned HTTP ${home.status}`);
-  const base = new URL(home.url || start);
-  const links = new Set<string>();
-  for (const m of home.html.matchAll(/<a\s[^>]*href="([^"#]+)"/gi)) {
-    try {
-      const u = new URL(decode(m[1]), base);
-      if (u.hostname.replace(/^www\./, '') !== base.hostname.replace(/^www\./, '')) continue;
-      u.hash = ''; u.search = '';
-      if (INTERESTING.test(u.pathname)) links.add(u.toString());
-    } catch { /* bad href */ }
-  }
-  const meta = (html: string) => decode(html.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']*)["']/i)?.[1] ?? html.match(/<meta[^>]+property=["']og:description["'][^>]*content=["']([^"']*)["']/i)?.[1] ?? '');
-  const pages = [{ url: home.url || start, title: home.title, text: home.text.slice(0, 8000), description: meta(home.html) }];
-  for (const url of [...links].slice(0, extra)) {
-    try {
-      const p = await fetchPage(url, 15_000);
-      if (p.status < 400) pages.push({ url: p.url || url, title: p.title, text: p.text.slice(0, 6000), description: meta(p.html) });
-    } catch { /* skip page */ }
-  }
-  return { pages };
-}
-
-/** Website -> drafted docs. Falls back to page metadata when no model is configured. */
-export async function draftFromWebsite(settings: Settings, domain: string): Promise<Draft & { pages: string[]; host: string }> {
-  const { pages } = await crawlSite(domain);
-  const text = pages.map((p) => `## ${p.title || p.url}\nURL: ${p.url}\n${p.description ? `Description: ${p.description}\n` : ''}${p.text}`).join('\n\n');
-  const host = new URL(pages[0].url).hostname.replace(/^www\./, '');
-  if (!aiReady(settings)) {
-    const name = (pages[0].title.split(/\s[|–—-]\s/)[0] || host).trim();
-    const content = [`**Company:** ${name}`, `**Website:** ${host}`, pages[0].description ? `\n${pages[0].description}` : ''].join('\n').trim();
-    return { docs: [{ key: 'company', title: 'Company overview', content }], summary: pages[0].description, ai: false, pages: pages.map((p) => p.url), host };
-  }
-  const d = await draftFromText(settings, text, { domain: host });
-  return { ...d, pages: pages.map((p) => p.url), host };
 }
