@@ -31,6 +31,12 @@ describe('lookup proxy', () => {
     expect(await (await request('http://127.0.0.1:8888/search?q=x')).text()).toBe('direct');
     expect(direct).toEqual(['http://127.0.0.1:8888/search?q=x']);
 
+    expect(await (await request('http://example.test/page', { direct: true })).text()).toBe('direct');
+
+    // A proxy that can't be reached falls back to a direct request.
+    setProxySource(() => 'http://127.0.0.1:1');
+    expect(await (await request('http://example.test/other')).text()).toBe('direct');
+
     setProxySource(() => undefined);
     expect(await (await request('http://example.test/page')).text()).toBe('direct');
   });

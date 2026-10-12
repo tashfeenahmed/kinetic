@@ -17,6 +17,8 @@ export interface RequestOpts {
   json?: unknown;
   body?: string;
   timeoutMs?: number;
+  /** Skip SCRAPE_PROXY for this request (community APIs that reject proxy exits). */
+  direct?: boolean;
 }
 
 let httpFetch: typeof fetch = (...a) => globalThis.fetch(...a);
@@ -65,9 +67,14 @@ export async function request(url: string, opts: RequestOpts = {}): Promise<Resp
     signal: AbortSignal.timeout(opts.timeoutMs ?? 30_000),
     redirect: 'follow' as const,
   };
-  const dispatcher = proxyFor(u);
-  // undici's own fetch understands the proxy dispatcher; the response is a standard Response.
-  if (dispatcher) return undiciFetch(u, { ...init, dispatcher }) as unknown as Promise<Response>;
+  const dispatcher = opts.direct ? null : proxyFor(u);
+  if (dispatcher) {
+    // undici's own fetch understands the proxy dispatcher; the response is a standard Response.
+    // If the proxy can't reach the site at all, go direct rather than fail the lookup.
+    try {
+      return await (undiciFetch(u, { ...init, dispatcher, signal: AbortSignal.timeout(Math.min(opts.timeoutMs ?? 30_000, 20_000)) }) as unknown as Promise<Response>);
+    } catch { /* fall through to a direct request */ }
+  }
   return httpFetch(u as any, init);
 }
 

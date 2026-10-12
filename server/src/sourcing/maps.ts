@@ -76,6 +76,7 @@ export async function geocode(q: string, settings: Settings): Promise<Geocoded |
     headers: { 'user-agent': userAgent(settings), 'accept-language': 'en' },
     query: { q, format: 'jsonv2', limit: 1 },
     timeoutMs: 20_000,
+    direct: true, // OpenStreetMap's usage policy wants a stable, identifiable client
   }));
   const r = d?.[0];
   // boundingbox is [south, north, west, east] as strings.
@@ -289,7 +290,7 @@ async function overpass(body: string, deps: Deps): Promise<any> {
     if (attempt >= OVERPASS.length) await sleep(retryDelayMs);
     try {
       const res = await request(url, {
-        method: 'POST', body, timeoutMs: 90_000,
+        method: 'POST', body, timeoutMs: 90_000, direct: true,
         headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': userAgent(deps.settings) },
       });
       const text = await res.text();
