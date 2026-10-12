@@ -7,10 +7,11 @@ import { auth, canWrite, requireAdmin, defineRoutes, type Auth } from '../http.t
 import { RUNNABLE, type ColumnType } from './engine/store.ts';
 import { listModels, DEFAULT_MODEL } from './engine/agent.ts';
 import { ENRICH_KINDS } from './providers/catalog.ts';
-import { SIGNAL_KINDS, signalKind } from './providers/signals.ts';
+import { SIGNAL_KINDS } from './providers/signals.ts';
 import * as integ from './providers/integrations.ts';
 import { webSearch } from './providers/search.ts';
-import { githubPeople, ycSearch } from './providers/openData.ts';
+import { githubPeople, jobsSearch, ycSearch } from './providers/openData.ts';
+import { aiCompanySearch } from './providers/aiSearch.ts';
 import { SETTING_KEYS, type SettingKey } from './settings.ts';
 import { SETTINGS_META } from './settingsMeta.ts';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -102,6 +103,51 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
     store.deleteTable(tableId);
     return { ok: true };
   });
+
+  /**
+   * Home "Find new prospects": search first, create a table only when something was found.
+   * Companies: YC directory (free), falling back to an AI web search when it has no match.
+   */
+  const findBody = z.object({
+    mode: z.enum(['companies', 'people', 'jobs']),
+    query: z.string().trim().min(1, 'Type what you are looking for'),
+    limit: z.number().int().min(1).max(500).default(100),
+    ai: z.boolean().optional(), // force the AI web search for companies
+  });
+  r.post('/api/gtm/find', 'Find prospects and open them in a new table', async (req, reply) => {
+    const a = canWrite(req);
+    const b = findBody.parse(req.body ?? {});
+    const aiReady = settings.has('OPENROUTER_API_KEY') || settings.has('AI_BASE_URL');
+    let records: Record<string, unknown>[] = [];
+    let source = '';
+    if (b.mode === 'companies') {
+      if (!b.ai) { records = await ycSearch({ query: b.query, limit: b.limit }); source = 'YC directory'; }
+      if (!records.length && aiReady) {
+        records = await aiCompanySearch(b.query, { settings, log: () => {}, workspaceId: a.workspaceId }, Math.min(b.limit, 40));
+        source = 'AI web search';
+      }
+    } else if (b.mode === 'people') {
+      const q = b.query;
+      records = await githubPeople(settings.get('GITHUB_TOKEN'), { ...(q.includes('.') ? { domain: q } : { org: q }), limit: Math.min(b.limit, 50) });
+      source = 'GitHub org members';
+    } else {
+      records = await jobsSearch(settings, { domains: b.query, limit: b.limit });
+      source = 'public job boards';
+    }
+    if (!records.length) {
+      const why = b.mode === 'companies'
+        ? `No companies matched "${b.query}". The free Companies search covers the ~6,000 Y Combinator startups${aiReady ? ', and the AI web search found nothing either' : ''}. Try simpler keywords (e.g. "point of sale", "payments", "restaurant software")${aiReady ? '' : ', or add an OpenRouter key on the Integrations page to search the whole web with AI'}.`
+        : b.mode === 'people'
+          ? `No public members found for "${b.query}" on GitHub. Many companies keep membership private — try their GitHub org name (e.g. "vercel").`
+          : `No open roles found for "${b.query}" on public job boards (Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Recruitee, Personio).`;
+      return reply.code(404).send({ error: 'no_results', message: why, ai_available: aiReady });
+    }
+    const label = b.mode === 'companies' ? 'Companies' : b.mode === 'people' ? 'People' : 'Jobs';
+    const tableId = store.createTable(a.workspaceId, `${label} · ${b.query}`.slice(0, 60));
+    const ids = store.addRows(tableId, records);
+    afterInsert(tableId, ids);
+    return { id: tableId, rows: ids.length, source };
+  }, { body: findBody });
 
   /** Outreach → tables: open leads (selected, a list, a campaign's, or all) as a table to enrich. */
   const fromLeads = z.object({
@@ -344,20 +390,7 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
       case 'apollo_people': records = await integ.apolloPeopleSearch(settings, { ...body.params, limit: body.limit }); break;
       case 'apollo_companies': records = await integ.apolloCompanySearch(settings, { ...body.params, limit: body.limit }); break;
       case 'yc_companies': records = await ycSearch({ ...body.params, limit: body.limit }); break;
-      case 'jobs': {
-        // One row per open role, from public ATS boards (free).
-        const domains = String(body.params.domains ?? '').split(/[\s,]+/).filter(Boolean);
-        if (!domains.length) throw Object.assign(new Error('Give one or more company domains'), { statusCode: 400 });
-        records = [];
-        for (const d of domains.slice(0, 25)) {
-          const hit = await signalKind('hiring').run({ domain: d, keywords: body.params.keywords }, { settings, log: () => {} }).catch(() => null);
-          for (const j of (hit?.data?.jobs as any[] | undefined) ?? []) {
-            records.push({ Company: d, 'Company domain': d, 'Job title': j.title, Department: j.department ?? '', Location: j.location ?? '', Posted: j.posted ? String(j.posted).slice(0, 10) : '', 'Job URL': j.url ?? '', ATS: hit?.data?.ats });
-          }
-        }
-        records = records.slice(0, body.limit);
-        break;
-      }
+      case 'jobs': records = await jobsSearch(settings, { domains: body.params.domains, keywords: body.params.keywords, limit: body.limit }); break;
       case 'github_people': records = await githubPeople(settings.get('GITHUB_TOKEN'), { ...body.params, limit: body.limit }); break;
     }
     const ids = store.addRows(tableId, records);

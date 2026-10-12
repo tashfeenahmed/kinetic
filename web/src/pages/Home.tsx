@@ -10,9 +10,9 @@ import { api, errorMessage } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import { avatarColor, fmtDate, fmtNumber, fmtPct, fmtRelative, initials } from '../lib/format.ts';
 import { Page } from '../components/Layout.tsx';
-import { Alert, Button, Card, EmptyState, Loading, ProgressBar, Select, cx } from '../components/ui.tsx';
+import { Alert, Button, Card, EmptyState, Loading, ProgressBar, Select, cx, useUi } from '../components/ui.tsx';
 import { CampaignStatus, ReplyCategory } from '../components/status.tsx';
-import { useGtmTables } from '../gtm/lib/queries.ts';
+import { useGtmCatalog, useGtmTables } from '../gtm/lib/queries.ts';
 
 /**
  * Home = the whole pipeline on one page:
@@ -28,7 +28,7 @@ const SERIES = [
 
 type Mode = 'companies' | 'people' | 'jobs';
 const MODES: Record<Mode, { label: string; icon: typeof Building2; placeholder: string; hint: string }> = {
-  companies: { label: 'Companies', icon: Building2, placeholder: 'What kind of companies? e.g. developer tools, fintech', hint: 'Free · 6,000+ YC companies' },
+  companies: { label: 'Companies', icon: Building2, placeholder: 'What kind of companies? e.g. restaurant POS, developer tools, fintech', hint: 'Free · YC directory, then AI web search' },
   people: { label: 'People', icon: User, placeholder: 'Company domain or GitHub org, e.g. vercel.com', hint: 'Free · public GitHub org members' },
   jobs: { label: 'Jobs', icon: Briefcase, placeholder: 'Company domains, e.g. ramp.com, linear.app', hint: 'Free · public job boards' },
 };
@@ -275,22 +275,18 @@ function FindBox() {
   const [err, setErr] = useState('');
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { toast } = useUi();
+  const catalog = useGtmCatalog();
 
   async function find() {
     if (!q.trim() || busy) return;
     setBusy(true);
     setErr('');
     try {
-      const name = `${MODES[mode].label} · ${q.trim()}`.slice(0, 60);
-      const t = await api.post<{ id: number }>('/api/gtm/tables', { name, template: 'blank' });
-      const source = mode === 'companies' ? 'yc_companies' : mode === 'people' ? 'github_people' : 'jobs';
-      const params = mode === 'companies' ? { query: q } : mode === 'people' ? (q.includes('.') ? { domain: q.trim() } : { org: q.trim() }) : { domains: q };
-      await api.post(`/api/gtm/tables/${t.id}/import/source`, { source, params, limit: mode === 'people' ? 30 : 100 });
-      const view = await api.get<any>(`/api/gtm/tables/${t.id}`);
-      const placeholder = view.columns.find((c: any) => c.name === 'Name' && c.type === 'text');
-      if (placeholder && view.columns.length > 1) await api.del(`/api/gtm/columns/${placeholder.id}`);
+      const r = await api.post<{ id: number; rows: number; source: string }>('/api/gtm/find', { mode, query: q.trim(), limit: mode === 'people' ? 30 : 100 });
       await qc.invalidateQueries({ queryKey: ['gtm-tables'] });
-      navigate(`/tables/${t.id}`);
+      toast(`Found ${r.rows} ${mode === 'jobs' ? 'open roles' : mode} · ${r.source}`);
+      navigate(`/tables/${r.id}`);
     } catch (e) {
       setErr(errorMessage(e));
     } finally {
@@ -319,12 +315,13 @@ function FindBox() {
           );
         })}
         <span className="flex-1" />
-        <span className="hidden text-xs text-slate-400 sm:inline">{MODES[mode].hint}</span>
+        <span className="hidden text-xs text-slate-400 sm:inline">{mode === 'companies' && !catalog.data?.aiReady ? 'Free · YC directory (add OpenRouter on Integrations to search the whole web)' : MODES[mode].hint}</span>
         <button onClick={find} disabled={busy || !q.trim()} className="ml-2 inline-flex size-8 items-center justify-center rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 disabled:opacity-40" aria-label="Search">
           {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
         </button>
       </div>
-      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+      {busy && <p className="mt-2 text-[13px] text-slate-500">Searching… {mode === 'companies' ? 'if the YC directory has no match and AI is set up, a web search can take up to a minute.' : mode === 'jobs' ? 'checking each company’s job board.' : ''}</p>}
+      {err && <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-900">{err}</p>}
     </div>
   );
 }

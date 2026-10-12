@@ -110,16 +110,98 @@ export async function ycCompany(input: EnrichInput): Promise<Hit | null> {
 }
 
 /** Source: YC companies filtered by tag/industry, batch, region, hiring, status. */
+// Words that describe the request rather than the business ("POS system companies in London").
+const STOPWORDS = new Set(['a', 'an', 'the', 'and', 'or', 'of', 'for', 'in', 'on', 'at', 'to', 'with', 'that', 'which', 'who', 'are', 'is', 'do', 'does', 'make', 'makes', 'making',
+  'company', 'companies', 'startup', 'startups', 'business', 'businesses', 'firm', 'firms', 'vendor', 'vendors', 'provider', 'providers', 'brand', 'brands', 'find', 'me', 'list', 'show', 'any', 'all', 'some', 'like', 'similar', 'best', 'top']);
+
+// Common abbreviations ↔ the words companies actually use to describe themselves.
+const SYNONYMS: Record<string, string[]> = {
+  pos: ['point of sale', 'point-of-sale', 'pos'],
+  crm: ['crm', 'customer relationship'],
+  ai: ['ai', 'artificial intelligence', 'llm', 'machine learning'],
+  ml: ['machine learning', 'ml'],
+  hr: ['hr', 'human resources', 'people ops', 'payroll'],
+  ecommerce: ['ecommerce', 'e-commerce', 'online store', 'shopify'],
+  devtools: ['developer tools', 'devtools', 'developer'],
+  saas: ['saas', 'software'],
+  fintech: ['fintech', 'financial', 'payments', 'banking'],
+  healthtech: ['healthtech', 'health', 'healthcare', 'medical'],
+  edtech: ['edtech', 'education', 'learning'],
+  proptech: ['proptech', 'real estate', 'property'],
+  insurtech: ['insurtech', 'insurance'],
+  legaltech: ['legaltech', 'legal'],
+  b2b: ['b2b'],
+  api: ['api', 'apis'],
+  erp: ['erp', 'enterprise resource'],
+  ats: ['ats', 'applicant tracking', 'recruiting'],
+};
+
+const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** One query term → a regex over company text (word-boundary, plural-tolerant, with synonyms). */
+function termPattern(term: string): RegExp {
+  const alts = SYNONYMS[term] ?? [term];
+  return new RegExp(alts.map((a) => `\\b${escapeRe(a)}(?:s|es)?\\b`).join('|'), 'i');
+}
+
+function ycText(c: any): string {
+  return [c.name, c.one_liner, c.long_description, c.industry, c.subindustry, ...(c.tags ?? []), ...(c.industries ?? [])].filter(Boolean).join(' • ');
+}
+
+/** Split a free-text query into meaningful terms ("POS system companies" → ["pos", "system"]). */
+export function queryTerms(query: string): string[] {
+  const lower = query.toLowerCase();
+  const terms: string[] = [];
+  // Keep multi-word synonyms together ("point of sale").
+  let rest = lower;
+  for (const alts of Object.values(SYNONYMS)) for (const a of alts) if (a.includes(' ') && rest.includes(a)) { terms.push(a); rest = rest.replace(a, ' '); }
+  for (const w of rest.split(/[^a-z0-9+#-]+/)) {
+    if (!w || STOPWORDS.has(w) || w.length < 2) continue;
+    // Singularise ("systems" → "system") but leave short words and known abbreviations ("pos", "saas") alone.
+    terms.push(SYNONYMS[w] || w.length <= 4 ? w : w.replace(/ies$/, 'y').replace(/([^s])s$/, '$1'));
+  }
+  return [...new Set(terms)];
+}
+
+/**
+ * Search the YC directory by meaning-ish keywords. Each term is weighted by how
+ * rare it is across the directory (IDF), so "POS" outweighs "system"; a company
+ * must match the most specific part of the query to be returned.
+ * Comma-separated queries are alternatives ("fintech, payments").
+ */
 export async function ycSearch(q: { query?: string; batch?: string; region?: string; hiring?: string; status?: string; limit: number }): Promise<Record<string, unknown>[]> {
   const rows = await ycCompanies();
   const has = (v: unknown, needle?: string) => !needle || String(Array.isArray(v) ? v.join(' ') : v ?? '').toLowerCase().includes(needle.toLowerCase());
-  const words = (q.query ?? '').split(',').map((w) => w.trim()).filter(Boolean);
-  return rows
-    .filter((c) => !words.length || words.some((w) => has([c.name, c.one_liner, c.industry, c.subindustry, ...(c.tags ?? [])].join(' '), w)))
+  const pool = rows
     .filter((c) => has(c.batch, q.batch) && has([c.all_locations, ...(c.regions ?? [])].join(' '), q.region) && has(c.status, q.status || undefined))
-    .filter((c) => !q.hiring || (q.hiring === 'yes' ? c.isHiring : !c.isHiring))
+    .filter((c) => !q.hiring || (q.hiring === 'yes' ? c.isHiring : !c.isHiring));
+  const texts = new Map(pool.map((c) => [c, ycText(c)]));
+
+  const scored = new Map<any, number>();
+  const groups = (q.query ?? '').split(',').map((g) => queryTerms(g)).filter((t) => t.length);
+  if (!groups.length) pool.forEach((c) => scored.set(c, 0));
+  for (const terms of groups) {
+    const pats = terms.map(termPattern);
+    const idf = pats.map((re) => {
+      let df = 0;
+      for (const t of texts.values()) if (re.test(t)) df++;
+      return df ? Math.log(1 + pool.length / df) : 0;
+    });
+    const total = idf.reduce((a, b) => a + b, 0);
+    if (!total) continue;
+    const rarest = idf.indexOf(Math.max(...idf));
+    for (const [c, t] of texts) {
+      let score = 0;
+      let hasRarest = false;
+      pats.forEach((re, k) => { if (re.test(t)) { score += idf[k]; if (k === rarest) hasRarest = true; } });
+      // Must match the most specific word ("pos", not just "system"), or most of the query's weight.
+      if (hasRarest || score >= total * 0.6) scored.set(c, Math.max(scored.get(c) ?? 0, score / total));
+    }
+  }
+  return [...scored.entries()]
+    .sort((a, b) => b[1] - a[1] || Number(b[0].team_size ?? 0) - Number(a[0].team_size ?? 0))
     .slice(0, q.limit)
-    .map((c) => ({ Company: c.name, 'Company domain': toDomain(c.website), Description: c.one_liner, Industry: c.subindustry ?? c.industry, Batch: c.batch, 'Team size': c.team_size, Location: c.all_locations, Hiring: c.isHiring ? 'yes' : 'no', 'YC page': `https://www.ycombinator.com/companies/${c.slug}` }));
+    .map(([c]) => ({ Company: c.name, 'Company domain': toDomain(c.website), Description: c.one_liner, Industry: c.subindustry ?? c.industry, Batch: c.batch, 'Team size': c.team_size, Location: c.all_locations, Hiring: c.isHiring ? 'yes' : 'no', 'YC page': `https://www.ycombinator.com/companies/${c.slug}` }));
 }
 
 // ---------- People at a company: public GitHub org members (free) ----------
@@ -146,4 +228,19 @@ export async function githubPeople(token: string | undefined, q: { org?: string;
     out.push({ 'Full name': u.name ?? '', 'GitHub': u.html_url, Company: u.company ?? org, 'Company domain': q.domain ?? '', Email: u.email ?? '', Website: u.blog ?? '', 'X / Twitter': u.twitter_username ? `https://x.com/${u.twitter_username}` : '', Location: u.location ?? '', Bio: u.bio ?? '' });
   }
   return out;
+}
+
+// ---------- Jobs: one row per open role on public ATS boards (free) ----------
+export async function jobsSearch(settings: import('../settings.ts').Settings, q: { domains: string; keywords?: string; limit: number }): Promise<Record<string, unknown>[]> {
+  const { signalKind } = await import('./signals.ts');
+  const domains = String(q.domains ?? '').split(/[\s,]+/).map((d) => toDomain(d)).filter(Boolean);
+  if (!domains.length) throw new Error('Give one or more company domains, e.g. ramp.com, linear.app');
+  const records: Record<string, unknown>[] = [];
+  for (const d of domains.slice(0, 25)) {
+    const hit = await signalKind('hiring').run({ domain: d, keywords: q.keywords }, { settings, log: () => {} }).catch(() => null);
+    for (const j of (hit?.data?.jobs as any[] | undefined) ?? []) {
+      records.push({ Company: d, 'Company domain': d, 'Job title': j.title, Department: j.department ?? '', Location: j.location ?? '', Posted: j.posted ? String(j.posted).slice(0, 10) : '', 'Job URL': j.url ?? '', ATS: hit?.data?.ats });
+    }
+  }
+  return records.slice(0, q.limit);
 }
