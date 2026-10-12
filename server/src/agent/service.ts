@@ -280,7 +280,7 @@ How to work:
 - Use the Knowledge Hub (below / knowledge tool) to target the right companies and personas and to write on-brand copy. Respect its exclusions.
 - When done, reply briefly: what you built (with table/campaign ids), what's still running in the background, and suggested next steps. Use short markdown.
 
-Workspace "${ws?.name ?? workspaceId}" snapshot:
+Workspace "${ws?.name ?? workspaceId}" snapshot (live: refreshed every step, so it already includes anything you created earlier in this chat):
 - Tables (${tables.length}): ${tables.map((t) => `#${t.id} "${t.name}" (${t.rows} rows)`).join('; ') || 'none yet'}
 - Campaigns (${campaigns.length}): ${campaigns.map((c) => `#${c.id} "${c.name}" [${c.status}]`).join('; ') || 'none yet'}
 - Sender mailboxes: ${senders}; leads: ${leads}; lead lists: ${lists.map((l) => `#${l.id} "${l.name}"`).join(', ') || 'none'}
