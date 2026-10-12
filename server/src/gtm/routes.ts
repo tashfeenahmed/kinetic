@@ -119,6 +119,7 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
     query: z.string().trim().min(1, 'Type what you are looking for'),
     limit: z.number().int().min(1).max(500).default(100),
     ai: z.boolean().optional(), // force the AI web search for companies
+    table_name: z.string().trim().min(1).max(120).optional(), // name for the new table (default: "<Kind> · <query>")
   });
   r.post('/api/gtm/find', 'Find prospects and open them in a new table', async (req, reply) => {
     const a = canWrite(req);
@@ -153,7 +154,7 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
       return reply.code(404).send({ error: 'no_results', message: why, ai_available: aiReady });
     }
     const label = b.mode === 'companies' ? 'Companies' : b.mode === 'people' ? 'People' : 'Jobs';
-    const tableId = store.createTable(a.workspaceId, `${label} · ${b.query}`.slice(0, 60));
+    const tableId = store.createTable(a.workspaceId, b.table_name ?? `${label} · ${b.query}`.slice(0, 60));
     const ids = store.addRows(tableId, records);
     afterInsert(tableId, ids);
     return { id: tableId, rows: ids.length, source, excluded: excl.excluded };

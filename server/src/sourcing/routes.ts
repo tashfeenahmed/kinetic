@@ -44,7 +44,7 @@ export const SOURCING_FIND_MODES = ['google_maps', 'company_lookalikes', 'people
 export const isSourcingMode = (m: string): m is (typeof SOURCING_FIND_MODES)[number] => (SOURCING_FIND_MODES as readonly string[]).includes(m);
 
 /** Find prospects for the sourcing modes: search, drop exclusions, open a new table. */
-export async function sourcingFind(ctx: Ctx, workspaceId: number, b: { mode: (typeof SOURCING_FIND_MODES)[number]; query: string; limit: number; params?: Record<string, unknown> }, reply: FastifyReply) {
+export async function sourcingFind(ctx: Ctx, workspaceId: number, b: { mode: (typeof SOURCING_FIND_MODES)[number]; query: string; limit: number; params?: Record<string, unknown>; table_name?: string }, reply: FastifyReply) {
   const r = await runSource(ctx, workspaceId, b.mode, { query: b.query, ...b.params }, b.limit);
   const f = ex.filterExcluded(ctx.db, workspaceId, r.records);
   if (!f.kept.length) {
@@ -56,7 +56,7 @@ export async function sourcingFind(ctx: Ctx, workspaceId: number, b: { mode: (ty
     return reply.code(404).send({ error: 'no_results', message, excluded: f.excluded });
   }
   const label = b.mode === 'google_maps' ? 'Local' : b.mode === 'company_lookalikes' ? 'Lookalikes' : 'People like';
-  const tableId = ctx.gtm!.store.createTable(workspaceId, `${label} · ${b.query}`.slice(0, 60));
+  const tableId = ctx.gtm!.store.createTable(workspaceId, b.table_name ?? `${label} · ${b.query}`.slice(0, 60));
   const ids = insertRows(ctx, tableId, f.kept);
   return { id: tableId, rows: ids.length, source: r.label, excluded: f.excluded };
 }
