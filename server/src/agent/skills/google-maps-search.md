@@ -47,3 +47,6 @@ links to Facebook/Instagram/booking sites instead of its own website.
 
 ## Next steps to offer
 Find emails (`work_email` enrichment on `Company domain`), enrich company, or send to a campaign.
+
+**503 `provider_busy`**: OpenStreetMap's free servers are rate-limiting. Kinetic already retried on mirrors, so don't hammer it: wait a minute and retry once, or split a big region (a county) into towns and search them into the same table with `table_id`. A Google Maps key avoids this.
+

@@ -14,7 +14,7 @@ import { nameParts, type Ctx, type EnrichInput, type Hit } from './types.ts';
 
 interface Sample { email: string; name?: string; source: string }
 
-const PATTERNS: Record<string, (f: string, l: string) => string> = {
+export const PATTERNS: Record<string, (f: string, l: string) => string> = {
   'first.last': (f, l) => `${f}.${l}`,
   first: (f) => f,
   flast: (f, l) => `${f[0]}${l}`,

@@ -12,6 +12,7 @@
  */
 import { getJson, HttpError, request } from '../gtm/lib/http.ts';
 import type { Settings } from '../gtm/settings.ts';
+import { HttpError as ApiError } from '../http.ts';
 import { bboxAround, boxSizeKm, haversineKm, inBox, parseBox, quarter, tileBox, type BBox, type LatLng } from './geo.ts';
 import { ownDomain } from './normalize.ts';
 
@@ -45,8 +46,9 @@ interface Deps { settings: Settings; log?: (m: string) => void }
 
 // ---------- polite queues for community APIs ----------
 let politeGapMs = 1100;
-/** Tests set this to 0. */
-export function setPoliteDelay(ms: number) { politeGapMs = ms; }
+let retryDelayMs = 5_000;
+/** Tests set this to 0 (also skips the wait before re-trying busy Overpass servers). */
+export function setPoliteDelay(ms: number) { politeGapMs = ms; retryDelayMs = Math.min(ms * 5, 5_000); }
 const chains = new Map<string, Promise<unknown>>();
 function polite<T>(name: string, fn: () => Promise<T>): Promise<T> {
   const prev = chains.get(name) ?? Promise.resolve();
@@ -277,6 +279,32 @@ export function overpassQuery(query: string, b: BBox, max: number): string {
   return `[out:json][timeout:60];(${statements.join('')});out center tags ${Math.max(1, Math.min(max, 5000))};`;
 }
 
+/** Public Overpass servers; the main one rate-limits bursts, so busy answers move on to a mirror. */
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
+
+async function overpass(body: string, deps: Deps): Promise<any> {
+  let last = '';
+  for (let attempt = 0; attempt < OVERPASS.length * 2; attempt++) {
+    const url = OVERPASS[attempt % OVERPASS.length]!;
+    if (attempt >= OVERPASS.length) await sleep(retryDelayMs);
+    try {
+      const res = await request(url, {
+        method: 'POST', body, timeoutMs: 90_000,
+        headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': userAgent(deps.settings) },
+      });
+      const text = await res.text();
+      if (res.ok) return JSON.parse(text);
+      last = `${new URL(url).host} ${res.status}`;
+      if (res.status !== 429 && res.status < 500) throw new ApiError(502, { error: 'provider_error', message: `OpenStreetMap search failed (${res.status}): ${text.slice(0, 200)}` });
+    } catch (e) {
+      if (e instanceof ApiError) throw e;
+      last = `${new URL(url).host}: ${(e as Error).message}`;
+    }
+    deps.log?.(`overpass busy (${last}); trying ${attempt + 1 < OVERPASS.length ? 'a mirror' : 'again'}`);
+  }
+  throw new ApiError(503, { error: 'provider_busy', message: `OpenStreetMap's free servers are busy right now (${last}). Try again in a few minutes, search a smaller area, or add a Google Maps key on the Integrations page.` });
+}
+
 async function osmSearch(q: MapsQuery, bbox: BBox, limit: number, deps: Deps) {
   // Overpass has no result cap but times out on huge areas: search ≤ 20 km tiles.
   const tiles = tileBox(bbox, 20, Math.min(q.maxTiles ?? 16, 64));
@@ -286,16 +314,14 @@ async function osmSearch(q: MapsQuery, bbox: BBox, limit: number, deps: Deps) {
     if (seen.size >= limit) break;
     requests++;
     const body = `data=${encodeURIComponent(overpassQuery(q.query, tile, limit))}`;
-    const d = await polite('overpass', async () => {
-      const res = await request('https://overpass-api.de/api/interpreter', {
-        method: 'POST', body, timeoutMs: 90_000,
-        headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': userAgent(deps.settings) },
-      });
-      const text = await res.text();
-      if (res.status === 429 || res.status === 504) throw new Error('OpenStreetMap (Overpass) is busy; try again in a minute or use a smaller area');
-      if (!res.ok) throw new Error(`Overpass ${res.status}: ${text.slice(0, 200)}`);
-      return JSON.parse(text);
-    });
+    let d: any;
+    try {
+      d = await polite('overpass', () => overpass(body, deps));
+    } catch (e) {
+      // Keep what earlier tiles found rather than losing the whole search to one busy tile.
+      if (seen.size) { deps.log?.(`overpass: stopped after ${requests - 1} tile(s): ${(e as Error).message}`); requests--; break; }
+      throw e;
+    }
     for (const el of d.elements ?? []) {
       const id = `${el.type}/${el.id}`;
       if (!seen.has(id) && el.tags?.name) seen.set(id, osmRow(el));

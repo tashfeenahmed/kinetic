@@ -9,7 +9,7 @@ Enrichment columns run a provider waterfall and stop at the first confident hit.
 ## Add a column — `POST /api/gtm/tables/{id}/columns`
 | kind | needs (any one group) | notes |
 |---|---|---|
-| `work_email` | fullName+domain, firstName+domain, fullName+companyName, linkedinUrl | free finder (website + GitHub commit patterns + SMTP check) → MillionVerifier pattern → Icypeas → Findymail → Prospeo → LeadMagic → Hunter → Apollo → PDL → pattern guess (unverified) |
+| `work_email` | fullName+domain, firstName+domain, fullName+companyName, linkedinUrl | free finder (website + GitHub commit patterns + SMTP check) → web search (the person's address on public pages — directories, press, PDFs, other businesses they run — or the company pattern learned from colleagues' addresses; free via SearXNG) → MillionVerifier pattern → Icypeas → Findymail → Prospeo → LeadMagic → Hunter → Apollo → PDL → pattern guess (unverified) |
 | `verify_email` | email | free SMTP check → MillionVerifier → ZeroBounce → Hunter → MX check. Value: valid, catch_all, risky, invalid, unknown |
 | `mobile_phone` | linkedinUrl, email, fullName+domain | paid only (LeadMagic, Findymail, Prospeo, PDL). No free source — tell the user |
 | `linkedin_url` | fullName, firstName+lastName, email | free web search first |
@@ -37,3 +37,8 @@ Example:
 
 ## Read results
 `GET /api/gtm/tables/{id}` → each cell `{ value, status: done|empty|skipped|error, provider }`. Count valid emails before moving to outreach; `skipped` with "Missing input" means a referenced column is blank or misnamed. Use `GET /api/gtm/cells/{rowId}/{columnId}` to see which providers were tried.
+
+### Reading a work-email result
+The cell's `confidence` says how sure it is: `verified (SMTP)`, `found on the web · …`, `catch-all domain`, or `Pattern guess (unverified)`. The web-search step also stores, in the cell data, `other_emails` (the person's addresses elsewhere, e.g. another company they run), `company_emails` (info@/sales@ style inboxes — often the owner reads these at small businesses) and `sources` (pages it was found on). Pull them into columns with extract columns, e.g. `{ "name": "Other emails", "type": "extract", "config": { "source": "Work email", "path": "data.other_emails" } }` (check the cell shape with `GET /api/gtm/cells/{rowId}/{columnId}` first).
+To retry guesses after a new step is added, re-run the email column with `"force": true` on the rows whose confidence is a guess.
+
