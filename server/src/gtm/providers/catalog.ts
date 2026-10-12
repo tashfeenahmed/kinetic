@@ -2,6 +2,7 @@
  * Enrichment kinds and their default waterfall order (cheapest/most accurate first,
  * free fallbacks last). A column can reorder or drop steps.
  */
+import { webSearchEmailFinder } from './webEmail.ts';
 import * as free from './free.ts';
 import { freeEmailFinder } from './freeEmail.ts';
 import * as open from './openData.ts';
@@ -21,6 +22,7 @@ export const ENRICH_KINDS: EnrichKind[] = [
     needs: [['fullName', 'domain'], ['firstName', 'domain'], ['fullName', 'companyName'], ['linkedinUrl']],
     steps: [
       step({ id: 'free_finder', label: 'Free finder (website + GitHub patterns, SMTP check)', requires: [], cost: 'free', run: freeEmailFinder }),
+      step({ id: 'web_search', label: 'Web search (emails on public pages)', requires: [], cost: 'free with SearXNG', run: webSearchEmailFinder }),
       step({ id: 'pattern_verified', label: 'Pattern + MillionVerifier', requires: ['MILLIONVERIFIER_API_KEY'], cost: '~$0.0012', run: (i, c) => v.patternVerified(i, c, free.patternGuess) }),
       step({ id: 'icypeas', label: 'Icypeas', requires: ['ICYPEAS_API_KEY'], cost: '~$0.01 when found', run: v.icypeasEmail }),
       step({ id: 'findymail', label: 'Findymail', requires: ['FINDYMAIL_API_KEY'], cost: '1 credit (verified only)', run: v.findymailEmail }),

@@ -14,7 +14,7 @@ const ENGINES: Engine[] = ['searxng', 'serper', 'brave', 'tavily', 'exa', 'duckd
  * and ends with DuckDuckGo's HTML endpoint (free but rate-limited, best-effort).
  * SEARCH_ENGINE puts one engine first; the others stay as fallbacks.
  */
-export async function webSearch(query: string, ctx: Ctx, count = 8): Promise<{ engine: string; results: SearchResult[] }> {
+export async function webSearch(query: string, ctx: Ctx, count = 8, opts: { emptyIsAnswer?: boolean } = {}): Promise<{ engine: string; results: SearchResult[] }> {
   const s = ctx.settings;
   const configured: Record<Engine, boolean> = {
     searxng: s.has('SEARXNG_URL'), serper: s.has('SERPER_API_KEY'), brave: s.has('BRAVE_API_KEY'),
@@ -27,7 +27,8 @@ export async function webSearch(query: string, ctx: Ctx, count = 8): Promise<{ e
   for (const engine of engines) {
     try {
       const results = await searchWith(engine, query, ctx, count);
-      if (results.length || engine === engines.at(-1)) return { engine, results };
+      // Exact-phrase lookups are often legitimately empty; those callers don't pay for a second engine.
+      if (results.length || opts.emptyIsAnswer || engine === engines.at(-1)) return { engine, results };
     } catch (e) {
       lastError = e;
       ctx.log?.(`search: ${engine} failed (${(e as Error).message}); trying the next engine`);

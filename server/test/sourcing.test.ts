@@ -29,6 +29,7 @@ const PLACES = Array.from({ length: 100 }, (_, i) => ({
 }));
 
 let osmElements: any[] = [];
+const busyOverpass = new Set<string>();
 let ycRows: any[] = [];
 let serper: any[] = [];
 
@@ -48,7 +49,10 @@ function fakeFetch(calls: Call[]) {
     if (url.startsWith('https://nominatim.openstreetmap.org/search')) {
       return Response.json([{ lat: '52.52', lon: '13.40', display_name: 'Berlin, Germany', boundingbox: ['52.33', '52.68', '13.08', '13.76'] }]);
     }
-    if (url.startsWith('https://overpass-api.de/api/interpreter')) return Response.json({ elements: osmElements });
+    if (url.includes('/api/interpreter')) {
+      if (busyOverpass.has(new URL(url).host)) return new Response('rate limited', { status: 429 });
+      return Response.json({ elements: osmElements });
+    }
     if (url.includes('yc-oss')) return Response.json(ycRows);
     if (url.startsWith('https://query.wikidata.org')) return Response.json({ results: { bindings: [] } });
     if (url.startsWith('https://www.wikidata.org')) return Response.json({ search: [] });
@@ -130,6 +134,20 @@ describe('local business search', () => {
     const over = calls.filter((c) => c.url.includes('overpass'));
     expect(over.length).toBeGreaterThan(1); // a 200 km box is tiled
     expect(decodeURIComponent(over[0].body)).toContain('["amenity"="dentist"]');
+  });
+
+  it('OpenStreetMap: moves to a mirror when Overpass is busy, and says so clearly when all are', async () => {
+    busyOverpass.add('overpass-api.de');
+    const ok = await env.api('POST', '/api/sources/google-maps/search', { query: 'dentist', location: 'Berlin', radius_km: 5 });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(ok.body.rows).toHaveLength(3);
+    expect(calls.some((c) => c.url.startsWith('https://overpass.kumi.systems'))).toBe(true);
+    busyOverpass.add('overpass.kumi.systems').add('overpass.private.coffee');
+    const busy = await env.api('POST', '/api/gtm/find', { mode: 'google_maps', query: 'dentist', params: { location: 'Berlin', radius_km: 5 } });
+    expect(busy.status).toBe(503);
+    expect(busy.body).toMatchObject({ error: 'provider_busy' });
+    expect(busy.body.message).toContain('busy');
+    busyOverpass.clear();
   });
 
   it('builds Overpass queries from categories, raw tags and names', () => {
