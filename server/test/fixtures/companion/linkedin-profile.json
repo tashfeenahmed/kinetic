@@ -1,0 +1,57 @@
+{
+  "data": { "*elements": ["urn:li:fsd_profile:ACoAAA111"] },
+  "included": [
+    {
+      "$type": "com.linkedin.voyager.dash.identity.profile.Profile",
+      "entityUrn": "urn:li:fsd_profile:ACoAAA999",
+      "publicIdentifier": "someone-else",
+      "firstName": "Other",
+      "lastName": "Viewer"
+    },
+    {
+      "$type": "com.linkedin.voyager.dash.identity.profile.Profile",
+      "entityUrn": "urn:li:fsd_profile:ACoAAA111",
+      "publicIdentifier": "testa-fakename-123",
+      "firstName": "Testa",
+      "lastName": "Fakename",
+      "headline": "Head of Growth at Acme Widgets | Ex-Placeholder",
+      "summary": "I grow imaginary companies.",
+      "geoLocation": { "geo": { "defaultLocalizedName": "Berlin, Germany" } },
+      "industry": { "name": "Software Development" },
+      "followingState": { "followerCount": 4321 },
+      "memberRelationship": { "memberRelationship": { "noConnection": { "memberDistance": "DISTANCE_2" } } },
+      "websites": [{ "url": "https://testa.example" }]
+    },
+    {
+      "$type": "com.linkedin.voyager.dash.identity.profile.Position",
+      "entityUrn": "urn:li:fsd_profilePosition:(ACoAAA111,1)",
+      "title": "Head of Growth",
+      "companyName": "Acme Widgets",
+      "companyUrn": "urn:li:fsd_company:5550001",
+      "dateRange": { "start": { "year": 2022, "month": 3 } }
+    },
+    {
+      "$type": "com.linkedin.voyager.dash.identity.profile.Position",
+      "entityUrn": "urn:li:fsd_profilePosition:(ACoAAA111,2)",
+      "title": "Growth Manager",
+      "companyName": "Placeholder GmbH",
+      "dateRange": { "start": { "year": 2019, "month": 1 }, "end": { "year": 2022, "month": 2 } }
+    },
+    {
+      "$type": "com.linkedin.voyager.dash.organization.Company",
+      "entityUrn": "urn:li:fsd_company:5550001",
+      "name": "Acme Widgets",
+      "universalName": "acme-widgets",
+      "websiteUrl": "https://www.acme-widgets.example/about"
+    },
+    {
+      "$type": "com.linkedin.voyager.dash.identity.profile.Education",
+      "entityUrn": "urn:li:fsd_profileEducation:(ACoAAA111,1)",
+      "schoolName": "University of Nowhere",
+      "degreeName": "MSc",
+      "fieldOfStudy": "Marketing"
+    },
+    { "$type": "com.linkedin.voyager.dash.identity.profile.Skill", "entityUrn": "urn:li:fsd_skill:(ACoAAA111,1)", "name": "Growth Marketing" },
+    { "$type": "com.linkedin.voyager.dash.identity.profile.Skill", "entityUrn": "urn:li:fsd_skill:(ACoAAA111,2)", "name": "SEO" }
+  ]
+}

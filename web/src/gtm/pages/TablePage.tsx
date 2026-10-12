@@ -7,6 +7,7 @@ import { CellPanel } from '../components/CellPanel';
 import { EnrichmentPicker } from '../components/EnrichmentPicker';
 import { ImportDialog, ScheduleDialog, SendToCampaignDialog, SignalPackDialog } from '../components/Dialogs';
 import { Icon } from '../components/Icon';
+import { SaveAsFunctionDialog } from '../components/SaveAsFunctionDialog';
 
 type Panel =
   | { kind: 'picker' }
@@ -20,6 +21,7 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
   const [cellVersion, setCellVersion] = useState(0);
   const loc = useLocation();
   const navigate = useNavigate();
+  const [fnColumns, setFnColumns] = useState<number[] | null>(null);
   const [dialog, setDialog] = useState<'import' | 'schedule' | 'signals' | 'campaign' | null>(() => (loc.search.includes('signals=1') ? 'signals' : loc.search.includes('campaign=1') ? 'campaign' : null));
   const [queue, setQueue] = useState({ pending: 0, running: 0 });
   const [toast, setToast] = useState('');
@@ -113,6 +115,7 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
               const col = runnable.find((c) => c.id === Number(id));
               if (!col) return;
               if (mode === 'edit') setPanel({ kind: 'editor', column: col });
+              else if (mode === 'fn') setFnColumns([col.id]);
               else if (mode === 'run') void run({ columnIds: [col.id] });
               else if (confirm(`Re-run "${col.name}" for all ${view.rows.length} rows?`)) void run({ columnIds: [col.id], force: true });
             }}
@@ -123,6 +126,7 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
                 <option value={`run:${c.id}`}>Run empty cells</option>
                 <option value={`force:${c.id}`}>Re-run all rows</option>
                 <option value={`edit:${c.id}`}>Edit column</option>
+                <option value={`fn:${c.id}`}>Save as function…</option>
               </optgroup>
             ))}
           </select>
@@ -152,11 +156,12 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
               onDeleteRows={(ids) => api(`/api/gtm/tables/${tableId}/rows`, { method: 'DELETE', body: { ids } })}
               onAddRows={(count) => api(`/api/gtm/tables/${tableId}/rows`, { body: { count } })}
               onResize={(colId, width) => api(`/api/gtm/columns/${colId}`, { method: 'PATCH', body: { width } })}
+              onSaveAsFunction={(ids) => setFnColumns(ids)}
             />
           )}
         </div>
         {panel?.kind === 'picker' && (
-          <EnrichmentPicker catalog={catalog} onClose={() => setPanel(null)} onPick={(p) => setPanel({ kind: 'editor', column: null, type: p.type, name: p.name, config: p.kind ? { kind: p.kind } : undefined })} />
+          <EnrichmentPicker catalog={catalog} onClose={() => setPanel(null)} onPick={(p) => setPanel({ kind: 'editor', column: null, type: p.type, name: p.name, config: p.config ?? (p.kind ? { kind: p.kind } : undefined) })} />
         )}
         {panel?.kind === 'editor' && (
           <ColumnEditor
@@ -200,6 +205,7 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
       {dialog === 'signals' && <SignalPackDialog tableId={tableId} columns={view.columns} catalog={catalog} onClose={() => setDialog(null)} onDone={load} />}
       {dialog === 'campaign' && <SendToCampaignDialog tableId={tableId} columns={view.columns} onClose={() => setDialog(null)} onDone={(m) => { flash(m); void load(); }} />}
       {dialog === 'schedule' && <ScheduleDialog tableId={tableId} schedule={view.table.schedule} columns={view.columns} onClose={() => setDialog(null)} onSaved={load} />}
+      {fnColumns && <SaveAsFunctionDialog tableId={tableId} columns={view.columns} initialIds={fnColumns} onClose={() => setFnColumns(null)} onDone={() => { setFnColumns(null); void load(); }} />}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );

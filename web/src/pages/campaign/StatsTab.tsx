@@ -4,7 +4,9 @@ import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, X
 import { api } from '../../lib/api.ts';
 import { fmtDate, fmtNumber, fmtPct, plural } from '../../lib/format.ts';
 import { Badge, Card, Loading, Stat, Table, Td, Th, cx } from '../../components/ui.tsx';
-import { type Campaign, type CampaignStats, variantLetter } from './types.ts';
+import { Trophy } from 'lucide-react';
+import { type Campaign, type CampaignStats, METRIC_LABELS, type VariantStats, variantLetter } from './types.ts';
+import { useAbTests } from './AbTestPanel.tsx';
 
 interface StepStat {
   sequence_step_id: number;
@@ -37,6 +39,7 @@ export function StatsTab({ campaign }: { campaign: Campaign }) {
     queryFn: () => api.post(`/api/campaigns/${campaign.id}/stats`, {}).then((r) => r.data as CampaignStats & { sequence_step_stats: StepStat[] }),
     refetchInterval: 60_000,
   });
+  const ab = useAbTests(campaign.id);
   const chart = useQuery({
     queryKey: ['campaign', campaign.id, 'chart', days],
     queryFn: () => api.get(`/api/campaigns/${campaign.id}/line-area-chart-stats`, { days }).then((r) => r.data as Record<string, any>[]),
@@ -53,12 +56,10 @@ export function StatsTab({ campaign }: { campaign: Campaign }) {
     rows.sort((a, b) => (a.variant_of_step_id ? 1 : 0) - (b.variant_of_step_id ? 1 : 0) || a.sequence_step_id - b.sequence_step_id);
     rows.forEach((r, i) => letters.set(r.sequence_step_id, variantLetter(i)));
   }
-  const bestReply = new Map<number, number>();
-  for (const [order, rows] of byStep) {
-    if (rows.length < 2) continue;
-    const best = rows.filter((r) => r.sent >= 20).sort((a, b) => rate(b.unique_replies, b.sent) - rate(a.unique_replies, a.sent))[0];
-    if (best && best.unique_replies > 0) bestReply.set(order, best.sequence_step_id);
-  }
+  // A/B results per variant row (winner, leader, confidence, clicks).
+  const variantAb = new Map<number, VariantStats>();
+  for (const t of ab.data ?? []) for (const v of t.variants) variantAb.set(v.id, v);
+  const decided = (ab.data ?? []).filter((t) => t.status === 'decided');
 
   return (
     <div className="space-y-5">
@@ -106,7 +107,7 @@ export function StatsTab({ campaign }: { campaign: Campaign }) {
         )}
       </Card>
 
-      <Card title="Sequence steps" description="Variants of the same step are A/B tested — the leader is marked once each has 20+ sends." padded={false}>
+      <Card title="Sequence steps" description="Variants of the same step are A/B tested. Confidence is how sure we are the leader beats that variant (two-proportion z-test)." padded={false}>
         <Table>
           <thead>
             <tr>
@@ -114,10 +115,12 @@ export function StatsTab({ campaign }: { campaign: Campaign }) {
               <Th>Subject</Th>
               <Th className="text-right">Sent</Th>
               <Th className="text-right">Opens</Th>
+              <Th className="text-right">Clicks</Th>
               <Th className="text-right">Replies</Th>
               <Th className="text-right">Reply rate</Th>
               <Th className="text-right">Interested</Th>
               <Th className="text-right">Bounced</Th>
+              <Th className="text-right">Confidence</Th>
             </tr>
           </thead>
           <tbody>
@@ -127,19 +130,35 @@ export function StatsTab({ campaign }: { campaign: Campaign }) {
                 <Td className="whitespace-nowrap">
                   {i === 0 ? <span className="font-medium text-slate-900">Step {order}</span> : <span className="pl-4 text-slate-400">↳</span>}
                   {rows.length > 1 && <Badge tone="purple" className="ml-2">{letters.get(r.sequence_step_id)}</Badge>}
-                  {bestReply.get(order) === r.sequence_step_id && <Badge tone="green" className="ml-1">Leading</Badge>}
+                  {variantAb.get(r.sequence_step_id)?.is_winner && <Badge tone="green" className="ml-1"><Trophy className="mr-0.5 inline size-3" />Winner</Badge>}
+                  {rows.length > 1 && !rows.some((x) => variantAb.get(x.sequence_step_id)?.is_winner) && variantAb.get(r.sequence_step_id)?.is_leader && <Badge tone="blue" className="ml-1">Leading</Badge>}
                 </Td>
                 <Td className="max-w-72 truncate">{r.email_subject || <span className="italic text-slate-400">Reply in thread</span>}</Td>
                 <Td className="text-right tabular-nums">{fmtNumber(r.sent)}</Td>
                 <Td className="text-right tabular-nums">{campaign.open_tracking ? fmtNumber(r.unique_opens) : '—'}</Td>
+                <Td className="text-right tabular-nums">{campaign.click_tracking ? fmtNumber(variantAb.get(r.sequence_step_id)?.clicks ?? 0) : '—'}</Td>
                 <Td className="text-right tabular-nums">{fmtNumber(r.unique_replies)}</Td>
                 <Td className="text-right tabular-nums font-medium">{fmtPct(rate(r.unique_replies, r.leads_contacted))}</Td>
                 <Td className="text-right tabular-nums">{fmtNumber(r.interested)}</Td>
                 <Td className="text-right tabular-nums">{fmtNumber(r.bounced)}</Td>
+                <Td className="text-right tabular-nums">{rows.length > 1 && variantAb.get(r.sequence_step_id)?.confidence != null ? fmtPct(variantAb.get(r.sequence_step_id)!.confidence! * 100) : '—'}</Td>
               </tr>
             )))}
           </tbody>
         </Table>
+        {decided.length > 0 && (
+          <div className="space-y-1 border-t border-slate-100 px-5 py-3 text-[13px] text-slate-600">
+            {decided.map((t) => {
+              const w = t.variants.find((v) => v.is_winner);
+              return (
+                <div key={t.step_id} className="flex items-center gap-1.5">
+                  <Trophy className="size-3.5 text-amber-500" />
+                  Step {t.step_order}: variant {w?.letter ?? '?'} won on {METRIC_LABELS[t.config.metric].toLowerCase()} ({t.decision?.decided_by === 'manual' ? 'picked manually' : 'auto'}{t.decision?.p_value != null ? `, p = ${t.decision.p_value.toFixed(4)}` : ''}) · {fmtDate(t.decided_at)}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Card>
     </div>
   );

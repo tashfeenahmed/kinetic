@@ -1,0 +1,9 @@
+{
+  "data": { "paging": { "start": 0, "count": 2, "total": 120 } },
+  "included": [
+    { "$type": "com.linkedin.voyager.dash.groups.GroupMembership", "entityUrn": "urn:li:fsd_groupMembership:(1,ACoAAA555)", "*profile": "urn:li:fsd_profile:ACoAAA555" },
+    { "$type": "com.linkedin.voyager.dash.identity.profile.Profile", "entityUrn": "urn:li:fsd_profile:ACoAAA555", "publicIdentifier": "group-member-one", "firstName": "Groupie", "lastName": "One", "headline": "Analyst at Fictional Bank" },
+    { "$type": "com.linkedin.voyager.dash.groups.GroupMembership", "entityUrn": "urn:li:fsd_groupMembership:(1,ACoAAA666)", "*profile": "urn:li:fsd_profile:ACoAAA666" },
+    { "$type": "com.linkedin.voyager.dash.identity.profile.Profile", "entityUrn": "urn:li:fsd_profile:ACoAAA666", "publicIdentifier": "group-member-two", "firstName": "Groupie", "lastName": "Two", "headline": "Designer" }
+  ]
+}

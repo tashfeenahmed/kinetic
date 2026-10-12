@@ -10,11 +10,13 @@
   ],
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "build": "npm run build -w web",
+    "build": "npm run build -w web && npm run build:extension",
+    "build:extension": "node scripts/build-extension.mjs",
     "start": "npm run start -w server",
     "test": "npm run test -w server",
     "test:mail": "npm run test:mail -w server",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web && npm run typecheck:extension",
+    "typecheck:extension": "tsc --noEmit -p extension",
     "mail:up": "node scripts/mail.mjs up",
     "mail:down": "node scripts/mail.mjs down",
     "demo": "npm run demo -w server"

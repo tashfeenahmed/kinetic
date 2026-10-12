@@ -1,0 +1,26 @@
+{
+  "data": { "paging": { "start": 0, "count": 2, "total": 5 }, "*elements": ["r1", "r2"] },
+  "included": [
+    {
+      "$type": "com.linkedin.voyager.dash.social.Reaction",
+      "entityUrn": "urn:li:fsd_reaction:(urn:li:fsd_profile:ACoAAA111,urn:li:activity:7100000000000000001,0)",
+      "reactionType": "LIKE",
+      "reactorLockup": {
+        "title": { "text": "Testa Fakename" },
+        "subtitle": { "text": "Head of Growth at Acme Widgets" },
+        "navigationUrl": "https://www.linkedin.com/in/testa-fakename-123",
+        "label": { "text": "2nd" }
+      }
+    },
+    {
+      "$type": "com.linkedin.voyager.dash.social.Reaction",
+      "entityUrn": "urn:li:fsd_reaction:(urn:li:fsd_profile:ACoAAA222,urn:li:activity:7100000000000000001,0)",
+      "reactionType": "PRAISE",
+      "reactorLockup": {
+        "title": { "text": "Mock Personson" },
+        "subtitle": { "text": "VP Sales @ Example Corp" },
+        "navigationUrl": "https://www.linkedin.com/in/mock-personson"
+      }
+    }
+  ]
+}

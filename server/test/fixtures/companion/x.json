@@ -1,0 +1,41 @@
+{
+  "followers": {
+    "data": { "user": { "result": { "timeline": { "timeline": { "instructions": [
+      { "type": "TimelineClearCache" },
+      { "type": "TimelineAddEntries", "entries": [
+        { "entryId": "user-1", "content": { "entryType": "TimelineTimelineItem", "itemContent": { "itemType": "TimelineUser", "user_results": { "result": {
+          "__typename": "User", "rest_id": "1", "is_blue_verified": true,
+          "core": { "screen_name": "fake_founder", "name": "Fake Founder", "created_at": "Tue Mar 01 10:00:00 +0000 2016" },
+          "location": { "location": "Austin, TX" },
+          "legacy": { "description": "Building pretend things", "followers_count": 1200, "friends_count": 300, "statuses_count": 4500,
+            "entities": { "url": { "urls": [{ "expanded_url": "https://fake-founder.example" }] } } } } } } } },
+        { "entryId": "user-2", "content": { "entryType": "TimelineTimelineItem", "itemContent": { "itemType": "TimelineUser", "user_results": { "result": {
+          "__typename": "User", "rest_id": "2",
+          "legacy": { "screen_name": "mock_marketer", "name": "Mock Marketer", "description": "Growth", "followers_count": 50, "friends_count": 80, "statuses_count": 10, "location": "Remote", "created_at": "Wed Jan 05 12:00:00 +0000 2022", "verified": false } } } } } },
+        { "entryId": "cursor-bottom-123", "content": { "entryType": "TimelineTimelineCursor", "cursorType": "Bottom", "value": "BOTTOM_CURSOR_ABC" } },
+        { "entryId": "cursor-top-123", "content": { "entryType": "TimelineTimelineCursor", "cursorType": "Top", "value": "TOP" } }
+      ] }
+    ] } } } } }
+  },
+  "profile": {
+    "data": { "user": { "result": {
+      "__typename": "User", "rest_id": "1", "is_blue_verified": true,
+      "core": { "screen_name": "fake_founder", "name": "Fake Founder", "created_at": "Tue Mar 01 10:00:00 +0000 2016" },
+      "legacy": { "description": "Building pretend things", "followers_count": 1200, "friends_count": 300, "statuses_count": 4500, "location": "Austin, TX" } } } }
+  },
+  "search": {
+    "data": { "search_by_raw_query": { "search_timeline": { "timeline": { "instructions": [ { "type": "TimelineAddEntries", "entries": [
+      { "entryId": "tweet-111", "content": { "itemContent": { "tweet_results": { "result": {
+        "__typename": "Tweet", "rest_id": "111",
+        "core": { "user_results": { "result": { "__typename": "User", "rest_id": "2", "legacy": { "screen_name": "mock_marketer", "name": "Mock Marketer" } } } },
+        "legacy": { "full_text": "cold email is not dead", "favorite_count": 25, "retweet_count": 3, "reply_count": 4, "created_at": "Mon Jun 10 08:00:00 +0000 2024", "id_str": "111" } } } } } },
+      { "entryId": "tweet-112", "content": { "itemContent": { "tweet_results": { "result": {
+        "__typename": "TweetWithVisibilityResults",
+        "tweet": { "rest_id": "112",
+          "core": { "user_results": { "result": { "__typename": "User", "rest_id": "1", "core": { "screen_name": "fake_founder", "name": "Fake Founder" }, "legacy": {} } } },
+          "legacy": { "full_text": "short version", "favorite_count": 1, "retweet_count": 0, "reply_count": 0, "created_at": "Mon Jun 10 09:00:00 +0000 2024" },
+          "note_tweet": { "note_tweet_results": { "result": { "text": "long version of the post" } } } } } } } } },
+      { "entryId": "cursor-bottom-0", "content": { "cursorType": "Bottom", "value": "SEARCH_NEXT" } }
+    ] } ] } } } }
+  }
+}

@@ -10,6 +10,7 @@ import { TablePage } from './pages/TablePage';
 import { Signals } from './pages/Signals';
 import { Logs } from './pages/Logs';
 import { Settings } from './pages/Settings';
+import { FunctionEditor, FunctionsList } from './pages/Functions';
 import 'handsontable/styles/handsontable.min.css';
 import 'handsontable/styles/ht-theme-main.min.css';
 import './gtm.css';
@@ -35,6 +36,15 @@ export function GtmTablePage() {
 
 export function GtmSignalsPage() {
   return <Shell><Signals /></Shell>;
+}
+
+/** /functions (library) and /functions/:id (builder, test, stats; "new" for a new one). */
+export function GtmFunctionsPage() {
+  const { id } = useParams();
+  const catalog = useGtmCatalog();
+  if (!id) return <Shell><FunctionsList /></Shell>;
+  if (!catalog.data) return <Shell><Waiting /></Shell>;
+  return <Shell><FunctionEditor key={id} id={id === 'new' ? null : Number(id)} catalog={catalog.data} /></Shell>;
 }
 
 export function GtmActivityPage() {

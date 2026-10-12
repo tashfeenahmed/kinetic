@@ -1,0 +1,48 @@
+{
+  "followers": {
+    "users": [
+      { "pk": "101", "username": "fake.follower", "full_name": "Fake Follower", "is_private": false, "is_verified": false },
+      { "pk": "102", "username": "pretend_person", "full_name": "Pretend Person", "is_private": true, "is_verified": true },
+      { "pk": "101", "username": "fake.follower", "full_name": "Fake Follower" }
+    ],
+    "next_max_id": "QVFE_cursor_2",
+    "big_list": true,
+    "status": "ok"
+  },
+  "profile": {
+    "data": {
+      "user": {
+        "id": "555",
+        "username": "acme.widgets",
+        "full_name": "Acme Widgets",
+        "biography": "We make pretend widgets.",
+        "external_url": "https://acme-widgets.example",
+        "edge_followed_by": { "count": 12345 },
+        "edge_follow": { "count": 67 },
+        "edge_owner_to_timeline_media": { "count": 89 },
+        "is_private": false,
+        "is_verified": true,
+        "category_name": "Product/service",
+        "business_email": "hello@acme-widgets.example",
+        "business_phone_number": "+49 30 000000"
+      }
+    },
+    "status": "ok"
+  },
+  "hashtag": {
+    "data": {
+      "top": { "sections": [{ "layout_content": { "medias": [{ "media": { "code": "AbC123", "taken_at": 1718000000, "like_count": 50, "comment_count": 4, "user": { "username": "fake.follower" }, "caption": { "text": "#saas is fun" } } }] } }] },
+      "recent": {
+        "sections": [{ "layout_content": { "medias": [{ "media": { "code": "XyZ789", "taken_at": 1718100000, "like_count": 2, "comment_count": 0, "user": { "username": "pretend_person" }, "caption": { "text": "more #saas" } } }] } }],
+        "next_max_id": "hashtag_cursor"
+      }
+    }
+  },
+  "comments": {
+    "comments": [
+      { "pk": "c1", "text": "Love this", "created_at": 1718000500, "user": { "username": "fake.follower", "full_name": "Fake Follower" } },
+      { "pk": "c2", "text": "Where can I buy?", "created_at": 1718000600, "user": { "username": "pretend_person", "full_name": "Pretend Person" } }
+    ],
+    "next_min_id": "{\"cached_comments_cursor\": \"c2\"}"
+  }
+}

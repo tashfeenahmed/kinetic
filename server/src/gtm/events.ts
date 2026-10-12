@@ -14,5 +14,6 @@ export class Bus extends EventEmitter {
   }
   publish(e: TableEvent) {
     this.emit(`table:${e.tableId}`, e);
+    this.emit('any', e); // cross-table listeners (lookup staleness)
   }
 }

@@ -1,0 +1,17 @@
+{
+  "data": {
+    "node": {
+      "__typename": "Group",
+      "id": "999",
+      "new_members": {
+        "edges": [
+          { "node": { "__typename": "User", "id": "100001", "name": "Fakey Groupmember", "url": "https://www.facebook.com/fakey.groupmember?__cft__=x" }, "bio_text": { "text": "Coffee enthusiast" }, "join_status_text": { "text": "Joined about a week ago" } },
+          { "node": { "__typename": "User", "id": "100002", "name": "Mocky Member", "url": "https://m.facebook.com/profile.php?id=100002&ref=abc" } },
+          { "node": { "__typename": "Page", "id": "200", "name": "Some Page" } }
+        ],
+        "page_info": { "has_next_page": true, "end_cursor": "FB_CURSOR_2" }
+      }
+    }
+  },
+  "extensions": { "is_final": true }
+}

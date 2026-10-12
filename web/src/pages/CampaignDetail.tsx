@@ -36,6 +36,10 @@ function LaunchChecklist({ campaign }: { campaign: Campaign }) {
     queryKey: ['campaign', campaign.id, 'launch-check'],
     queryFn: () => api.get(`/api/campaigns/${campaign.id}/launch-check`).then((r) => r.data.problems as string[]),
   });
+  const warnings = useQuery({
+    queryKey: ['campaign', campaign.id, 'launch-check', 'warnings'],
+    queryFn: () => api.get(`/api/campaigns/${campaign.id}/launch-check`).then((r) => (r.data.warnings ?? []) as string[]),
+  });
   if (!check.data) return null;
   const items = [
     { label: 'Write the sequence', tab: 'sequence', done: !check.data.some((p) => /step/i.test(p)) },
@@ -57,6 +61,7 @@ function LaunchChecklist({ campaign }: { campaign: Campaign }) {
             ))}
           </div>
           {!ready && check.data.length > 0 && <div className="mt-2 text-xs text-slate-500">{check.data[0]}</div>}
+          {!!warnings.data?.length && <div className="mt-1 text-xs text-amber-600">{warnings.data[0]}</div>}
         </div>
         {ready && <div className="text-xs text-slate-500">Also set the <Link className="text-brand-600 hover:underline" to={`/campaigns/${campaign.id}/schedule`}>schedule</Link> before launching.</div>}
       </div>

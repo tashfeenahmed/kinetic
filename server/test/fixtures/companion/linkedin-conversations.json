@@ -1,0 +1,37 @@
+{
+  "data": {
+    "data": {
+      "messengerConversationsBySyncToken": {
+        "elements": [
+          {
+            "entityUrn": "urn:li:msg_conversation:(urn:li:fsd_profile:ACoAAAME,2-abc123==)",
+            "conversationUrl": "https://www.linkedin.com/messaging/thread/2-abc123==",
+            "read": false,
+            "unreadCount": 1,
+            "lastActivityAt": 1718000000000,
+            "conversationParticipants": [
+              { "hostIdentityUrn": "urn:li:fsd_profile:ACoAAAME", "participantType": { "member": { "firstName": { "text": "Me" }, "lastName": { "text": "Myself" }, "profileUrl": "https://www.linkedin.com/in/me-myself" } } },
+              { "hostIdentityUrn": "urn:li:fsd_profile:ACoAAA222", "participantType": { "member": { "firstName": { "text": "Mock" }, "lastName": { "text": "Personson" }, "headline": { "text": "VP Sales" }, "profileUrl": "https://www.linkedin.com/in/mock-personson" } } }
+            ],
+            "messages": {
+              "elements": [
+                { "body": { "text": "Thanks for connecting!" }, "deliveredAt": 1717990000000, "sender": { "hostIdentityUrn": "urn:li:fsd_profile:ACoAAAME" } },
+                { "body": { "text": "Sounds interesting, tell me more" }, "deliveredAt": 1718000000000, "sender": { "hostIdentityUrn": "urn:li:fsd_profile:ACoAAA222" } }
+              ]
+            }
+          },
+          {
+            "entityUrn": "urn:li:msg_conversation:(urn:li:fsd_profile:ACoAAAME,2-def456==)",
+            "read": true,
+            "lastActivityAt": 1717000000000,
+            "conversationParticipants": [
+              { "hostIdentityUrn": "urn:li:fsd_profile:ACoAAAME", "participantType": { "member": { "firstName": { "text": "Me" }, "lastName": { "text": "Myself" } } } },
+              { "hostIdentityUrn": "urn:li:fsd_profile:ACoAAA333", "participantType": { "member": { "firstName": { "text": "Dummy" }, "lastName": { "text": "McTest" }, "profileUrl": "https://www.linkedin.com/in/dummy-mctest" } } }
+            ],
+            "messages": { "elements": [{ "body": { "text": "Hi Dummy, quick question" }, "deliveredAt": 1717000000000, "sender": { "hostIdentityUrn": "urn:li:fsd_profile:ACoAAAME" } }] }
+          }
+        ]
+      }
+    }
+  }
+}

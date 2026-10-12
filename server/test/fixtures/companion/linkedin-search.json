@@ -1,0 +1,44 @@
+{
+  "data": {
+    "data": {
+      "searchDashClustersByAll": {
+        "paging": { "start": 0, "count": 10, "total": 23 },
+        "*elements": ["urn:li:fsd_searchDashCluster:1"]
+      }
+    }
+  },
+  "included": [
+    {
+      "$type": "com.linkedin.voyager.dash.search.EntityResultViewModel",
+      "entityUrn": "urn:li:fsd_entityResultViewModel:(urn:li:fsd_profile:ACoAAA111,SEARCH_SRP,DEFAULT)",
+      "title": { "text": "Testa Fakename" },
+      "primarySubtitle": { "text": "Head of Growth at Acme Widgets" },
+      "secondarySubtitle": { "text": "Berlin, Germany" },
+      "navigationUrl": "https://www.linkedin.com/in/testa-fakename-123?miniProfileUrn=urn%3Ali%3Afs_miniProfile%3AACoAAA111",
+      "badgeText": { "text": "• 2nd", "accessibilityText": "2nd degree connection" }
+    },
+    {
+      "$type": "com.linkedin.voyager.dash.search.EntityResultViewModel",
+      "entityUrn": "urn:li:fsd_entityResultViewModel:(urn:li:fsd_profile:ACoAAA222,SEARCH_SRP,DEFAULT)",
+      "title": { "text": "Mock Personson" },
+      "primarySubtitle": { "text": "VP Sales @ Example Corp" },
+      "secondarySubtitle": { "text": "London" },
+      "navigationUrl": "https://www.linkedin.com/in/mock-personson",
+      "entityCustomTrackingInfo": { "memberDistance": "DISTANCE_3" }
+    },
+    {
+      "$type": "com.linkedin.voyager.dash.search.EntityResultViewModel",
+      "entityUrn": "urn:li:fsd_entityResultViewModel:(urn:li:fsd_profile:headless,SEARCH_SRP,DEFAULT)",
+      "title": { "text": "LinkedIn Member" },
+      "primarySubtitle": { "text": "Engineer" },
+      "navigationUrl": "https://www.linkedin.com/search/results/people/headless?origin=OTHER"
+    },
+    {
+      "$type": "com.linkedin.voyager.dash.search.EntityResultViewModel",
+      "entityUrn": "urn:li:fsd_entityResultViewModel:(urn:li:fsd_profile:ACoAAA111,SEARCH_SRP,DEFAULT)#dup",
+      "title": { "text": "Testa Fakename" },
+      "primarySubtitle": { "text": "Head of Growth at Acme Widgets" },
+      "navigationUrl": "https://www.linkedin.com/in/testa-fakename-123/"
+    }
+  ]
+}

@@ -17,9 +17,12 @@ import { SETTINGS_META } from './settingsMeta.ts';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { unwrap, stringify } from './lib/template.ts';
+import { filterExcluded } from '../sourcing/exclusions.ts';
+import { isSourcingMode, sourcingFind } from '../sourcing/routes.ts';
+import { runSource } from '../sourcing/sources.ts';
 
 const id = z.coerce.number().int().positive();
-const COLUMN_TYPES = ['text', 'formula', 'extract', 'enrich', 'ai', 'http', 'signal', 'action'] as const;
+const COLUMN_TYPES = ['text', 'formula', 'extract', 'enrich', 'ai', 'http', 'signal', 'action', 'lookup', 'function'] as const;
 
 export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
   const { store, engine, settings, bus } = ctx.gtm!;
@@ -40,6 +43,7 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
       { id: 'hubspot_contact', label: 'HubSpot: upsert contact', ready: settings.has('HUBSPOT_TOKEN') },
       { id: 'hubspot_company', label: 'HubSpot: upsert company', ready: settings.has('HUBSPOT_TOKEN') },
       { id: 'salesforce', label: 'Salesforce: upsert record', ready: settings.has('SALESFORCE_CLIENT_ID') },
+      { id: 'send_to_table', label: 'Send to another table', ready: true },
     ],
     models: await listModels(),
     defaultModel: settings.get('AI_MODEL') || DEFAULT_MODEL,
@@ -110,7 +114,8 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
    * Companies: YC directory (free), falling back to an AI web search when it has no match.
    */
   const findBody = z.object({
-    mode: z.enum(['companies', 'people', 'jobs']),
+    mode: z.enum(['companies', 'people', 'jobs', 'google_maps', 'company_lookalikes', 'people_lookalikes']),
+    params: z.record(z.string(), z.any()).optional(), // google_maps: location/radius_km/bbox…; lookalikes: companies, location…
     query: z.string().trim().min(1, 'Type what you are looking for'),
     limit: z.number().int().min(1).max(500).default(100),
     ai: z.boolean().optional(), // force the AI web search for companies
@@ -118,6 +123,7 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
   r.post('/api/gtm/find', 'Find prospects and open them in a new table', async (req, reply) => {
     const a = canWrite(req);
     const b = findBody.parse(req.body ?? {});
+    if (isSourcingMode(b.mode)) return sourcingFind(ctx, a.workspaceId, { ...b, mode: b.mode }, reply);
     const aiReady = settings.has('OPENROUTER_API_KEY') || settings.has('AI_BASE_URL');
     let records: Record<string, unknown>[] = [];
     let source = '';
@@ -135,6 +141,9 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
       records = await jobsSearch(settings, { domains: b.query, limit: b.limit });
       source = 'public job boards';
     }
+    const excl = filterExcluded(store.db, a.workspaceId, records);
+    if (excl.excluded && !excl.kept.length) return reply.code(404).send({ error: 'no_results', message: `All ${excl.excluded} results for "${b.query}" are on your exclusion lists.`, excluded: excl.excluded });
+    records = excl.kept;
     if (!records.length) {
       const why = b.mode === 'companies'
         ? `No companies matched "${b.query}". The free Companies search covers the ~6,000 Y Combinator startups${aiReady ? ', and the AI web search found nothing either' : ''}. Try simpler keywords (e.g. "point of sale", "payments", "restaurant software")${aiReady ? '' : ', or add an OpenRouter key on the Integrations page to search the whole web with AI'}.`
@@ -147,7 +156,7 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
     const tableId = store.createTable(a.workspaceId, `${label} · ${b.query}`.slice(0, 60));
     const ids = store.addRows(tableId, records);
     afterInsert(tableId, ids);
-    return { id: tableId, rows: ids.length, source };
+    return { id: tableId, rows: ids.length, source, excluded: excl.excluded };
   }, { body: findBody });
 
   /** Outreach → tables: open leads (selected, a list, a campaign's, or all) as a table to enrich. */
@@ -353,11 +362,13 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
   r.post('/api/gtm/tables/:id/import/csv', 'Import rows from CSV text', async (req) => {
     const a = canWrite(req);
     const tableId = tableOf(req, a);
-    const body = z.object({ csv: z.string().min(1) }).parse(req.body);
-    const records: Record<string, string>[] = parseCsv(body.csv, { columns: (h: string[]) => h.map((x) => x.trim()), skip_empty_lines: true, bom: true, relax_column_count: true, trim: true });
+    const body = z.object({ csv: z.string().min(1), exclude: z.boolean().optional() }).parse(req.body);
+    let records: Record<string, string>[] = parseCsv(body.csv, { columns: (h: string[]) => h.map((x) => x.trim()), skip_empty_lines: true, bom: true, relax_column_count: true, trim: true });
+    const excl = body.exclude ? filterExcluded(store.db, a.workspaceId, records) : { kept: records, excluded: 0 };
+    records = excl.kept;
     const ids = store.addRows(tableId, records);
     afterInsert(tableId, ids);
-    return { imported: ids.length };
+    return { imported: ids.length, excluded: excl.excluded };
   });
 
   r.get('/api/gtm/tables/:id/export.csv', 'Export a table as CSV', async (req, reply) => {
@@ -376,11 +387,12 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
   });
 
   /** Pull prospects from a source into the table. */
-  r.post('/api/gtm/tables/:id/import/source', 'Import rows from YC, GitHub, job boards, HubSpot or Apollo', async (req) => {
+  r.post('/api/gtm/tables/:id/import/source', 'Import rows from YC, GitHub, job boards, HubSpot, Apollo, Google Maps or lookalikes (exclusions applied)', async (req) => {
     const a = canWrite(req);
     const tableId = tableOf(req, a);
     const body = z.object({
-      source: z.enum(['hubspot_contacts', 'hubspot_companies', 'apollo_people', 'apollo_companies', 'yc_companies', 'github_people', 'jobs']),
+      source: z.enum(['hubspot_contacts', 'hubspot_companies', 'apollo_people', 'apollo_companies', 'yc_companies', 'github_people', 'jobs', 'google_maps', 'company_lookalikes', 'people_lookalikes']),
+      exclude: z.boolean().default(true),
       params: z.record(z.string(), z.any()).default({}),
       limit: z.number().int().min(1).max(2000).default(100),
     }).parse(req.body);
@@ -393,10 +405,13 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
       case 'yc_companies': records = await ycSearch({ ...body.params, limit: body.limit }); break;
       case 'jobs': records = await jobsSearch(settings, { domains: body.params.domains, keywords: body.params.keywords, limit: body.limit }); break;
       case 'github_people': records = await githubPeople(settings.get('GITHUB_TOKEN'), { ...body.params, limit: body.limit }); break;
+      default: records = (await runSource(ctx, a.workspaceId, body.source, body.params, body.limit)).records;
     }
+    const excl = body.exclude ? filterExcluded(store.db, a.workspaceId, records) : { kept: records, excluded: 0 };
+    records = excl.kept;
     const ids = store.addRows(tableId, records);
     afterInsert(tableId, ids);
-    return { imported: ids.length };
+    return { imported: ids.length, excluded: excl.excluded };
   });
 
   // ---------- settings ----------

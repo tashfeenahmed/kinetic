@@ -1,0 +1,38 @@
+{
+  "listing_page1": {
+    "kind": "Listing",
+    "data": {
+      "after": "t3_bbb222",
+      "children": [
+        { "kind": "t3", "data": { "id": "aaa111", "title": "Which CRM do you use?", "author": "fake_redditor", "subreddit": "sales", "permalink": "/r/sales/comments/aaa111/which_crm_do_you_use/", "url": "https://www.reddit.com/r/sales/comments/aaa111/which_crm_do_you_use/", "is_self": true, "selftext": "Looking for a cheap CRM.", "score": 12, "num_comments": 2, "link_flair_text": "Tools", "created_utc": 1718000000 } },
+        { "kind": "t3", "data": { "id": "bbb222", "title": "Cold email benchmarks", "author": "mock_seller", "subreddit": "sales", "permalink": "/r/sales/comments/bbb222/cold_email_benchmarks/", "url": "https://example.com/benchmarks", "is_self": false, "score": 40, "num_comments": 9, "created_utc": 1718100000 } }
+      ]
+    }
+  },
+  "listing_page2": {
+    "kind": "Listing",
+    "data": {
+      "after": null,
+      "children": [
+        { "kind": "t3", "data": { "id": "ccc333", "title": "Last post", "author": "[deleted]", "subreddit": "sales", "permalink": "/r/sales/comments/ccc333/last_post/", "is_self": true, "score": 1, "num_comments": 0, "created_utc": 1718200000 } }
+      ]
+    }
+  },
+  "comments": [
+    { "kind": "Listing", "data": { "children": [ { "kind": "t3", "data": { "id": "aaa111", "permalink": "/r/sales/comments/aaa111/which_crm_do_you_use/", "title": "Which CRM do you use?" } } ] } },
+    { "kind": "Listing", "data": { "children": [
+      { "kind": "t1", "data": { "author": "mock_seller", "body": "Try a spreadsheet", "score": 5, "permalink": "/r/sales/comments/aaa111/which_crm_do_you_use/c1/", "created_utc": 1718000100,
+        "replies": { "kind": "Listing", "data": { "children": [
+          { "kind": "t1", "data": { "author": "fake_redditor", "body": "Ha, thanks", "score": 2, "permalink": "/r/sales/comments/aaa111/which_crm_do_you_use/c2/", "created_utc": 1718000200, "replies": "" } }
+        ] } } } },
+      { "kind": "t1", "data": { "author": "[deleted]", "body": "[removed]", "score": 0, "permalink": "/r/sales/comments/aaa111/which_crm_do_you_use/c3/", "created_utc": 1718000300 } },
+      { "kind": "more", "data": { "count": 3, "children": ["c4"] } }
+    ] } }
+  ],
+  "about": { "kind": "t2", "data": { "name": "fake_redditor", "link_karma": 120, "comment_karma": 3400, "created_utc": 1500000000, "subreddit": { "public_description": "I post about pretend CRMs" } } },
+  "overview": { "kind": "Listing", "data": { "after": null, "children": [
+    { "kind": "t1", "data": { "subreddit": "sales", "body": "A comment about pipelines" } },
+    { "kind": "t3", "data": { "subreddit": "sales", "title": "My first post" } },
+    { "kind": "t1", "data": { "subreddit": "startups", "body": "Another comment" } }
+  ] } }
+}

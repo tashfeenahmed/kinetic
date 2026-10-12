@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Users, Send, Inbox, AtSign, Flame, Clock, Puzzle, Code2, ChevronDown, Settings, HelpCircle, LogOut,
   PanelLeftClose, PanelLeft, Check, Plus, Pencil, Trash2, ChevronsUpDown, ChevronRight, Menu as MenuIcon, X, Home as HomeIcon, Radar, Table2, Activity, Globe,
+  Blocks, Eye, Sparkles, BookOpen, Bot, SearchCheck,
 } from 'lucide-react';
 import { useGtmTables } from '../gtm/lib/queries';
 import { RouteErrorBoundary } from './RouteErrorBoundary.tsx';
@@ -14,7 +15,9 @@ import { cx, Button, Field, Input, Loading, Modal, useUi } from './ui.tsx';
 
 const OUTREACH_NAV = [
   { to: '/campaigns', label: 'Campaigns', icon: Send },
+  { to: '/automations', label: 'Automations', icon: Bot },
   { to: '/leads', label: 'Leads', icon: Users },
+  { to: '/visitors', label: 'Visitors', icon: Eye },
   { to: '/inbox', label: 'Master Inbox', icon: Inbox, badge: 'unread' as const },
   { to: '/domains', label: 'Domains', icon: Globe },
   { to: '/sender-emails', label: 'Sender Emails', icon: AtSign },
@@ -211,7 +214,11 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-2 pb-2 scroll-thin">
         <nav className="mt-1 flex flex-col gap-px pt-px">
           <NavItem to="/" end label="Home" icon={HomeIcon} collapsed={collapsed} />
+          <NavItem to="/agent" label="Agent" icon={Sparkles} collapsed={collapsed} />
+          <NavItem to="/knowledge" label="Knowledge" icon={BookOpen} collapsed={collapsed} />
           <NavItem to="/signals" label="Signals" icon={Radar} collapsed={collapsed} />
+          <NavItem to="/searches" label="Searches" icon={SearchCheck} collapsed={collapsed} />
+          <NavItem to="/functions" label="Functions" icon={Blocks} collapsed={collapsed} />
         </nav>
 
         <SectionLabel collapsed={collapsed} action={<button title="New table" onClick={() => navigate('/')} className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200/60 hover:text-zinc-700"><Plus className="size-3.5" /></button>}>Tables</SectionLabel>

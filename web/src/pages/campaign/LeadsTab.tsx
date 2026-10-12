@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { ArrowRightLeft, Clock, Pause, Play, Plus, Search, Send, Table2, Trash2, Users, Ban } from 'lucide-react';
+import { ArrowRightLeft, Clock, GitBranch, Pause, Play, Plus, Search, Send, Table2, Trash2, Users, Ban } from 'lucide-react';
 import { useOpenInTable } from '../../components/openInTable.ts';
 import { api, errorMessage, type Paginated } from '../../lib/api.ts';
 import { fmtDateTime, fmtNumber, fullName } from '../../lib/format.ts';
@@ -8,6 +8,7 @@ import { Badge, Button, Card, Checkbox, EmptyState, Field, Input, Loading, Menu,
 import { CampaignLeadStatus } from '../../components/status.tsx';
 import type { Campaign } from './types.ts';
 import { AddLeadsModal } from './AddLeadsModal.tsx';
+import { LeadPathDrawer } from './LeadPathDrawer.tsx';
 
 interface CampaignLeadRow {
   id: number;
@@ -104,6 +105,7 @@ export function LeadsTab({ campaign }: { campaign: Campaign }) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [adding, setAdding] = useState(false);
   const [moving, setMoving] = useState<number[] | null>(null);
+  const [pathLead, setPathLead] = useState<number | null>(null);
   const qc = useQueryClient();
   const { toast, confirm } = useUi();
 
@@ -221,7 +223,7 @@ export function LeadsTab({ campaign }: { campaign: Campaign }) {
                         {r.tags.length ? r.tags.map((t) => <Badge key={t.id}>{t.name}</Badge>) : <span className="text-slate-300">—</span>}
                       </div>
                     </Td>
-                    <Td><StepDots row={r} steps={steps} /></Td>
+                    <Td><button type="button" title="View this lead's path" onClick={() => setPathLead(r.id)}><StepDots row={r} steps={steps} /></button></Td>
                     <Td className="tabular-nums">{fmtNumber(r.emails_sent)}</Td>
                     <Td className="tabular-nums">{fmtNumber(r.opens)}</Td>
                     <Td className="tabular-nums">{fmtNumber(r.replies)}</Td>
@@ -231,6 +233,7 @@ export function LeadsTab({ campaign }: { campaign: Campaign }) {
                         items={[
                           { label: 'Stop future emails', icon: <Ban className="size-4" />, onClick: () => act('stop', [r.id]), disabled: !['pending', 'in_sequence'].includes(r.status) },
                           { label: 'Resume sequence', icon: <Play className="size-4" />, onClick: () => act('resume', [r.id]), disabled: !['stopped', 'paused', 'replied'].includes(r.status) },
+                          { label: 'View path', icon: <GitBranch className="size-4" />, onClick: () => setPathLead(r.id) },
                           { label: 'Move to another campaign', icon: <ArrowRightLeft className="size-4" />, onClick: () => setMoving([r.id]) },
                           'divider',
                           { label: 'Remove from campaign', icon: <Trash2 className="size-4" />, danger: true, onClick: () => act('remove', [r.id]) },
@@ -247,6 +250,7 @@ export function LeadsTab({ campaign }: { campaign: Campaign }) {
       </div>
 
       {adding && <AddLeadsModal campaign={campaign} onClose={() => setAdding(false)} onDone={refresh} />}
+      {pathLead && <LeadPathDrawer campaign={campaign} leadId={pathLead} onClose={() => setPathLead(null)} />}
       {moving && <MoveModal campaign={campaign} leadIds={moving} onClose={() => setMoving(null)} onDone={refresh} />}
     </div>
   );

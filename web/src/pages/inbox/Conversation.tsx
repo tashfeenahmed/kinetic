@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, Download, Forward, Mail, MailOpen, MoreHorizontal, Reply, ReplyAll, Send, Star, ThumbsDown, Trash2, UserX, Workflow,
+  ArrowLeft, ChevronDown, Download, Forward, Mail, MailOpen, MoreHorizontal, Reply, ReplyAll, Send, Sparkles, Star, ThumbsDown, Trash2, UserX, Workflow,
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api.ts';
 import { avatarColor, fmtDateTime, fullName, initials } from '../../lib/format.ts';
 import { Badge, Button, cx, Field, IconButton, Input, Loading, Menu, Modal, Select, Textarea, useUi } from '../../components/ui.tsx';
-import { CampaignStatus, LeadStatus, ReplyCategory } from '../../components/status.tsx';
+import { CampaignStatus, LeadStatus, REPLY_LABELS, ReplyCategory } from '../../components/status.tsx';
 import { AttachmentPicker, EmailText, parseEmails, useAttachments } from './shared.tsx';
 
 interface Message {
@@ -23,6 +23,7 @@ interface Message {
   body_html?: string;
   attachments?: { filename: string; size: number; url: string }[];
   category?: string;
+  label?: string;
   kind?: string;
   opens?: number;
 }
@@ -47,7 +48,7 @@ function MessageCard({ m }: { m: Message }) {
             <span className="text-[13.5px] font-medium text-slate-900">{name}</span>
             {mine && <Badge tone="blue" className="px-1.5 py-0 text-[11px]">You</Badge>}
             {m.kind === 'campaign' && <Badge className="px-1.5 py-0 text-[11px]">Campaign</Badge>}
-            {m.category && m.category !== 'reply' && <ReplyCategory status={m.category} />}
+            {(m.label ?? m.category) && (m.label ?? m.category) !== 'reply' && <ReplyCategory status={(m.label ?? m.category)!} />}
           </div>
           <div className="truncate text-xs text-slate-500">
             {m.from_email && <>{m.from_email} · </>}to {m.to_email}{m.cc ? `, cc ${m.cc}` : ''}
@@ -80,6 +81,13 @@ function Composer({ thread, replyId, onSent }: { thread: Thread; replyId: number
   const [cc, setCc] = useState('');
   const att = useAttachments();
   const templates = useQuery({ queryKey: ['reply-templates'], queryFn: () => api.get('/api/reply-templates').then((r) => r.data as { id: number; name: string; body: string }[]) });
+  const aiStatus = useQuery({ queryKey: ['reply-ai-status'], queryFn: () => api.get('/api/replies/ai-status').then((r) => r.data as { configured: boolean }) });
+  // Whatever is already typed is passed along as instructions ("say we're booked until May").
+  const draft = useMutation({
+    mutationFn: () => api.post(`/api/replies/${replyId}/draft-reply`, { instructions: body.trim() || undefined }).then((r) => r.data as { draft: string; knowledge_used: boolean }),
+    onSuccess: (d) => setBody(d.draft),
+    onError: (e) => toast(errorMessage(e), 'error'),
+  });
 
   useEffect(() => { setBody(''); setCc(''); setShowCc(false); setReplyAll(false); att.clear(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [replyId]);
 
@@ -99,6 +107,12 @@ function Composer({ thread, replyId, onSent }: { thread: Thread; replyId: number
         </div>
         <span className="truncate">to <span className="text-slate-700">{to}</span>{thread.sender_email && <> from <span className="text-slate-700">{thread.sender_email.email}</span></>}</span>
         <div className="flex-1" />
+        {aiStatus.data?.configured && (
+          <button onClick={() => draft.mutate()} disabled={draft.isPending} title={body.trim() ? 'Draft a reply with AI, using what you typed as instructions' : 'Draft a reply with AI from the thread, lead, campaign and knowledge'}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50">
+            <Sparkles className={cx('size-3.5', draft.isPending && 'animate-pulse')} /> {draft.isPending ? 'Drafting…' : 'Draft with AI'}
+          </button>
+        )}
         {!showCc && <button className="text-brand-600 hover:underline" onClick={() => setShowCc(true)}>Add Cc</button>}
         {!!templates.data?.length && (
           <Select className="w-44" value="" onChange={(e) => { const t = templates.data!.find((x) => String(x.id) === e.target.value); if (t) setBody((b) => (b ? `${b}\n\n${t.body}` : t.body)); }}>
@@ -199,7 +213,11 @@ export function Conversation({ replyId, onBack, onDeleted }: { replyId: number; 
           <IconButton label="Back" className="lg:hidden" onClick={onBack}><ArrowLeft className="size-4" /></IconButton>
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-[15px] font-semibold text-slate-900">{r.subject || '(no subject)'}</h2>
-            <div className="mt-1 flex flex-wrap items-center gap-2"><ReplyCategory status={r.category} />{r.folder !== 'inbox' && <Badge tone={r.folder === 'spam' ? 'orange' : 'red'}>{r.folder === 'spam' ? 'Spam' : 'Bounced'}</Badge>}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <LabelPicker reply={r} onPick={(label) => act.mutate(() => api.patch(`/api/replies/${r.id}/label`, { label }))} />
+              {r.folder !== 'inbox' && <Badge tone={r.folder === 'spam' ? 'orange' : 'red'}>{r.folder === 'spam' ? 'Spam' : 'Bounced'}</Badge>}
+              {(r.ai_status === 'pending' || r.ai_status === 'refresh') && <span className="text-[11.5px] text-slate-400">Sorting with AI…</span>}
+            </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <Button size="sm" variant={interested ? 'success' : 'secondary'} icon={<Star className={cx('size-3.5', interested && 'fill-current')} />}
@@ -229,6 +247,7 @@ export function Conversation({ replyId, onBack, onDeleted }: { replyId: number; 
             />
           </div>
         </div>
+        <AiSummary reply={r} />
         {(t.lead || t.campaign) && (
           <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[12.5px]">
             {t.lead && (
@@ -252,6 +271,52 @@ export function Conversation({ replyId, onBack, onDeleted }: { replyId: number; 
       {r.folder !== 'bounced' && <Composer thread={t} replyId={r.id} onSent={refresh} />}
       <ForwardModal open={modal === 'forward'} onClose={() => setModal(null)} replyId={r.id} />
       <PushModal open={modal === 'push'} onClose={() => setModal(null)} replyId={r.id} />
+    </div>
+  );
+}
+
+/** The reply's label as a badge that opens a re-label menu. A label you pick is never changed by the AI. */
+function LabelPicker({ reply, onPick }: { reply: any; onPick: (label: string) => void }) {
+  const current = reply.label ?? reply.category;
+  return (
+    <Menu
+      align="left"
+      trigger={(o) => (
+        <button onClick={o} title={reply.label_source === 'manual' ? 'Label set by you' : 'Change label'} className="group inline-flex items-center gap-0.5 rounded-md">
+          <ReplyCategory status={current} />
+          <ChevronDown className="size-3 text-slate-400 group-hover:text-slate-700" />
+        </button>
+      )}
+      items={REPLY_LABELS.filter((l) => l.id !== 'bounce').map((l) => ({
+        label: <span className={cx(l.id === current && 'font-medium text-slate-900')}>{l.label}</span>,
+        onClick: () => { if (l.id !== current) onPick(l.id); },
+      }))}
+    />
+  );
+}
+
+const OBJECTION: Record<string, string> = { price: 'price', timing: 'timing', competitor: 'competitor', no_need: 'no need', authority: 'authority', other: 'other' };
+
+/** One-line AI read of the reply: summary, suggested next action and confidence. */
+function AiSummary({ reply: r }: { reply: any }) {
+  if (!r.ai_summary && !r.ai_next_action) return null;
+  const d = r.ai_details ?? {};
+  const extra = [
+    d.objection_type && `Objection: ${OBJECTION[d.objection_type] ?? d.objection_type}`,
+    d.referral && `Refers to ${[d.referral.name, d.referral.email].filter(Boolean).join(' · ')}`,
+    d.return_date && `Back ${d.return_date}`,
+  ].filter(Boolean);
+  return (
+    <div className="mt-2 flex items-start gap-2 text-[12.5px] leading-snug">
+      <span className="mt-px inline-flex shrink-0 items-center gap-0.5 rounded bg-violet-50 px-1 py-px text-[10.5px] font-semibold text-violet-700" title={r.ai_model ?? 'AI'}>
+        <Sparkles className="size-2.5" /> AI
+      </span>
+      <div className="min-w-0 flex-1">
+        {r.ai_summary && <span className="text-slate-700">{r.ai_summary}</span>}
+        {r.ai_next_action && <span className="text-slate-500"> → {r.ai_next_action}</span>}
+        {extra.length > 0 && <span className="text-slate-400"> · {extra.join(' · ')}</span>}
+      </div>
+      {r.ai_confidence != null && <span className="shrink-0 text-[11px] tabular-nums text-slate-400" title="Model confidence">{Math.round(r.ai_confidence * 100)}%</span>}
     </div>
   );
 }

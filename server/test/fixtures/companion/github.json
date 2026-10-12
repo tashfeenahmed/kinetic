@@ -1,0 +1,15 @@
+{
+  "stargazers": [
+    { "starred_at": "2024-06-01T10:00:00Z", "user": { "login": "fakedev", "html_url": "https://github.com/fakedev", "type": "User" } },
+    { "starred_at": "2024-06-02T10:00:00Z", "user": { "login": "mock-coder", "html_url": "https://github.com/mock-coder", "type": "User" } },
+    { "starred_at": "2024-06-03T10:00:00Z", "user": { "login": "dependabot[bot]", "type": "Bot" } }
+  ],
+  "contributors": [
+    { "login": "fakedev", "html_url": "https://github.com/fakedev", "contributions": 120, "type": "User" },
+    { "login": "mock-coder", "html_url": "https://github.com/mock-coder", "contributions": 7, "type": "User" }
+  ],
+  "users": {
+    "fakedev": { "login": "fakedev", "name": "Fake Developer", "html_url": "https://github.com/fakedev", "company": "@acme-widgets", "email": "fake@dev.example", "location": "Berlin", "blog": "fakedev.example", "twitter_username": "fakedev", "bio": "I write pretend code", "followers": 321 },
+    "mock-coder": { "login": "mock-coder", "name": "Mock Coder", "html_url": "https://github.com/mock-coder", "company": null, "email": null, "location": null, "blog": "", "twitter_username": null, "bio": null, "followers": 3 }
+  }
+}

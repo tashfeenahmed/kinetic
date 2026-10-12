@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Kinetic Companion</title>
+  <link rel="stylesheet" href="ui.css" />
+  <style>
+    body { width: 320px; padding: 14px; }
+  </style>
+</head>
+<body class="stack">
+  <div class="brand">
+    <img src="icons/32.png" width="20" height="20" alt="" />
+    <h1>Kinetic</h1>
+    <span class="grow"></span>
+    <span id="state" class="badge"><span class="dot"></span><span>…</span></span>
+  </div>
+
+  <div id="unpaired" class="card hidden">
+    <p>This browser isn't paired with Kinetic yet.</p>
+    <button id="options" class="primary" style="margin-top:8px">Pair with Kinetic</button>
+  </div>
+
+  <div id="main" class="stack hidden">
+    <div class="card">
+      <div class="sub small">Current task</div>
+      <div id="task">Idle</div>
+      <div id="task-sub" class="sub small"></div>
+      <div id="notice" class="msg error"></div>
+    </div>
+
+    <div>
+      <h2 style="margin-top:4px">Today</h2>
+      <table id="limits"></table>
+    </div>
+
+    <div class="row">
+      <button id="pause" class="grow">Pause all</button>
+      <button id="open" class="primary grow">Open Kinetic</button>
+    </div>
+    <div class="row small sub"><span class="grow" id="seen"></span><a href="#" id="settings">Settings</a></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

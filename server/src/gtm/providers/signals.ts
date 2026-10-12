@@ -13,6 +13,7 @@ import { detect, loadFingerprints } from '../lib/wappalyzer.ts';
 import { mxProvider } from './free.ts';
 import { apolloPerson, pdlPerson } from './vendors.ts';
 import type { Ctx, Hit } from './types.ts';
+import { websiteVisits } from '../../visitors/signal.ts';
 
 export interface SignalInput {
   domain?: string;
@@ -560,6 +561,7 @@ export const SIGNAL_KINDS: SignalKind[] = [
   { id: 'github', label: 'GitHub activity', description: 'Public repos for an org. Value = last push time.', inputs: ['target', 'domain'], requires: [], run: github },
   { id: 'new_subdomains', label: 'New subdomains (certificates)', description: 'New hostnames from TLS certificate logs (Cert Spotter, crt.sh fallback) — often precedes launches. Free tier ≈10 lookups/hour, so use on a short list or add a Cert Spotter key. Value = list of new hostnames.', inputs: ['domain', 'days'], requires: [], run: newSubdomains },
   { id: 'job_change', label: 'Job change', description: 'Re-checks where a person works now (PDL or Apollo). Value = true when they have left the company you know.', inputs: ['email', 'linkedinUrl', 'fullName', 'companyName', 'domain'], requires: ['PDL_API_KEY|APOLLO_API_KEY'], run: jobChange },
+  { id: 'website_visits', label: 'Website visits', description: 'Visits to your tracked websites (Visitors) by the row\'s company domain or lead email. Value = visits in the last 30 days; data has last visit, pages and intent score.', inputs: ['domain', 'email'], requires: [], run: websiteVisits },
 ];
 
 export function signalKind(id: string): SignalKind {

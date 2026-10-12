@@ -14,7 +14,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   return data as T;
 }
 
-export type ColumnType = 'text' | 'formula' | 'extract' | 'enrich' | 'ai' | 'http' | 'signal' | 'action';
+export type ColumnType = 'text' | 'formula' | 'extract' | 'enrich' | 'ai' | 'http' | 'signal' | 'action' | 'lookup' | 'function';
 
 export interface Column {
   id: number; table_id: number; name: string; type: ColumnType; config: any;
@@ -61,4 +61,38 @@ export const TYPE_META: Record<ColumnType, { icon: string; label: string; hint: 
   http: { icon: 'code', label: 'HTTP API', hint: 'Call any API' },
   signal: { icon: 'radar', label: 'Signal', hint: 'Hiring, news, funding, tech…' },
   action: { icon: 'send', label: 'Action', hint: 'Slack, webhook, HubSpot, Salesforce' },
+  lookup: { icon: 'lookup', label: 'Lookup', hint: 'Find matching rows in another table' },
+  function: { icon: 'blocks', label: 'Function', hint: 'A saved, reusable enrichment recipe' },
 };
+
+export type MatchMode = 'exact' | 'case_insensitive' | 'domain' | 'email' | 'company';
+export const MATCH_MODES: { id: MatchMode; label: string }[] = [
+  { id: 'exact', label: 'Exact' },
+  { id: 'case_insensitive', label: 'Case-insensitive' },
+  { id: 'domain', label: 'Domain (URLs, emails → domain)' },
+  { id: 'email', label: 'Email (ignores case, +tags)' },
+  { id: 'company', label: 'Company name (ignores Inc, LLC, GmbH…)' },
+];
+
+export type StepType = 'formula' | 'extract' | 'enrich' | 'ai' | 'http' | 'lookup';
+export const STEP_TYPES: StepType[] = ['enrich', 'ai', 'http', 'formula', 'extract', 'lookup'];
+export interface FnStep { name: string; type: StepType; config: any; run_if?: string | null }
+export interface FnDefinition {
+  inputs: { name: string; description?: string; required?: boolean }[];
+  steps: FnStep[];
+  outputs: { name: string; value: string; description?: string }[];
+}
+export interface FnUsage { column_id: number; column: string; table_id: number; table: string; version: number | null }
+export interface FnStats {
+  days: number; rowsProcessed: number; errorRate: number; emptyRate: number; avgMs: number;
+  fillRate: Record<string, number>; byVersion: Record<number, number>; lastRunAt: string | null; tables: FnUsage[];
+}
+export interface FnRec {
+  id: number; name: string; description: string; tags: string[]; version: number; definition: FnDefinition;
+  created_at: string; updated_at: string; usage: { columns: number; tables: number; outdated: number };
+}
+export interface FnDetail extends FnRec { versions: { version: number; created_at: string }[]; columns: FnUsage[]; stats: FnStats }
+export interface FnTestResult {
+  rowId?: number; inputs: Record<string, unknown>; outputs: Record<string, unknown>; status: string; ms: number; error?: string;
+  steps: { name: string; type: string; status: string; ms: number; error?: string; value?: unknown; provider?: unknown }[];
+}

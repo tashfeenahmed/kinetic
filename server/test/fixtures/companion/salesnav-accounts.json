@@ -1,0 +1,7 @@
+{
+  "paging": { "start": 25, "count": 25, "total": 40 },
+  "elements": [
+    { "entityUrn": "urn:li:fs_salesCompany:5550001", "companyName": "Acme Widgets", "industry": "Software Development", "employeeDisplayCount": "142", "location": "Berlin, Germany", "description": "Pretend widgets." },
+    { "entityUrn": "urn:li:fs_salesCompany:5550002", "companyName": "Example Corp", "industry": "IT Services", "employeeCountRange": "1001-5000" }
+  ]
+}

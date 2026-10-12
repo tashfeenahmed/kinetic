@@ -18,6 +18,7 @@ interface Props {
   onDeleteRows: (rowIds: number[]) => void;
   onAddRows: (count: number) => void;
   onResize: (colId: number, width: number) => void;
+  onSaveAsFunction?: (columnIds: number[]) => void;
 }
 
 export function Grid(props: Props) {
@@ -107,7 +108,8 @@ export function Grid(props: Props) {
       manualColumnResize
       columnSorting
       filters
-      dropdownMenu={['filter_by_condition', 'filter_by_value', 'filter_action_bar']}
+      dropdownMenu={['filter_by_condition', 'filter_by_value', 'filter_action_bar', '---------',
+        { key: 'save_fn', name: 'Save columns as function…', callback: () => ref.current.onSaveAsFunction?.(selected().colIds) }] as any}
       autoWrapRow
       autoWrapCol
       outsideClickDeselects={false}
@@ -152,6 +154,8 @@ export function Grid(props: Props) {
           add10: { name: 'Add 10 rows', callback: () => ref.current.onAddRows(10) },
           del: { name: 'Delete selected rows', callback: () => { const s = selected(); if (s.rowIds.length && confirm(`Delete ${s.rowIds.length} row(s)?`)) ref.current.onDeleteRows(s.rowIds); } },
           sp2: '---------',
+          savefn: { name: 'Save selected columns as function…', callback: () => ref.current.onSaveAsFunction?.(selected().colIds) },
+          sp3: '---------',
           copy: {},
         } as any,
       }}

@@ -1,0 +1,26 @@
+{
+  "data": { "paging": { "start": 0, "count": 10, "total": 2 } },
+  "included": [
+    {
+      "$type": "com.linkedin.voyager.dash.social.Comment",
+      "entityUrn": "urn:li:fsd_comment:(7100000000000000123,urn:li:activity:7100000000000000001)",
+      "createdAt": 1700000000000,
+      "commentary": { "text": "Great point about widgets!" },
+      "commenter": {
+        "title": { "text": "Mock Personson" },
+        "subtitle": "VP Sales @ Example Corp",
+        "navigationUrl": "https://www.linkedin.com/in/mock-personson"
+      }
+    },
+    {
+      "$type": "com.linkedin.voyager.dash.social.Comment",
+      "entityUrn": "urn:li:fsd_comment:(7100000000000000124,urn:li:activity:7100000000000000001)",
+      "createdAt": 1700000100000,
+      "commentary": { "text": "Agreed." },
+      "commenter": {
+        "title": { "text": "Dummy McTest" },
+        "navigationContext": { "actionTarget": "https://www.linkedin.com/in/dummy-mctest" }
+      }
+    }
+  ]
+}

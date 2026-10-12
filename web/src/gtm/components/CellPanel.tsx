@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { Icon } from './Icon';
 import { api, display, type Column } from '../lib/api';
 
@@ -69,6 +70,24 @@ export function CellPanel({ rowId, column, version, onClose, onRun, onAddExtract
             {meta.usage && <p className="hint">{meta.usage.prompt + meta.usage.completion} tokens{meta.usage.costUsd ? ` · $${meta.usage.costUsd.toFixed(5)}` : ''}</p>}
           </section>
         )}
+        {Array.isArray(meta.functionSteps) && (
+          <section>
+            <h4>Function steps · <Link to={`/functions/${meta.functionId}`}>{meta.provider}</Link></h4>
+            <table className="kv">
+              <tbody>{meta.functionSteps.map((s: any, i: number) => (
+                <tr key={i}>
+                  <th>{s.name}<br /><small className="muted">{s.type}{s.provider ? ` · ${s.provider}` : ''}</small></th>
+                  <td className={s.status === 'done' ? 'ok' : s.status === 'error' ? 'err' : 'muted'}>{s.status === 'done' ? (display(s.value) || 'done') : s.error ? `${s.status}: ${s.error}` : s.status}</td>
+                  <td className="muted nowrap">{s.ms}ms</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </section>
+        )}
+        {(column.type === 'lookup' || column.config?.kind === 'send_to_table') && meta.tableId && (
+          <p className="hint">{column.type === 'lookup' ? `${meta.matched ?? 0} matching row${meta.matched === 1 ? '' : 's'} (${meta.mode})` : `${meta.rowIds?.length ?? 0} target row${meta.rowIds?.length === 1 ? '' : 's'}`} in <Link to={`/tables/${meta.tableId}`}>{meta.provider === 'send_to_table' ? 'the target table' : meta.provider}</Link></p>
+        )}
+
         {(v?.sources ?? meta.sources)?.length > 0 && (
           <section>
             <h4>Sources</h4>

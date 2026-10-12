@@ -1,0 +1,27 @@
+/* Lookups, send-to-table and the Functions library. */
+.gtm .ty-lookup { color: #0891b2; background: #ecfeff; }
+.gtm .ty-function { color: #4f46e5; background: #eef2ff; }
+.gtm td.ks-cell.st-stale { color: var(--muted); font-style: italic; }
+
+.gtm .fn-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 900; display: flex; box-shadow: var(--shadow-lg); }
+.gtm .fn-drawer .drawer { height: 100%; }
+.gtm .fn-steps { list-style: none; margin: 4px 0 0; padding: 0; }
+.gtm .fn-step { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.gtm .fn-step:last-child { border-bottom: none; }
+.gtm .fn-step .num { width: 18px; color: var(--muted); font-size: 12px; text-align: right; flex: none; }
+.gtm .fn-step .body { flex: 1; min-width: 0; }
+.gtm .fn-step .body b { font-weight: 500; font-size: 13px; }
+.gtm .fn-step .body small { display: block; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gtm .fn-io { display: grid; grid-template-columns: 160px 1fr auto auto; gap: 8px; align-items: center; margin-top: 8px; }
+.gtm .fn-io.out { grid-template-columns: 160px 1fr auto; align-items: start; }
+.gtm .tag-pill { display: inline-flex; align-items: center; font-size: 11px; color: var(--text-2); background: var(--bg-muted); border-radius: 999px; padding: 1px 8px; margin-right: 4px; }
+.gtm .ver { font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px 8px; }
+.gtm .fill { display: grid; grid-template-columns: 160px 1fr 52px; gap: 10px; align-items: center; padding: 6px 0; font-size: 13px; }
+.gtm .fill-bar { height: 6px; background: var(--bg-muted); border-radius: 999px; overflow: hidden; }
+.gtm .fill-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.gtm .fill .pct { text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.gtm .fn-result { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+.gtm .fn-result > header { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.gtm .fn-result > header b { color: var(--text); font-weight: 500; }
+.gtm .fn-cols { max-height: 260px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 2px 10px 8px; margin-top: 8px; }
+@media (max-width: 900px) { .gtm .fn-io, .gtm .fn-io.out { grid-template-columns: 1fr; } .gtm .fill { grid-template-columns: 110px 1fr 46px; } }

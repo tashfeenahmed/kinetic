@@ -15,6 +15,8 @@ import { localDayStart, openWindow, type SendSchedule } from '../lib/schedule.ts
 import { domainOf } from '../lib/dns.ts';
 import { chooseVariant, composeCampaignEmail } from './compose.ts';
 import { ensureThread } from './threads.ts';
+import { bumpVisits, dueAfterSend, resolveNextStep } from './branching.ts';
+import { mayEnterStep } from './abtest.ts';
 
 const MIN_GAP_MS = 45_000;
 const ACTIVE_SLOT = `('scheduled','sending')`;
@@ -112,22 +114,27 @@ function planCampaign(ctx: Ctx, c: Row, now: Date): number {
 
   for (const cl of candidates) {
     if (campaignLeft <= 0) break;
-    const nextOrder = cl.current_step + 1;
 
     if (['unsubscribed', 'bounced'].includes(cl.lead_status) || isBlacklisted(ctx, c.workspace_id, cl.email)) {
       db.update('campaign_leads', cl.id, { status: cl.lead_status === 'bounced' ? 'bounced' : cl.lead_status === 'unsubscribed' ? 'unsubscribed' : 'stopped' });
       continue;
     }
+    // Branching rules of the last step sent pick the next step (linear: current_step + 1).
+    const next = resolveNextStep(ctx, c, cl, steps, now);
+    if (next.kind !== 'send') continue;
+    const nextOrder = next.order;
     if (nextOrder > maxStep) {
       db.update('campaign_leads', cl.id, { status: 'completed', next_due_at: null });
       continue;
     }
     if (nextOrder === 1 && newLeft <= 0) continue;
+    // A/B test on a share of leads: the rest wait here until a winner is picked.
+    if (!mayEnterStep(steps.get(nextOrder) ?? [], cl.lead_id, nextOrder)) continue;
 
     const variant = chooseVariant(steps.get(nextOrder) ?? [], cl.lead_id, nextOrder);
     if (!variant) {
       // Every variant of this step is switched off: skip the step.
-      db.update('campaign_leads', cl.id, { current_step: nextOrder });
+      db.update('campaign_leads', cl.id, { current_step: nextOrder, next_step: null });
       continue;
     }
 
@@ -235,7 +242,7 @@ async function sendSlot(ctx: Ctx, slot: Row): Promise<'sent' | 'failed' | 'cance
   if (!['pending', 'in_sequence'].includes(cl.status)) return cancel(`lead ${cl.status}`);
   if (['unsubscribed', 'bounced'].includes(lead.status) || isBlacklisted(ctx, campaign.workspace_id, lead.email)) return cancel('lead not sendable');
   if (sender.status !== 'Connected') return cancel('sender not connected');
-  if (cl.current_step + 1 !== slot.step_order) return cancel('step already sent');
+  if ((cl.next_step ?? cl.current_step + 1) !== slot.step_order) return cancel('step already sent');
 
   // A slot that slipped well past its window (e.g. the app was stopped) is re-planned instead.
   const late = ctx.now().getTime() - Date.parse(slot.scheduled_at);
@@ -295,19 +302,21 @@ async function sendSlot(ctx: Ctx, slot: Row): Promise<'sent' | 'failed' | 'cance
     db.update('scheduled_emails', slot.id, { status: 'sent' });
 
     const steps = loadSteps(ctx, campaign.id);
-    const nextOrder = slot.step_order + 1;
-    const next = steps.get(nextOrder)?.[0];
+    // Next step's wait (or, for a last step with rules, when to check them).
+    const due = dueAfterSend(steps, slot.step_order);
     db.update('campaign_leads', cl.id, {
       current_step: slot.step_order,
+      next_step: null,
+      seq_state: bumpVisits(cl, slot.step_order),
       last_sent_at: sentAt,
-      status: next ? 'in_sequence' : 'completed',
-      next_due_at: next ? followUpDue(campaign, sentAt, next.wait_in_days) : null,
+      status: due ? 'in_sequence' : 'completed',
+      next_due_at: due ? followUpDue(campaign, sentAt, due.wait) : null,
     });
 
     const data = { scheduled_email_id: slot.id, sent_email_id: sentId, campaign_id: campaign.id, campaign_name: campaign.name, lead_id: lead.id, lead_email: lead.email, sender_email_id: sender.id, sender_email: sender.email, sequence_step_id: step.id, step_order: slot.step_order, subject: message.subject };
     const refs = { campaign_id: campaign.id, lead_id: lead.id, sender_email_id: sender.id, sent_email_id: sentId };
     emit(ctx, campaign.workspace_id, 'EMAIL_SENT', data, refs);
-    if (slot.step_order === 1) emit(ctx, campaign.workspace_id, 'LEAD_FIRST_CONTACTED', data, refs);
+    if (slot.step_order === 1 && cl.current_step === 0) emit(ctx, campaign.workspace_id, 'LEAD_FIRST_CONTACTED', data, refs);
   });
   return 'sent';
 }

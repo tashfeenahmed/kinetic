@@ -3,8 +3,8 @@ import { randomBytes } from 'node:crypto';
 import { nowIso, type Db } from '../../db/db.ts';
 import { references, renameRefs } from '../lib/template.ts';
 
-export type ColumnType = 'text' | 'formula' | 'extract' | 'enrich' | 'ai' | 'http' | 'signal' | 'action';
-export const RUNNABLE: ColumnType[] = ['formula', 'extract', 'enrich', 'ai', 'http', 'signal', 'action'];
+export type ColumnType = 'text' | 'formula' | 'extract' | 'enrich' | 'ai' | 'http' | 'signal' | 'action' | 'lookup' | 'function';
+export const RUNNABLE: ColumnType[] = ['formula', 'extract', 'enrich', 'ai', 'http', 'signal', 'action', 'lookup', 'function'];
 
 export interface Column {
   id: number; table_id: number; name: string; type: ColumnType; config: any;

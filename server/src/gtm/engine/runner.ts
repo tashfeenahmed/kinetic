@@ -14,10 +14,13 @@ import type { Ctx, EnrichInput, Hit } from '../providers/types.ts';
 import { runAgent } from './agent.ts';
 import type { OutreachBridge } from '../outreach.ts';
 import { RUNNABLE, type Column, type Store } from './store.ts';
+import { Links } from './links.ts';
+import { Functions } from './functions.ts';
 
-interface Job { tableId: number; rowId: number; columnId: number; type: string }
+/** workspaceId is set for cells computed outside a table (function test runs). */
+interface Job { tableId: number; rowId: number; columnId: number; type: string; workspaceId?: number }
 
-const LIMITS: Record<string, number> = { ai: 4, enrich: 4, signal: 4, http: 6, action: 2, formula: 20, extract: 20 };
+const LIMITS: Record<string, number> = { ai: 4, enrich: 4, signal: 4, http: 6, action: 2, formula: 20, extract: 20, lookup: 20, function: 4 };
 
 export interface RunOptions {
   /** Re-run cells that already have a value. */
@@ -42,6 +45,10 @@ export class Engine {
   private outreach?: OutreachBridge;
   /** Called when a signal-type cell moves from one value to another (feeds webhooks). */
   onSignalChange?: (e: { workspaceId: number; tableId: number; rowId: number; column: Column; from: unknown; to: unknown }) => void;
+  /** Lookups and send-to-table across tables. */
+  readonly links: Links;
+  /** Reusable functions (the `function` column type). */
+  readonly functions: Functions;
 
   constructor(store: Store, settings: Settings, bus: Bus, dataDir?: string, outreach?: OutreachBridge) {
     this.dataDir = dataDir;
@@ -49,12 +56,14 @@ export class Engine {
     this.store = store;
     this.settings = settings;
     this.bus = bus;
+    this.links = new Links(this, store, bus);
+    this.functions = new Functions(this, store);
   }
 
   start() {
     // Anything interrupted by a restart goes back on the queue.
     const stale = this.store.db.all(`SELECT c.row_id, c.column_id, r.table_id, col.type FROM gtm_cells c
-      JOIN gtm_rows r ON r.id = c.row_id JOIN gtm_columns col ON col.id = c.column_id WHERE c.status IN ('queued', 'running')`);
+      JOIN gtm_rows r ON r.id = c.row_id JOIN gtm_columns col ON col.id = c.column_id WHERE c.status IN ('queued', 'running', 'stale')`);
     for (const s of stale) this.push({ tableId: s.table_id, rowId: s.row_id, columnId: s.column_id, type: s.type });
     this.pump();
     this.timer = setInterval(() => this.tickSchedules(), 60_000);
@@ -62,6 +71,7 @@ export class Engine {
 
   stop() {
     clearInterval(this.timer);
+    this.links.stop();
   }
 
   stats(tableId: number) {
@@ -120,8 +130,9 @@ export class Engine {
   }
 
   /** A text cell (or other input) changed: re-run auto columns that depend on it. */
-  inputsChanged(tableId: number, rowId: number, columnNames: string[]) {
+  inputsChanged(tableId: number, rowId: number, columnNames: string[], fromEngine = false) {
     this.cascade(tableId, rowId, columnNames);
+    this.links.changed(tableId, columnNames, fromEngine);
     this.pump();
   }
 
@@ -202,6 +213,7 @@ export class Engine {
     this.emitCell(j);
     if (changed) {
       this.cascade(j.tableId, j.rowId, [col.name]);
+      this.links.changed(j.tableId, [col.name], true);
       if (col.type === 'signal' && before != null && this.onSignalChange) {
         try {
           this.onSignalChange({ workspaceId: this.store.table(j.tableId).workspace_id, tableId: j.tableId, rowId: j.rowId, column: col, from: before, to: this.store.cell(j.rowId, j.columnId)?.value });
@@ -220,8 +232,12 @@ export class Engine {
     }
   }
 
+  private workspaceOf(j: Job): number {
+    return j.workspaceId ?? this.store.table(j.tableId).workspace_id;
+  }
+
   private ctx(j: Job, prev?: unknown): Ctx {
-    return { settings: this.settings, dataDir: this.dataDir, workspaceId: this.store.table(j.tableId).workspace_id, outreach: this.outreach, prev, log: (m) => this.store.log('info', 'provider', m, j) };
+    return { settings: this.settings, dataDir: this.dataDir, workspaceId: this.workspaceOf(j), outreach: this.outreach, prev, log: (m) => this.store.log('info', 'provider', m, j) };
   }
 
   /** Compute one cell. Exposed for tests. */
@@ -262,7 +278,7 @@ export class Engine {
       case 'ai': {
         const prompt = render(cfg.prompt ?? '', row);
         if (!prompt.trim()) return { value: null, status: 'skipped', error: 'Empty prompt' };
-        const r = await runAgent({ prompt, model: cfg.model, outputs: cfg.outputs ?? [], webSearch: cfg.webSearch !== false, fetchPages: cfg.fetchPages !== false, maxSteps: cfg.maxSteps }, this.ctx(j));
+        const r = await runAgent({ prompt, model: cfg.model, outputs: cfg.outputs ?? [], webSearch: cfg.webSearch !== false, fetchPages: cfg.fetchPages !== false, maxSteps: cfg.maxSteps, useKnowledge: !!cfg.useKnowledge }, this.ctx(j));
         const keys = Object.keys(r.output);
         const headline = keys.length === 1 ? r.output[keys[0]] : r.output;
         const empty = keys.every((k) => r.output[k] == null);
@@ -279,7 +295,11 @@ export class Engine {
         const value = cfg.extract ? getPath(hit.value, cfg.extract) : hit.value;
         return { value: value == null ? null : { value, data: hit.value }, status: value == null ? 'empty' : 'done', meta: { provider: new URL(url).hostname } };
       }
-      case 'action': return this.action(cfg, row, this.store.table(j.tableId).workspace_id);
+      case 'action':
+        if (cfg.kind === 'send_to_table') return this.links.send(cfg, row, j, this.workspaceOf(j));
+        return this.action(cfg, row, this.workspaceOf(j));
+      case 'lookup': return this.links.lookup(cfg, row, j, this.workspaceOf(j));
+      case 'function': return this.functions.runColumn(cfg, row, { ...j, workspaceId: this.workspaceOf(j) });
       default:
         return { value: null, status: 'skipped', error: `Column type ${col.type} does not run` };
     }
