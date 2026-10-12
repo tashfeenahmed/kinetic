@@ -78,9 +78,22 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
 
   if (existsSync(WEB_DIST)) {
     // wildcard routing serves files added after startup (e.g. after a rebuild).
-    await app.register(fastifyStatic, { root: WEB_DIST, wildcard: true });
+    await app.register(fastifyStatic, {
+      root: WEB_DIST,
+      wildcard: true,
+      // Hashed build files never change; index.html must always be re-checked so new builds load.
+      setHeaders: (res, path) => {
+        res.header('cache-control', path.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache');
+      },
+    });
     app.setNotFoundHandler((req, reply) => {
-      if (req.method === 'GET' && !req.url.startsWith('/api/') && !req.url.startsWith('/hooks/')) return reply.sendFile('index.html');
+      // A missing build file (e.g. an old tab asking for a chunk from a previous build) must 404,
+      // not return index.html — the browser can't run HTML as JavaScript and the page would hang.
+      const isAsset = req.url.startsWith('/assets/') || /\.(js|css|map|png|svg|woff2?)(\?|$)/.test(req.url);
+      if (req.method === 'GET' && !isAsset && !req.url.startsWith('/api/') && !req.url.startsWith('/hooks/')) {
+        reply.header('cache-control', 'no-cache');
+        return reply.sendFile('index.html');
+      }
       return reply.code(404).send({ error: 'not_found', message: 'Route not found' });
     });
   } else {

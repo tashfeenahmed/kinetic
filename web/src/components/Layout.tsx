@@ -1,11 +1,12 @@
-import { Suspense, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Users, Send, Inbox, AtSign, Flame, Clock, Puzzle, Code2, ChevronDown, Settings, HelpCircle, LogOut,
-  PanelLeftClose, PanelLeft, Check, Plus, Pencil, Trash2, ChevronRight, Menu as MenuIcon, X, Home as HomeIcon, Radar, Table2, Activity,
+  PanelLeftClose, PanelLeft, Check, Plus, Pencil, Trash2, ChevronsUpDown, ChevronRight, Menu as MenuIcon, X, Home as HomeIcon, Radar, Table2, Activity,
 } from 'lucide-react';
 import { useGtmTables } from '../gtm/lib/queries';
+import { RouteErrorBoundary } from './RouteErrorBoundary.tsx';
 import { api } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import { initials } from '../lib/format.ts';
@@ -39,7 +40,8 @@ export function Logo({ size = 24 }: { size?: number }) {
   );
 }
 
-function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
+/** Account menu (bottom left): workspaces, settings, help, log out. */
+function UserMenu({ collapsed }: { collapsed: boolean }) {
   const { me, refresh } = useAuth();
   const qc = useQueryClient();
   const { toast } = useUi();
@@ -47,10 +49,18 @@ function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const navigate = useNavigate();
-  const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: () => api.get('/api/workspaces').then((r) => r.data as { id: number; name: string; role: string }[]) });
+  const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: () => api.get('/api/workspaces').then((r) => r.data as { id: number; name: string; role: string }[]), enabled: open });
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
 
   const switchTo = async (id: number) => {
     setOpen(false);
+    if (id === me?.current_workspace_id) return;
     await api.post('/api/workspaces/switch-workspace', { team_id: id });
     qc.clear();
     await refresh();
@@ -61,30 +71,60 @@ function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
     onSuccess: async (r) => { setCreating(false); setName(''); toast('Workspace created'); await switchTo(r.data.id); },
     onError: (e: Error) => toast(e.message, 'error'),
   });
+  const logout = async () => {
+    setOpen(false);
+    await api.post('/api/auth/logout');
+    qc.clear();
+    await refresh();
+  };
+  const go = (to: string) => { setOpen(false); navigate(to); };
+  const row = 'flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[13px] text-zinc-700 hover:bg-zinc-50';
 
-  if (collapsed) return null;
   return (
-    <div className="relative px-2 pb-1">
-      <button onClick={() => setOpen((o) => !o)} className="flex h-8 w-full items-center gap-2 rounded-[7px] px-2 text-[13px] font-medium text-zinc-700 hover:bg-zinc-200/50">
-        <span className="flex size-5 items-center justify-center rounded-md bg-zinc-200 text-[10px] font-semibold text-zinc-600">{initials(me?.team?.name ?? 'W')}</span>
-        <span className="flex-1 truncate text-left">{me?.team?.name ?? 'Workspace'}</span>
-        <ChevronDown className="size-3.5 text-zinc-400" />
+    <div className="relative border-t border-zinc-200/80 py-2">
+      <button onClick={() => setOpen((o) => !o)} title={collapsed ? `${me?.name} · ${me?.team?.name}` : undefined} aria-haspopup="menu" aria-expanded={open}
+        className={cx('flex w-full items-center gap-2.5 rounded-[7px] px-1 py-1.5 text-left hover:bg-zinc-200/50', open && 'bg-zinc-200/50', collapsed && 'justify-center px-0')}>
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-200 text-[11px] font-semibold text-zinc-700">{initials(me?.name ?? '')}</span>
+        {!collapsed && (
+          <>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-medium text-zinc-800">{me?.name}</span>
+              <span className="block truncate text-[11.5px] text-zinc-500">{me?.team?.name ?? 'Workspace'}</span>
+            </span>
+            <ChevronsUpDown className="size-3.5 shrink-0 text-zinc-400" />
+          </>
+        )}
       </button>
+
       {open && (
-        <div className="absolute left-2 right-2 z-30 mt-1 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg">
-          <div className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Workspaces</div>
-          {workspaces.data?.map((w) => (
-            <button key={w.id} onClick={() => switchTo(w.id)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50">
-              <span className="truncate">{w.name}</span>
-              {w.id === me?.current_workspace_id && <Check className="size-4 text-zinc-900" />}
-            </button>
-          ))}
-          <div className="my-1 border-t border-zinc-100" />
-          <button onClick={() => { setOpen(false); setCreating(true); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50">
-            <Plus className="size-4" /> New workspace
-          </button>
-        </div>
+        <>
+          <div className="fixed inset-0 z-40" onMouseDown={() => setOpen(false)} />
+          <div role="menu" className={cx('absolute z-50 w-60 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg', collapsed ? 'bottom-2 left-full ml-2' : 'bottom-full left-0 mb-1')}>
+            <div className="border-b border-zinc-100 px-3 pb-2 pt-1.5">
+              <div className="truncate text-[13px] font-medium text-zinc-900">{me?.name}</div>
+              <div className="truncate text-[12px] text-zinc-500">{me?.email}</div>
+            </div>
+            <div className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Workspaces</div>
+            <div className="max-h-48 overflow-y-auto">
+              {workspaces.isLoading && <div className="px-3 py-1.5 text-[13px] text-zinc-400">Loading…</div>}
+              {workspaces.data?.map((w) => (
+                <button key={w.id} role="menuitem" onClick={() => switchTo(w.id)} className={row}>
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded bg-zinc-100 text-[10px] font-semibold text-zinc-600">{initials(w.name)}</span>
+                  <span className="flex-1 truncate">{w.name}</span>
+                  {w.id === me?.current_workspace_id && <Check className="size-4 text-zinc-900" />}
+                </button>
+              ))}
+            </div>
+            <button role="menuitem" onClick={() => { setOpen(false); setCreating(true); }} className={row}><Plus className="size-4 text-zinc-500" /> New workspace</button>
+            <div className="my-1 border-t border-zinc-100" />
+            <button role="menuitem" onClick={() => go('/settings')} className={row}><Settings className="size-4 text-zinc-500" /> Settings</button>
+            <button role="menuitem" onClick={() => go('/help')} className={row}><HelpCircle className="size-4 text-zinc-500" /> Help & Support</button>
+            <div className="my-1 border-t border-zinc-100" />
+            <button role="menuitem" onClick={logout} className={row}><LogOut className="size-4 text-zinc-500" /> Log out</button>
+          </div>
+        </>
       )}
+
       <Modal open={creating} onClose={() => setCreating(false)} title="New workspace" description="Workspaces keep tables, leads, campaigns and mailboxes separate — one per client or brand." size="sm"
         footer={<><Button onClick={() => setCreating(false)}>Cancel</Button><Button variant="primary" loading={create.isPending} disabled={!name.trim()} onClick={() => create.mutate()}>Create workspace</Button></>}>
         <Field label="Name"><Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Acme Corp" onKeyDown={(e) => e.key === 'Enter' && name.trim() && create.mutate()} /></Field>
@@ -149,12 +189,6 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
     } catch (e) { toast((e as Error).message, 'error'); }
   };
 
-  const logout = async () => {
-    await api.post('/api/auth/logout');
-    qc.clear();
-    await refresh();
-  };
-
   return (
     <aside className={cx('flex h-full flex-col border-r border-zinc-200/80 bg-[#fafafa] px-2', collapsed ? 'w-[60px]' : 'w-[236px]')} onClick={(e) => { if ((e.target as HTMLElement).closest('a')) onNavigate?.(); }}>
       <div className={cx('flex h-14 items-center px-2', collapsed ? 'justify-center' : 'justify-between')}>
@@ -168,7 +202,6 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
           {collapsed ? <PanelLeft className="size-4" /> : <PanelLeftClose className="size-4" />}
         </button>
       </div>
-      <WorkspaceSwitcher collapsed={collapsed} />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto scroll-thin">
         <nav className="mt-1 flex flex-col gap-px">
           <NavItem to="/" end label="Home" icon={HomeIcon} collapsed={collapsed} />
@@ -210,8 +243,6 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
             ))}
           </>
         )}
-        <NavItem to="/settings" label="Settings" icon={Settings} collapsed={collapsed} />
-        <NavItem to="/help" label="Help & Support" icon={HelpCircle} collapsed={collapsed} />
       </nav>
       {menu && (
         <>
@@ -233,21 +264,13 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
             onFocus={(e) => e.target.select()} onKeyDown={(e) => { if (e.key === 'Enter' && renaming?.name.trim()) rename.mutate(renaming); }} />
         </Field>
       </Modal>
-      <div className={cx('flex items-center gap-2.5 border-t border-zinc-200/80 px-1 py-2.5', collapsed && 'justify-center px-0')}>
-        <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-200 text-[11px] font-semibold text-zinc-700">{initials(me?.name ?? '')}</div>
-        {!collapsed && (
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[13px] font-medium text-zinc-800">{me?.name}</div>
-            <div className="truncate text-[11.5px] text-zinc-500">{me?.email}</div>
-          </div>
-        )}
-        {!collapsed && <button onClick={logout} title="Log out" className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-200/60 hover:text-zinc-700"><LogOut className="size-4" /></button>}
-      </div>
+      <UserMenu collapsed={collapsed} />
     </aside>
   );
 }
 
 export function AppLayout() {
+  const location = useLocation();
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('k:sidebar') === 'collapsed');
   const [mobileOpen, setMobileOpen] = useState(false);
   const toggle = () => setCollapsed((c) => { localStorage.setItem('k:sidebar', c ? 'open' : 'collapsed'); return !c; });
@@ -268,9 +291,11 @@ export function AppLayout() {
         </div>
         <div className="flex-1 overflow-y-auto scroll-thin">
           {/* Keeps the sidebar on screen while a page's code loads. */}
-          <Suspense fallback={<Loading />}>
-            <Outlet />
-          </Suspense>
+          <RouteErrorBoundary key={location.pathname}>
+            <Suspense fallback={<Loading />}>
+              <Outlet />
+            </Suspense>
+          </RouteErrorBoundary>
         </div>
       </main>
     </div>

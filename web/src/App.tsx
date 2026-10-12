@@ -3,11 +3,16 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { AuthProvider, useAuth } from './lib/auth.tsx';
 import { UiProvider, Loading } from './components/ui.tsx';
 import { AppLayout } from './components/Layout.tsx';
+import { isStaleBuildError, reloadForNewBuild } from './components/RouteErrorBoundary.tsx';
 import { LoginPage, SetupPage } from './pages/Auth.tsx';
 
 // Pages load on demand so the first paint stays small.
+// A failed chunk load means this tab is on an older build: reload once to get the new one.
 const page = <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) =>
-  lazy(() => load().then((m) => ({ default: m[name] })));
+  lazy(() => load().then((m) => ({ default: m[name] })).catch((e) => {
+    if (isStaleBuildError(e) && reloadForNewBuild()) return new Promise<never>(() => {});
+    throw e;
+  }));
 const HomePage = page(() => import('./pages/Home.tsx'), 'HomePage');
 const LeadsPage = page(() => import('./pages/Leads.tsx'), 'LeadsPage');
 const CampaignsPage = page(() => import('./pages/Campaigns.tsx'), 'CampaignsPage');
