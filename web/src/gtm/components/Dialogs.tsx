@@ -145,7 +145,7 @@ export function SignalPackDialog({ tableId, columns, catalog, onClose, onDone }:
   const pick = (re: RegExp) => text.find((n) => re.test(n)) ?? '';
   const [nameColumn, setName] = useState(pick(/^company( name)?$/i) || pick(/company|account|organi/i) || text[0] || '');
   const [domainColumn, setDomain] = useState(pick(/domain|website|url/i));
-  const [signals, setSignals] = useState<string[]>(PACK_DEFAULTS);
+  const [signals, setSignals] = useState<string[]>(PACK_DEFAULTS.filter((id) => !catalog.signals.find((s) => s.id === id)?.missing?.length));
   const [every, setEvery] = useState(1440);
   const [alert, setAlert] = useState<'slack' | 'webhook' | 'none'>('slack');
   const [channel, setChannel] = useState('');
@@ -171,12 +171,15 @@ export function SignalPackDialog({ tableId, columns, catalog, onClose, onDone }:
       </div>
       <fieldset>
         <legend>Signals</legend>
-        {catalog.signals.map((s) => (
-          <label className="check" key={s.id} title={s.description}>
-            <input type="checkbox" checked={signals.includes(s.id)} onChange={(e) => setSignals(e.target.checked ? [...signals, s.id] : signals.filter((x) => x !== s.id))} />
-            <span>{s.label}{s.requires.length > 0 && <span className="muted"> · needs {s.requires.join(' or ').replace(/\|/g, ' or ')}</span>}<br /><small className="muted">{s.description}</small></span>
-          </label>
-        ))}
+        {catalog.signals.map((s) => {
+          const missing = s.missing ?? [];
+          return (
+            <label className="check" key={s.id} title={s.description} style={missing.length ? { opacity: 0.6 } : undefined}>
+              <input type="checkbox" disabled={!!missing.length} checked={signals.includes(s.id)} onChange={(e) => setSignals(e.target.checked ? [...signals, s.id] : signals.filter((x) => x !== s.id))} />
+              <span>{s.label}{missing.length > 0 && <span className="muted"> · <a href="/integrations">Connect {missing.join(' and ')}</a> first</span>}<br /><small className="muted">{s.description}</small></span>
+            </label>
+          );
+        })}
       </fieldset>
       <div className="form-grid">
         <label>Re-check every

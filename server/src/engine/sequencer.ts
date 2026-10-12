@@ -92,7 +92,11 @@ function planCampaign(ctx: Ctx, c: Row, now: Date): number {
     const used = db.get<{ n: number }>(
       `SELECT COUNT(*) n FROM scheduled_emails WHERE sender_email_id = ? AND status IN ${COUNTED_SLOT} AND scheduled_at >= ? AND scheduled_at < ?`,
       [s.id, dayStart, dayEnd])?.n ?? 0;
-    senderLeft.set(s.id, Math.max(0, s.daily_limit - used));
+    // Warmup mail from the same mailbox counts against its daily limit, so the two never stack.
+    const warm = db.get<{ n: number }>(
+      `SELECT COUNT(*) n FROM warmup_emails WHERE from_sender_id = ? AND status IN ('scheduled','sent') AND scheduled_at >= ? AND scheduled_at < ?`,
+      [s.id, dayStart, dayEnd])?.n ?? 0;
+    senderLeft.set(s.id, Math.max(0, s.daily_limit - used - warm));
     senderNext.set(s.id, Math.max(now.getTime(), s.next_send_at ? Date.parse(s.next_send_at) : 0));
   }
   const senderById = new Map(senders.map((s) => [s.id as number, s]));
