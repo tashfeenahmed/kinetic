@@ -7,7 +7,7 @@ description: Use when the user wants a list of companies or people to prospect (
 Goal: one table with the right companies/people, a verified work email per person, and a short AI research note per row. Read the Knowledge Hub first (`knowledge` tool) so targeting matches the ICP and respects "Do NOT target".
 
 ## 1. Find the prospects (creates the table)
-`POST /api/gtm/find` → `{ "id": <tableId>, "rows": n, "source": "..." }` (404 `no_results` with a helpful message when nothing matched)
+`POST /api/gtm/find` (add `"table_name"` when the user named the table) → `{ "id": <tableId>, "rows": n, "source": "..." }` (404 `no_results` with a helpful message when nothing matched)
 ```json
 { "mode": "companies", "query": "point of sale software Ireland", "limit": 50 }
 ```
