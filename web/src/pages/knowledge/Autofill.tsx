@@ -1,18 +1,22 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Globe } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Folder, Globe } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api.ts';
-import { Button, Checkbox, Input, Modal, cx, useUi } from '../../components/ui.tsx';
+import { Button, Checkbox, Input, Modal, Select, cx, useUi } from '../../components/ui.tsx';
+import type { FolderRow } from './Tree.tsx';
 import './knowledge.css';
 
 const MarkdownPreview = lazy(() => import('./DocEditor.tsx').then((m) => ({ default: m.MarkdownPreview })));
 
 interface DraftDoc { key: string; title: string; content: string; exists: boolean }
-interface AutofillResult { drafts: DraftDoc[]; summary: string; ai: boolean; pages: string[]; host: string }
+interface AutofillResult { drafts: DraftDoc[]; summary: string; ai: boolean; pages: string[]; host: string; folder_name?: string }
 
 const STEPS = ['Reading the home page', 'Following about, product and pricing pages', 'Drafting the documents', 'Tidying up the drafts'];
 
-/** "Fill from website": domain -> crawl -> drafted docs -> tick the ones to create. */
-export function AutofillModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (ids: number[]) => void }) {
+/** Where the drafts go: a new folder (named after the site by default), an existing folder, or the top level. */
+type Target = { kind: 'new'; name: string } | { kind: 'existing'; id: number } | { kind: 'root' };
+
+/** "Fill from website": domain -> crawl -> drafted docs -> tick the ones to create -> into a folder. */
+export function AutofillModal({ open, folders, onClose, onCreated }: { open: boolean; folders: FolderRow[]; onClose: () => void; onCreated: (ids: number[], folderId: number | null) => void }) {
   const { toast } = useUi();
   const [domain, setDomain] = useState('');
   const [busy, setBusy] = useState(false);
@@ -21,6 +25,7 @@ export function AutofillModal({ open, onClose, onCreated }: { open: boolean; onC
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [target, setTarget] = useState<Target>({ kind: 'new', name: '' });
 
   useEffect(() => {
     if (!busy) return;
@@ -37,6 +42,10 @@ export function AutofillModal({ open, onClose, onCreated }: { open: boolean; onC
       setResult(r);
       setPicked(new Set(r.drafts.filter((d) => !d.exists).map((d) => d.key)));
       setOpenKey(r.drafts[0]?.key ?? null);
+      const name = r.folder_name || r.host || 'Company';
+      // Re-running for the same site files into its existing folder.
+      const same = folders.find((f) => f.parent_id == null && f.name.toLowerCase() === name.toLowerCase());
+      setTarget(same ? { kind: 'existing', id: same.id } : { kind: 'new', name });
       if (!r.ai) toast('No AI model is set up, so only a short company overview was read from the site. Add an OpenRouter key for full drafts.', 'info');
     } catch (e) { toast(errorMessage(e), 'error'); } finally { setBusy(false); }
   };
@@ -46,9 +55,10 @@ export function AutofillModal({ open, onClose, onCreated }: { open: boolean; onC
     setCreating(true);
     try {
       const docs = result.drafts.filter((d) => picked.has(d.key)).map((d) => ({ title: d.title, content: d.content }));
-      const r = await api.post('/api/knowledge/docs/bulk', { docs, created_by: 'autofill', source_url: result.pages[0] });
-      toast(`Created ${docs.length} document${docs.length === 1 ? '' : 's'}`);
-      onCreated((r.data as { id: number }[]).map((d) => d.id));
+      const where = target.kind === 'new' ? { folder: target.name.trim().replace(/\//g, '-') || result.host } : target.kind === 'existing' ? { folder_id: target.id } : {};
+      const r = await api.post<{ data: { id: number }[]; folder: { id: number; name: string } | null }>('/api/knowledge/docs/bulk', { docs, created_by: 'autofill', source_url: result.pages[0], ...where });
+      toast(`Created ${docs.length} document${docs.length === 1 ? '' : 's'}${r.folder ? ` in “${r.folder.name}”` : ''}`);
+      onCreated(r.data.map((d) => d.id), r.folder?.id ?? null);
     } catch (e) { toast(errorMessage(e), 'error'); } finally { setCreating(false); }
   };
 
@@ -59,6 +69,7 @@ export function AutofillModal({ open, onClose, onCreated }: { open: boolean; onC
       <Modal open={open} onClose={onClose} size="xl" title="Review the drafts"
         description={`Drafted from ${result.pages.length} page${result.pages.length === 1 ? '' : 's'} on ${result.host}. Tick the documents to create — nothing is saved until you do, and you can edit everything afterwards.`}
         footer={<>
+          <FolderPicker folders={folders} value={target} onChange={setTarget} />
           <Button onClick={() => setResult(null)}>Back</Button>
           <Button variant="primary" loading={creating} disabled={!picked.size} onClick={create}>Create {picked.size} document{picked.size === 1 ? '' : 's'}</Button>
         </>}>
@@ -112,5 +123,29 @@ export function AutofillModal({ open, onClose, onCreated }: { open: boolean; onC
         </div>
       )}
     </Modal>
+  );
+}
+
+/** "Save to" control for the review step. */
+function FolderPicker({ folders, value, onChange }: { folders: FolderRow[]; value: Target; onChange: (t: Target) => void }) {
+  const sorted = [...folders].sort((a, b) => a.path.localeCompare(b.path));
+  const selectValue = value.kind === 'existing' ? String(value.id) : value.kind;
+  return (
+    <div className="mr-auto flex min-w-0 items-center gap-2 text-[13px] text-zinc-500">
+      <Folder className="size-4 shrink-0 text-zinc-400" strokeWidth={1.75} />
+      <span className="shrink-0">Save to</span>
+      <Select aria-label="Target folder" value={selectValue} className="w-[190px] shrink-0"
+        onChange={(e) => {
+          const v = e.target.value;
+          onChange(v === 'new' ? { kind: 'new', name: value.kind === 'new' ? value.name : '' } : v === 'root' ? { kind: 'root' } : { kind: 'existing', id: Number(v) });
+        }}>
+        <option value="new">New folder</option>
+        {sorted.map((f) => <option key={f.id} value={f.id}>{f.path}</option>)}
+        <option value="root">Top level (no folder)</option>
+      </Select>
+      {value.kind === 'new' && (
+        <Input aria-label="New folder name" value={value.name} onChange={(e) => onChange({ kind: 'new', name: e.target.value })} placeholder="Folder name" className="w-40" />
+      )}
+    </div>
   );
 }

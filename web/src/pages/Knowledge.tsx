@@ -1,22 +1,21 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, BookOpen, Check, ChevronLeft, Copy, Eye, FileText, Globe, GripVertical, MoreHorizontal, Pin, PinOff, Plus, Search, Trash2 } from 'lucide-react';
+import { AlertCircle, BookOpen, Check, ChevronLeft, Copy, Eye, FileText, FolderInput, FolderPlus, Globe, MoreHorizontal, Pin, Plus, Search, Trash2 } from 'lucide-react';
 import { api, errorMessage } from '../lib/api.ts';
 import { fmtRelative } from '../lib/format.ts';
 import { Button, IconButton, Loading, Menu, Modal, cx, useUi } from '../components/ui.tsx';
 import { AutofillModal } from './knowledge/Autofill.tsx';
+import { DeleteFolderModal, KnowledgeTree, MoveToModal, SearchResults, ancestorIds, useCollapsed, type DocRow, type FolderRow, type ItemRef, type MoveSpec, type Source, type Template } from './knowledge/Tree.tsx';
 import './knowledge/knowledge.css';
 
 const DocEditor = lazy(() => import('./knowledge/DocEditor.tsx'));
 
-type Source = 'user' | 'agent' | 'autofill';
-interface DocRow { id: number; title: string; source_url: string | null; pinned: boolean; position: number; created_by: Source; chars: number; excerpt?: string; created_at: string; updated_at: string }
 interface Doc extends DocRow { content: string }
-interface Template { key: string; title: string; content: string }
 
 const SOURCE_LABEL: Record<Source, string | null> = { user: null, agent: 'Agent', autofill: 'From website' };
 const LIST_KEY = ['knowledge-docs'];
+const FOLDERS_KEY = ['knowledge-folders'];
 
 function useDebounced<T>(value: T, ms = 250) {
   const [v, setV] = useState(value);
@@ -34,12 +33,18 @@ export function KnowledgePage() {
   const [autofill, setAutofill] = useState(false);
   const [showContext, setShowContext] = useState(false);
   const [fresh, setFresh] = useState<number | null>(null);
+  const [renaming, setRenaming] = useState<number | null>(null);
+  const [moving, setMoving] = useState<ItemRef | null>(null);
+  const [deleting, setDeleting] = useState<FolderRow | null>(null);
+  const { collapsed, toggle, expand } = useCollapsed();
 
   const list = useQuery({ queryKey: LIST_KEY, queryFn: () => api.get('/api/knowledge/docs').then((r) => r.data as DocRow[]) });
+  const folderList = useQuery({ queryKey: FOLDERS_KEY, queryFn: () => api.get('/api/knowledge/folders').then((r) => r.data as FolderRow[]) });
   const found = useQuery({ queryKey: [...LIST_KEY, q], queryFn: () => api.get('/api/knowledge/docs', { q }).then((r) => r.data as DocRow[]), enabled: !!q });
   const templates = useQuery({ queryKey: ['knowledge-templates'], queryFn: () => api.get('/api/knowledge/templates').then((r) => r.data as Template[]), staleTime: Infinity });
 
   const docs = list.data ?? [];
+  const folders = folderList.data ?? [];
   const shown = q ? found.data ?? [] : docs;
   const selected = Number(params.get('doc')) || null;
   const select = useCallback((id: number | null) => setParams((p) => { const n = new URLSearchParams(p); if (id) n.set('doc', String(id)); else n.delete('doc'); return n; }, { replace: true }), [setParams]);
@@ -52,15 +57,63 @@ export function KnowledgePage() {
     if (!selected && list.data.length && window.matchMedia('(min-width: 768px)').matches) select(list.data[0].id);
   }, [list.data, selected, select]);
 
-  const refresh = () => qc.invalidateQueries({ queryKey: LIST_KEY });
+  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: LIST_KEY }), qc.invalidateQueries({ queryKey: FOLDERS_KEY })]);
 
-  const create = async (t?: Template) => {
+  // Opening a doc (e.g. from an agent link) reveals its folder.
+  const selectedFolder = docs.find((d) => d.id === selected)?.folder_id ?? null;
+  // Not re-run when folders change, so collapsing the open doc's folder sticks.
+  const foldersRef = useRef(folders);
+  foldersRef.current = folders;
+  const foldersReady = folderList.isSuccess;
+  useEffect(() => { if (selectedFolder && foldersReady) expand(ancestorIds(foldersRef.current, selectedFolder)); }, [selected, selectedFolder, foldersReady, expand]);
+
+  const create = async (t?: Template, folderId: number | null = null) => {
     try {
-      const r = await api.post('/api/knowledge/docs', t ? { template: t.key } : { title: 'Untitled' });
+      const r = await api.post('/api/knowledge/docs', { ...(t ? { template: t.key } : { title: 'Untitled' }), folder_id: folderId });
+      if (folderId) expand(ancestorIds(folders, folderId));
       await refresh();
       setFresh(r.data.id);
       select(r.data.id);
     } catch (e) { toast(errorMessage(e), 'error'); }
+  };
+
+  const newFolder = async (parentId: number | null) => {
+    try {
+      const r = await api.post('/api/knowledge/folders', { name: 'New folder', parent_id: parentId });
+      if (parentId) expand(ancestorIds(folders, parentId));
+      await refresh();
+      setRenaming(r.data.id);
+    } catch (e) { toast(errorMessage(e), 'error'); }
+  };
+  /** First call (menu) starts inline renaming; the input calls again with the new name (undefined = cancel). */
+  const rename = async (id: number | null, name?: string) => {
+    if (id == null) return;
+    if (renaming !== id) { setRenaming(id); return; }
+    setRenaming(null);
+    if (!name || name === folders.find((f) => f.id === id)?.name) return;
+    qc.setQueryData<FolderRow[]>(FOLDERS_KEY, (fs) => fs?.map((f) => (f.id === id ? { ...f, name } : f)));
+    try { await api.patch(`/api/knowledge/folders/${id}`, { name }); } catch (e) { toast(errorMessage(e), 'error'); }
+    await refresh();
+  };
+  const removeFolder = async (contents: 'move_up' | 'delete') => {
+    const f = deleting;
+    if (!f) return;
+    try {
+      const r = await api.del(`/api/knowledge/folders/${f.id}?contents=${contents}`);
+      setDeleting(null);
+      await refresh();
+      const n = (r as { deleted?: { docs: number } }).deleted?.docs ?? 0;
+      toast(contents === 'delete' && n ? `Deleted “${f.name}” and ${n} document${n === 1 ? '' : 's'}` : `Deleted “${f.name}”`);
+    } catch (e) { setDeleting(null); toast(errorMessage(e), 'error'); }
+  };
+  const move = async (m: MoveSpec) => {
+    try {
+      const r = await api.post('/api/knowledge/move', m);
+      const data = r.data as { folders: FolderRow[]; docs: DocRow[] };
+      qc.setQueryData(FOLDERS_KEY, data.folders);
+      qc.setQueryData(LIST_KEY, data.docs);
+      if (m.folder_id) expand(ancestorIds(data.folders, m.folder_id));
+    } catch (e) { toast(errorMessage(e), 'error'); await refresh(); }
   };
 
   const patch = async (d: DocRow, body: Partial<Pick<Doc, 'pinned' | 'title'>>) => {
@@ -79,16 +132,11 @@ export function KnowledgePage() {
       await refresh();
     } catch (e) { toast(errorMessage(e), 'error'); }
   };
-  const reorder = async (ids: number[]) => {
-    const byId = new Map(docs.map((d) => [d.id, d]));
-    qc.setQueryData(LIST_KEY, ids.map((id) => byId.get(id)!).filter(Boolean));
-    try { await api.post('/api/knowledge/docs/reorder', { ids }); } catch (e) { toast(errorMessage(e), 'error'); }
-    await refresh();
-  };
 
   const newMenu = (trigger: (open: () => void) => ReactNode) => (
     <Menu align="left" trigger={trigger} items={[
       { label: 'Blank document', icon: <FileText className="size-4 text-zinc-400" />, onClick: () => create() },
+      { label: 'New folder', icon: <FolderPlus className="size-4 text-zinc-400" />, onClick: () => newFolder(null) },
       'divider',
       ...(templates.data ?? []).map((t) => ({ label: t.title, icon: <FileText className="size-4 text-zinc-300" />, onClick: () => create(t) })),
       'divider',
@@ -96,7 +144,7 @@ export function KnowledgePage() {
     ]} />
   );
 
-  if (list.isLoading) return <Loading />;
+  if (list.isLoading || folderList.isLoading) return <Loading />;
   const current = docs.find((d) => d.id === selected) ?? null;
 
   return (
@@ -115,9 +163,12 @@ export function KnowledgePage() {
               className="h-8 w-full rounded-[7px] border border-zinc-200 bg-white pl-8 pr-2 text-[13px] text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none" />
           </div>
         </div>
-        <DocList docs={shown} selected={selected} draggable={!q} onSelect={select} onReorder={reorder}
-          onPin={(d) => patch(d, { pinned: !d.pinned })} onDuplicate={duplicate} onDelete={remove}
-          empty={q ? `Nothing matches “${q}”.` : 'No documents yet.'} />
+        {q ? <SearchResults docs={shown} selected={selected} q={q} onSelect={select} /> : (
+          <KnowledgeTree folders={folders} docs={docs} selected={selected} templates={templates.data ?? []} collapsed={collapsed} renaming={renaming}
+            onToggle={toggle} onExpand={expand} onSelect={select} onMove={move}
+            onNewDoc={(folderId, t) => create(t, folderId)} onNewFolder={newFolder} onRename={rename} onDeleteFolder={setDeleting} onMoveTo={setMoving}
+            onPin={(d) => patch(d, { pinned: !d.pinned })} onDuplicate={duplicate} onDeleteDoc={remove} />
+        )}
         <div className="space-y-0.5 border-t border-zinc-200 p-2">
           <SideButton icon={<Globe className="size-4" />} onClick={() => setAutofill(true)}>Fill from website</SideButton>
           <SideButton icon={<Eye className="size-4" />} onClick={() => setShowContext(true)}>What the AI sees</SideButton>
@@ -128,13 +179,23 @@ export function KnowledgePage() {
       <section className={cx('min-w-0 flex-1 overflow-y-auto scroll-thin', !current && 'hidden md:block')}>
         {current ? (
           <DocPane key={current.id} row={current} autoFocus={fresh === current.id} onBack={() => select(null)}
-            onPin={() => patch(current, { pinned: !current.pinned })} onDuplicate={() => duplicate(current)} onDelete={() => remove(current)} />
+            onPin={() => patch(current, { pinned: !current.pinned })} onDuplicate={() => duplicate(current)} onDelete={() => remove(current)}
+            onMoveTo={() => setMoving({ type: 'doc', id: current.id })} />
         ) : (
           <Welcome templates={templates.data ?? []} onCreate={create} onAutofill={() => setAutofill(true)} />
         )}
       </section>
 
-      <AutofillModal open={autofill} onClose={() => setAutofill(false)} onCreated={async (ids) => { setAutofill(false); await refresh(); if (ids[0]) select(ids[0]); }} />
+      <AutofillModal open={autofill} folders={folders} onClose={() => setAutofill(false)} onCreated={async (ids, folderId) => {
+        setAutofill(false);
+        if (folderId) expand([folderId]);
+        await refresh();
+        if (folderId) { const fs = qc.getQueryData<FolderRow[]>(FOLDERS_KEY) ?? []; expand(ancestorIds(fs, folderId)); }
+        if (ids[0]) select(ids[0]);
+      }} />
+      <MoveToModal item={moving} folders={folders} docs={docs} onClose={() => setMoving(null)}
+        onPick={(folderId) => { const item = moving; setMoving(null); if (item) void move({ items: [item], folder_id: folderId }); }} />
+      <DeleteFolderModal folder={deleting} folders={folders} docs={docs} onClose={() => setDeleting(null)} onDelete={removeFolder} />
       <ContextModal open={showContext} onClose={() => setShowContext(false)} />
     </div>
   );
@@ -148,65 +209,10 @@ function SideButton({ icon, onClick, children }: { icon: ReactNode; onClick: () 
   );
 }
 
-function DocList({ docs, selected, draggable, onSelect, onReorder, onPin, onDuplicate, onDelete, empty }: {
-  docs: DocRow[]; selected: number | null; draggable: boolean; empty: string;
-  onSelect: (id: number) => void; onReorder: (ids: number[]) => void;
-  onPin: (d: DocRow) => void; onDuplicate: (d: DocRow) => void; onDelete: (d: DocRow) => void;
-}) {
-  const [drag, setDrag] = useState<number | null>(null);
-  const [over, setOver] = useState<number | null>(null);
-  const pinned = docs.filter((d) => d.pinned);
-  const rest = docs.filter((d) => !d.pinned);
-  const drop = (target: number) => {
-    if (drag == null || drag === target) return;
-    const ids = docs.map((d) => d.id).filter((id) => id !== drag);
-    ids.splice(ids.indexOf(target), 0, drag);
-    onReorder(ids);
-  };
-  const row = (d: DocRow) => {
-    const active = d.id === selected;
-    const label = SOURCE_LABEL[d.created_by];
-    return (
-      <div key={d.id} draggable={draggable}
-        onDragStart={(e) => { setDrag(d.id); e.dataTransfer.effectAllowed = 'move'; }}
-        onDragEnd={() => { setDrag(null); setOver(null); }}
-        onDragOver={(e) => { if (drag != null) { e.preventDefault(); setOver(d.id); } }}
-        onDrop={(e) => { e.preventDefault(); drop(d.id); setDrag(null); setOver(null); }}
-        className={cx('group relative flex cursor-pointer items-start gap-2 rounded-[7px] px-2 py-1.5 transition-colors',
-          active ? 'bg-zinc-200/60' : 'hover:bg-zinc-100', drag === d.id && 'opacity-40', over === d.id && drag !== d.id && 'ring-1 ring-inset ring-zinc-300')}
-        onClick={() => onSelect(d.id)}>
-        {draggable && <GripVertical className="absolute -left-0.5 top-2.5 size-3 text-zinc-300 opacity-0 group-hover:opacity-100" />}
-        {d.source_url ? <Globe className="mt-0.5 size-4 shrink-0 text-zinc-400" strokeWidth={1.75} /> : <FileText className="mt-0.5 size-4 shrink-0 text-zinc-400" strokeWidth={1.75} />}
-        <div className="min-w-0 flex-1">
-          <div className={cx('truncate text-[13px]', active ? 'font-medium text-zinc-900' : 'text-zinc-700')}>{d.title || 'Untitled'}</div>
-          <div className="truncate text-[11.5px] text-zinc-400">{fmtRelative(d.updated_at)}{label && <> · {label}</>}</div>
-        </div>
-        <div className="opacity-0 group-hover:opacity-100 has-[button[aria-expanded=true]]:opacity-100" onClick={(e) => e.stopPropagation()}>
-          <Menu trigger={(open) => <IconButton label="Document actions" onClick={open} className="size-6"><MoreHorizontal className="size-3.5" /></IconButton>} items={[
-            { label: d.pinned ? 'Unpin' : 'Pin to top', icon: d.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />, onClick: () => onPin(d) },
-            { label: 'Duplicate', icon: <Copy className="size-4" />, onClick: () => onDuplicate(d) },
-            'divider',
-            { label: 'Delete', icon: <Trash2 className="size-4" />, danger: true, onClick: () => onDelete(d) },
-          ]} />
-        </div>
-      </div>
-    );
-  };
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 scroll-thin">
-      {docs.length === 0 && <p className="px-2 py-3 text-[12.5px] text-zinc-400">{empty}</p>}
-      {pinned.length > 0 && <div className="px-2 pb-1 pt-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400">Pinned</div>}
-      {pinned.map(row)}
-      {pinned.length > 0 && rest.length > 0 && <div className="px-2 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-zinc-400">Documents</div>}
-      {rest.map(row)}
-    </div>
-  );
-}
-
 type SaveState = 'saved' | 'pending' | 'saving' | 'error';
 
 /** One document: title + rich-text body, autosaved (debounced) as markdown. */
-function DocPane({ row, autoFocus, onBack, onPin, onDuplicate, onDelete }: { row: DocRow; autoFocus: boolean; onBack: () => void; onPin: () => void; onDuplicate: () => void; onDelete: () => void }) {
+function DocPane({ row, autoFocus, onBack, onPin, onDuplicate, onDelete, onMoveTo }: { row: DocRow; autoFocus: boolean; onBack: () => void; onPin: () => void; onDuplicate: () => void; onDelete: () => void; onMoveTo: () => void }) {
   const qc = useQueryClient();
   const doc = useQuery({ queryKey: ['knowledge-doc', row.id], queryFn: () => api.get(`/api/knowledge/docs/${row.id}`).then((r) => r.data as Doc), staleTime: Infinity, refetchOnWindowFocus: false });
   const [title, setTitle] = useState(row.title);
@@ -254,7 +260,7 @@ function DocPane({ row, autoFocus, onBack, onPin, onDuplicate, onDelete }: { row
     <div className="min-h-full">
       <div className="sticky top-0 z-20 flex h-11 items-center gap-2 border-b border-zinc-100 bg-white/90 px-4 backdrop-blur">
         <button onClick={onBack} className="-ml-1 rounded-md p-1 text-zinc-500 hover:bg-zinc-100 md:hidden" aria-label="All documents"><ChevronLeft className="size-4" /></button>
-        <span className="min-w-0 truncate text-[13px] text-zinc-500">Knowledge <span className="text-zinc-300">/</span> <span className="text-zinc-800">{title || 'Untitled'}</span></span>
+        <span className="min-w-0 truncate text-[13px] text-zinc-500">Knowledge {row.folder_path?.split(' / ').map((part, i) => <span key={i}><span className="text-zinc-300">/</span> {part} </span>)}<span className="text-zinc-300">/</span> <span className="text-zinc-800">{title || 'Untitled'}</span></span>
         <span className="flex-1" />
         <SaveIndicator state={state} savedAt={savedAt} onRetry={() => void flush()} />
         <IconButton label={row.pinned ? 'Unpin' : 'Pin to top'} onClick={onPin} className={cx('size-7', row.pinned && 'text-zinc-900')}>
@@ -262,6 +268,7 @@ function DocPane({ row, autoFocus, onBack, onPin, onDuplicate, onDelete }: { row
         </IconButton>
         <Menu trigger={(open) => <IconButton label="More" onClick={open} className="size-7"><MoreHorizontal className="size-4" /></IconButton>} items={[
           { label: 'Duplicate', icon: <Copy className="size-4" />, onClick: onDuplicate },
+          { label: 'Move to…', icon: <FolderInput className="size-4" />, onClick: onMoveTo },
           'divider',
           { label: 'Delete', icon: <Trash2 className="size-4" />, danger: true, onClick: onDelete },
         ]} />

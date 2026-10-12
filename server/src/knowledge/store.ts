@@ -3,8 +3,10 @@
  * personas, tone…), written by the user, the agent or "fill from website".
  * `knowledgeContext` turns them into a compact text block for prompts (the agent,
  * AI research columns, AI reply drafts) — pinned docs first, then the user's order.
+ * Docs can live in nested folders (see folders.ts).
  */
 import { nowIso, type Db } from '../db/db.ts';
+import { folderPaths, listFolders, PATH_SEP, topPosition, walkTree } from './folders.ts';
 
 export type DocSource = 'user' | 'agent' | 'autofill';
 
@@ -18,6 +20,7 @@ export interface KnowledgeDoc {
   position: number;
   pinned: number;
   created_by: DocSource;
+  folder_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -41,17 +44,25 @@ export function findDoc(db: Db, workspaceId: number, ref: string | number): Know
   if (/^\d+$/.test(s)) { const d = getDoc(db, workspaceId, Number(s)); if (d) return d; }
   const docs = listDocs(db, workspaceId);
   const l = s.toLowerCase().replace(/^#/, '');
+  if (l.includes('/')) {
+    // "Folder / Doc title"
+    const paths = folderPaths(listFolders(db, workspaceId));
+    const norm = (x: string) => x.toLowerCase().split('/').map((p) => p.trim()).filter(Boolean).join('/');
+    const want = norm(l);
+    const hit = docs.find((d) => norm(`${d.folder_id ? `${paths.get(d.folder_id) ?? ''}/` : ''}${d.title}`) === want);
+    if (hit) return hit;
+  }
   return docs.find((d) => d.title.toLowerCase() === l) ?? docs.find((d) => d.title.toLowerCase().startsWith(l)) ?? docs.find((d) => d.title.toLowerCase().includes(l));
 }
 
-export function createDoc(db: Db, workspaceId: number, d: { title?: string; content?: string; source_url?: string | null; pinned?: boolean; created_by?: DocSource }): KnowledgeDoc {
+export function createDoc(db: Db, workspaceId: number, d: { title?: string; content?: string; source_url?: string | null; pinned?: boolean; created_by?: DocSource; folder_id?: number | null }): KnowledgeDoc {
   const now = nowIso();
-  // New docs go to the top of the list.
-  const top = db.get<{ p: number | null }>('SELECT MIN(position) p FROM knowledge_docs WHERE workspace_id = ?', [workspaceId])!.p;
+  // New docs go to the top of their folder (or of the top level). The caller checks the folder.
+  const folder = d.folder_id ?? null;
   const content = d.content ?? '';
   const id = db.insert('knowledge_docs', {
-    workspace_id: workspaceId, title: d.title?.trim() || titleFrom(content), source_url: d.source_url ?? null, content, summary: null,
-    position: top == null ? 0 : top - 1, pinned: d.pinned ? 1 : 0, created_by: d.created_by ?? 'user', created_at: now, updated_at: now,
+    workspace_id: workspaceId, title: d.title?.trim() || titleFrom(content), source_url: d.source_url ?? null, content, summary: null, folder_id: folder,
+    position: topPosition(db, workspaceId, folder), pinned: d.pinned ? 1 : 0, created_by: d.created_by ?? 'user', created_at: now, updated_at: now,
   });
   return getDoc(db, workspaceId, id)!;
 }
@@ -62,12 +73,43 @@ export function titleFrom(content: string): string {
   return line ? line.slice(0, 80) : 'Untitled';
 }
 
-/** Sets positions to the given order; ids not listed keep their relative order after them. */
+/**
+ * Reorders docs within their folders: the listed ids come first, in the given order, and
+ * docs not listed keep their relative order after them. Docs swap places among the slots
+ * their folder's docs already hold, so subfolders stay where they are.
+ */
 export function reorderDocs(db: Db, workspaceId: number, ids: number[]) {
-  const all = listDocs(db, workspaceId).map((d) => d.id);
-  const order = [...ids.filter((id) => all.includes(id)), ...all.filter((id) => !ids.includes(id))];
-  db.tx(() => order.forEach((id, i) => db.run('UPDATE knowledge_docs SET position = ? WHERE id = ? AND workspace_id = ?', [i, id, workspaceId])));
+  const all = listDocs(db, workspaceId);
+  const known = new Set(all.map((d) => d.id));
+  const rank = new Map([...ids.filter((id) => known.has(id)), ...all.map((d) => d.id).filter((id) => !ids.includes(id))].map((id, i) => [id, i]));
+  db.tx(() => {
+    // Normalise each folder to distinct 0..n slots first (folders included), then permute the doc slots.
+    const count = new Map<number | null, number>();
+    const slots = new Map<number | null, { doc: number; pos: number }[]>();
+    for (const it of walkTree(db, workspaceId)) {
+      const n = count.get(it.parent_id) ?? 0;
+      count.set(it.parent_id, n + 1);
+      db.run(`UPDATE ${it.type === 'doc' ? 'knowledge_docs' : 'knowledge_folders'} SET position = ? WHERE id = ? AND workspace_id = ?`, [n, it.id, workspaceId]);
+      if (it.type === 'doc') slots.set(it.parent_id, [...(slots.get(it.parent_id) ?? []), { doc: it.id, pos: n }]);
+    }
+    for (const list of slots.values()) {
+      const positions = list.map((x) => x.pos);
+      [...list].sort((a, b) => rank.get(a.doc)! - rank.get(b.doc)!)
+        .forEach((x, i) => db.run('UPDATE knowledge_docs SET position = ? WHERE id = ? AND workspace_id = ?', [positions[i], x.doc, workspaceId]));
+    }
+  });
 }
+
+/** Docs in tree order (depth first) with their folder path ('' at the top level). */
+export function docsInTreeOrder(db: Db, workspaceId: number): (KnowledgeDoc & { path: string })[] {
+  const docs = new Map(listDocs(db, workspaceId).map((d) => [d.id, d]));
+  const paths = folderPaths(listFolders(db, workspaceId));
+  return walkTree(db, workspaceId).filter((it) => it.type === 'doc' && docs.has(it.id))
+    .map((it) => { const d = docs.get(it.id)!; return { ...d, path: d.folder_id ? paths.get(d.folder_id) ?? '' : '' }; });
+}
+
+/** "Folder / Sub / Title" (just the title at the top level). */
+export const pathTitle = (d: { title: string; path: string }) => (d.path ? `${d.path}${PATH_SEP}${d.title}` : d.title);
 
 /** Starter documents: just markdown with headings and prompts to fill in. */
 export const TEMPLATES: { key: string; title: string; content: string }[] = [
@@ -125,10 +167,14 @@ export function docsText(docs: Pick<KnowledgeDoc, 'id' | 'title' | 'content' | '
   return clipAt(out.join('\n\n'), maxChars);
 }
 
-/** The workspace's Knowledge Hub as compact prompt text ('' when empty). For any module. */
+/**
+ * The workspace's Knowledge Hub as compact prompt text ('' when empty). For any module.
+ * Pinned docs first, then the sidebar's tree order; docs in folders are titled "Folder / Title".
+ */
 export function knowledgeContext(ctx: { db: Db }, workspaceId: number, maxChars = 5000): string {
   try {
-    return docsText(listDocs(ctx.db, workspaceId), maxChars);
+    const docs = docsInTreeOrder(ctx.db, workspaceId).map((d) => ({ ...d, title: pathTitle(d) }));
+    return docsText([...docs.filter((d) => d.pinned), ...docs.filter((d) => !d.pinned)], maxChars);
   } catch {
     return ''; // e.g. migrations not applied in a unit-test DB
   }
