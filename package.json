@@ -1,0 +1,25 @@
+{
+  "name": "kinetic",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Kinetic: GTM tables (enrichment, AI research, signals) and cold email outreach (campaigns, master inbox, warmup) in one self-hosted app.",
+  "type": "module",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "npm run build -w web",
+    "start": "npm run start -w server",
+    "test": "npm run test -w server",
+    "test:mail": "npm run test:mail -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "mail:up": "node scripts/mail.mjs up",
+    "mail:down": "node scripts/mail.mjs down",
+    "demo": "npm run demo -w server"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

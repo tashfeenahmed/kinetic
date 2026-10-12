@@ -1,0 +1,91 @@
+import Fastify, { type FastifyInstance } from 'fastify';
+import cookie from '@fastify/cookie';
+import fastifyStatic from '@fastify/static';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { Ctx } from './context.ts';
+import { HttpError } from './http.ts';
+import { authenticate, authRoutes } from './routes/auth.ts';
+import { workspaceRoutes } from './routes/workspaces.ts';
+import { leadRoutes } from './routes/leads.ts';
+import { tagRoutes } from './routes/tags.ts';
+import { libraryRoutes } from './routes/library.ts';
+import { senderRoutes } from './routes/senders.ts';
+import { campaignRoutes } from './routes/campaigns.ts';
+import { inboxRoutes } from './routes/inbox.ts';
+import { opsRoutes } from './routes/ops.ts';
+import { trackingRoutes } from './routes/tracking.ts';
+import { docsRoutes } from './routes/docs.ts';
+import { ZodError } from 'zod';
+import { createGtm } from './gtm/index.ts';
+import { gtmHookRoutes, gtmRoutes } from './gtm/routes.ts';
+
+const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'web', 'dist');
+
+export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promise<FastifyInstance> {
+  const app = Fastify({
+    logger: opts.logger ? { level: ctx.config.logLevel } : false,
+    bodyLimit: 30 * 1024 * 1024,
+    trustProxy: true,
+  });
+
+  await app.register(cookie);
+  // Unsubscribe forms and one-click POSTs are form-encoded.
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
+    done(null, Object.fromEntries(new URLSearchParams(body as string)));
+  });
+  app.addContentTypeParser('multipart/form-data', { parseAs: 'string' }, (_req, body, done) => done(null, { raw: body }));
+  app.decorateRequest('auth', null);
+
+  app.addHook('onRequest', async (req) => {
+    if (!req.url.startsWith('/api/')) return;
+    req.auth = authenticate(ctx, req);
+    const isPublic = (req.routeOptions.config as any)?.public;
+    if (!isPublic && !req.auth) throw new HttpError(401, { error: 'invalid_token', message: 'Unauthenticated.' });
+  });
+
+  app.setErrorHandler((err: any, req, reply) => {
+    if (err instanceof HttpError) return reply.code(err.status).send(err.body);
+    if (err instanceof ZodError) {
+      const fields: Record<string, string[]> = {};
+      for (const i of err.issues) (fields[i.path.join('.') || '_'] ??= []).push(i.message);
+      return reply.code(422).send({ error: 'validation_error', message: err.issues.map((i) => `${i.path.join('.') || 'input'}: ${i.message}`).join('; '), fields });
+    }
+    if (err.validation) return reply.code(422).send({ error: 'validation_error', message: err.message });
+    if (err.statusCode && err.statusCode < 500) return reply.code(err.statusCode).send({ error: 'bad_request', message: err.message });
+    req.log.error(err);
+    return reply.code(500).send({ error: 'server_error', message: 'Something went wrong. Check the server log.' });
+  });
+
+  authRoutes(app, ctx);
+  workspaceRoutes(app, ctx);
+  leadRoutes(app, ctx);
+  tagRoutes(app, ctx);
+  libraryRoutes(app, ctx);
+  senderRoutes(app, ctx);
+  campaignRoutes(app, ctx);
+  inboxRoutes(app, ctx);
+  opsRoutes(app, ctx);
+  trackingRoutes(app, ctx);
+  ctx.gtm ??= createGtm(ctx);
+  app.addHook('onClose', async () => ctx.gtm?.stop());
+  gtmRoutes(app, ctx);
+  gtmHookRoutes(app, ctx);
+  docsRoutes(app, ctx);
+
+  app.get('/healthz', { config: { public: true } }, () => ({ ok: true }));
+
+  if (existsSync(WEB_DIST)) {
+    // wildcard routing serves files added after startup (e.g. after a rebuild).
+    await app.register(fastifyStatic, { root: WEB_DIST, wildcard: true });
+    app.setNotFoundHandler((req, reply) => {
+      if (req.method === 'GET' && !req.url.startsWith('/api/') && !req.url.startsWith('/hooks/')) return reply.sendFile('index.html');
+      return reply.code(404).send({ error: 'not_found', message: 'Route not found' });
+    });
+  } else {
+    app.setNotFoundHandler((_req, reply) => reply.code(404).send({ error: 'not_found', message: 'Route not found' }));
+  }
+
+  return app;
+}

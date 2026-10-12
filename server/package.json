@@ -1,0 +1,37 @@
+{
+  "name": "@kinetic/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.ts",
+    "dev": "node --watch src/index.ts",
+    "test": "vitest run --exclude 'test/mail/**'",
+    "test:mail": "vitest run test/mail",
+    "typecheck": "tsc --noEmit",
+    "demo": "node scripts/demo.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.3",
+    "@fastify/multipart": "^10.1.3",
+    "@fastify/static": "^10.1.6",
+    "csv-parse": "^7.0.3",
+    "fastify": "^5.12.5",
+    "imapflow": "^2.4.0",
+    "luxon": "^3.7.2",
+    "mailparser": "^3.9.38",
+    "nodemailer": "^10.1.0",
+    "socks": "^2.8.10",
+    "zod": "^4.6.6",
+    "csv-stringify": "^6.9.0"
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.7.6",
+    "@types/mailparser": "^3.9.0",
+    "@types/node": "^24.19.2",
+    "@types/nodemailer": "^8.0.2",
+    "@types/smtp-server": "^3.5.13",
+    "smtp-server": "^3.19.21",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3"
+  }
+}
