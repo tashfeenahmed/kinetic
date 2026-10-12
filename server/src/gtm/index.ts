@@ -7,7 +7,7 @@ import { Bus } from './events.ts';
 import { OutreachBridge } from './outreach.ts';
 import { Settings } from './settings.ts';
 import { unwrap } from './lib/template.ts';
-import { setHttpFetch } from './lib/http.ts';
+import { setHttpFetch, setProxySource } from './lib/http.ts';
 
 export interface Gtm {
   store: Store;
@@ -22,6 +22,7 @@ export function createGtm(ctx: Ctx): Gtm {
   setHttpFetch(ctx.fetch);
   const store = new Store(ctx.db);
   const settings = new Settings(ctx.db);
+  setProxySource(() => settings.get('SCRAPE_PROXY'));
   const bus = new Bus();
   const outreach = new OutreachBridge(ctx);
   const engine = new Engine(store, settings, bus, ctx.config.dataDir, outreach);
