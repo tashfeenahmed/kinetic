@@ -6,6 +6,10 @@
 import { getJson, HttpError } from '../lib/http.ts';
 import { toDomain } from '../lib/sandbox.ts';
 import { nameParts, type Ctx, type EnrichInput, type Hit } from './types.ts';
+import { useCredits, type CreditProvider } from './credits.ts';
+
+/** Meter credits a vendor charged (only when it returned data). */
+const spend = (ctx: Ctx, p: CreditProvider, n = 1) => useCredits(ctx.settings.db, p, n);
 
 const notFound = (e: unknown) => e instanceof HttpError && (e.status === 404 || e.status === 422 && /not.?found|no.?match/i.test(e.message));
 
@@ -19,11 +23,13 @@ export async function hunterEmail(input: EnrichInput, ctx: Ctx): Promise<Hit | n
   }).catch((e) => { if (notFound(e)) return null; throw e; });
   const email = d?.data?.email;
   if (!email) return null;
+  spend(ctx, 'hunter');
   return { value: email, confidence: `${d.data.score ?? '?'}% · ${d.data.verification?.status ?? 'unverified'}`, data: d.data };
 }
 
 export async function hunterVerify(input: EnrichInput, ctx: Ctx): Promise<Hit | null> {
   const d = await getJson('https://api.hunter.io/v2/email-verifier', { query: { email: input.email, api_key: hunterKey(ctx) } });
+  if (d?.data?.status) spend(ctx, 'hunter', 0.5);
   return d?.data?.status ? { value: normaliseStatus(d.data.status), data: d.data } : null;
 }
 
@@ -32,6 +38,7 @@ export async function hunterCompany(input: EnrichInput, ctx: Ctx): Promise<Hit |
     .catch((e) => { if (notFound(e)) return null; throw e; });
   const c = d?.data;
   if (!c?.name) return null;
+  spend(ctx, 'hunter');
   return { value: c.name, data: { name: c.name, domain: c.domain, description: c.description, industry: c.category?.industry, employees: c.metrics?.employees, location: c.location ?? c.geo?.city, founded: c.foundedYear, linkedin: c.linkedin?.handle ? `https://www.linkedin.com/${c.linkedin.handle}` : undefined, tech: c.tech, raw: c } };
 }
 
@@ -45,6 +52,7 @@ export async function apolloPerson(input: EnrichInput, ctx: Ctx) {
     headers: apolloHeaders(ctx),
     query: { first_name: first, last_name: last, name: first ? undefined : full, email: input.email, domain: toDomain(input.domain), organization_name: input.companyName, linkedin_url: input.linkedinUrl, reveal_personal_emails: 'false' },
   }).catch((e) => { if (notFound(e)) return null; throw e; });
+  if (d?.person) spend(ctx, 'apollo');
   return d?.person ?? null;
 }
 
@@ -70,6 +78,7 @@ export async function apolloCompany(input: EnrichInput, ctx: Ctx): Promise<Hit |
     .catch((e) => { if (notFound(e)) return null; throw e; });
   const o = d?.organization;
   if (!o?.name) return null;
+  spend(ctx, 'apollo');
   return { value: o.name, data: { name: o.name, domain: o.primary_domain, description: o.short_description, industry: o.industry, employees: o.estimated_num_employees, location: [o.city, o.state, o.country].filter(Boolean).join(', '), founded: o.founded_year, linkedin: o.linkedin_url, revenue: o.annual_revenue_printed, funding: o.total_funding_printed, latestFunding: o.latest_funding_stage, tech: o.technology_names, raw: o } };
 }
 
@@ -93,6 +102,7 @@ export async function pdlPerson(input: EnrichInput, ctx: Ctx) {
     headers: pdlHeaders(ctx),
     query: { first_name: first || undefined, last_name: last || undefined, name: first ? undefined : full || undefined, company: toDomain(input.domain) || input.companyName, profile: input.linkedinUrl, email: input.email, min_likelihood: 4, titlecase: 'true' },
   }).catch((e) => { if (notFound(e)) return null; throw e; });
+  if (d?.data) spend(ctx, 'pdl');
   return d?.data ?? null;
 }
 
@@ -122,6 +132,7 @@ export async function pdlCompany(input: EnrichInput, ctx: Ctx): Promise<Hit | nu
   const d = await getJson('https://api.peopledatalabs.com/v5/company/enrich', { headers: pdlHeaders(ctx), query: { website: toDomain(input.domain) || undefined, name: input.domain ? undefined : input.companyName, titlecase: 'true' } })
     .catch((e) => { if (notFound(e)) return null; throw e; });
   if (!d?.name) return null;
+  spend(ctx, 'pdl');
   return { value: d.display_name ?? d.name, data: { name: d.display_name ?? d.name, domain: d.website, description: d.summary, industry: d.industry, employees: d.employee_count, size: d.size, location: d.location?.name, founded: d.founded, linkedin: d.linkedin_url ? `https://${d.linkedin_url}` : undefined, funding: d.total_funding_raised, latestFunding: d.latest_funding_stage, tags: d.tags, raw: d } };
 }
 
@@ -141,6 +152,8 @@ export async function prospeoPerson(input: EnrichInput, ctx: Ctx, mobile: boolea
       data: { first_name: first || undefined, last_name: last || undefined, full_name: first ? undefined : full || undefined, company_website: toDomain(input.domain) || undefined, company_name: input.companyName, linkedin_url: input.linkedinUrl, email: input.email },
     },
   }).catch((e) => { if (e instanceof HttpError && /NO_MATCH|not.?found/i.test(e.message)) return null; throw e; });
+  // Prospeo charges 1 credit per email found (10 with a mobile) and nothing for a re-enrich within 90 days.
+  if (d?.person && !d.free_enrichment) spend(ctx, 'prospeo', mobile && d.person.mobile?.revealed ? 10 : d.person.email?.revealed || d.person.email?.email ? 1 : 0);
   return d?.person ?? null;
 }
 

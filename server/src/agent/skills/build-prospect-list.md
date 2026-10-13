@@ -27,7 +27,8 @@ Keep row counts modest (≤100) unless the user asks for more.
 Vary the wording between searches (AI web search returns overlapping results); stop when `rows` comes back 0–2 twice — say how many you reached instead of looping. Add enrichment columns once, after the rows are in (new rows pick up auto-run columns automatically).
 
 ## 2. People: who to contact at each company
-A companies table has no person yet. Cheapest options first:
+A companies table has no person yet. **Default: a `decision_makers` column** — it reads each company's website and web results with AI (free), finds the right person and their email, and only falls back to paid vendors (Apollo, Hunter, Prospeo, PDL, within their monthly budgets) when it finds nobody. See `enrich-emails-and-phones` for the column and its extract columns; feed `Contact email` straight into verification and the campaign.
+Other options:
 - AI research column that finds the decision maker (works everywhere, uses AI tokens):
   `POST /api/gtm/tables/{id}/columns`
   ```json

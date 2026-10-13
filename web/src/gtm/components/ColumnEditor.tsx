@@ -259,6 +259,13 @@ function ColumnChips({ names, onPick }: { names: string[]; onPick: (n: string) =
 function Waterfall({ steps, order, onChange }: { steps: Catalog['enrich'][0]['steps']; order: string[]; onChange: (o: string[]) => void }) {
   const enabled = order.filter((id) => steps.some((s) => s.id === id));
   const disabled = steps.filter((s) => !enabled.includes(s.id));
+  // Paid vendors' credits this month (Integrations → Credits), shown next to their step.
+  const [credits, setCredits] = useState<Record<string, { used: number; budget: number; blocked: string | null; live: { remaining: number | null } | null }>>({});
+  useEffect(() => {
+    if (!steps.some((s) => ['apollo', 'hunter', 'prospeo', 'pdl'].includes(s.id))) return;
+    api<{ data: { id: string; used: number; budget: number; blocked: string | null; live: { remaining: number | null } | null }[] }>('/api/gtm/credits')
+      .then((r) => setCredits(Object.fromEntries(r.data.map((c) => [c.id, c])))).catch(() => {});
+  }, [steps]);
   const move = (i: number, d: number) => {
     const o = [...enabled];
     const j = i + d;
@@ -275,7 +282,9 @@ function Waterfall({ steps, order, onChange }: { steps: Catalog['enrich'][0]['st
           return (
             <li key={id}>
               <span className={`dot ${s.ready ? 'ok' : 'off'}`} title={s.ready ? 'Key configured' : `Needs ${s.requires.join(', ')}`} />
-              <span className="grow">{s.label}<small>{s.cost}{!s.ready && ' · no key (skipped)'}</small></span>
+              <span className="grow">{s.label}<small>{s.cost}{!s.ready && ' · no key (skipped)'}
+                {s.ready && credits[id] && <> · <b className={credits[id].blocked ? 'err' : ''}>{credits[id].used}/{credits[id].budget} credits this month{credits[id].blocked ? ' — budget used, skipped' : ''}</b>{credits[id].live?.remaining != null && ` · ${credits[id].live!.remaining} left`}</>}
+              </small></span>
               <button className="ghost sm" onClick={() => move(i, -1)}>↑</button>
               <button className="ghost sm" onClick={() => move(i, 1)}>↓</button>
               <button className="ghost sm" onClick={() => onChange(enabled.filter((x) => x !== id))}>✕</button>
@@ -284,6 +293,7 @@ function Waterfall({ steps, order, onChange }: { steps: Catalog['enrich'][0]['st
         })}
       </ol>
       {disabled.length > 0 && <div className="chips">{disabled.map((s) => <button key={s.id} className="chip" onClick={() => onChange([...enabled, s.id])}>+ {s.label}</button>)}</div>}
+      {Object.keys(credits).length > 0 && <p className="hint">Free steps run first; paid vendors only when they find nothing. <Link to="/integrations#credits">Credits and monthly budgets →</Link></p>}
     </fieldset>
   );
 }

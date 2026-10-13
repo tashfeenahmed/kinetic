@@ -3,9 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Users, Send, Inbox, AtSign, Flame, Clock, Puzzle, Code2, ChevronDown, Settings, HelpCircle, LogOut,
-  PanelLeftClose, PanelLeft, Check, Plus, Pencil, Trash2, ChevronsUpDown, ChevronRight, Menu as MenuIcon, X, Home as HomeIcon, Radar, Table2, Activity,
-  Blocks, Eye, MessageSquareText, BookOpen, Bot, SearchCheck,
-} from 'lucide-react';
+  PanelLeftClose, PanelLeft, Check, Plus, Pencil, Trash2, ChevronsUpDown, ChevronRight, Menu as MenuIcon, X, Home as HomeIcon, Radar, Table2, Eye, MessageSquareText, BookOpen, Bot, } from 'lucide-react';
 import { useGtmTables } from '../gtm/lib/queries';
 import { RouteErrorBoundary } from './RouteErrorBoundary.tsx';
 import { api } from '../lib/api.ts';
@@ -216,8 +214,6 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
           <NavItem to="/agent" label="Agent" icon={MessageSquareText} collapsed={collapsed} />
           <NavItem to="/knowledge" label="Knowledge" icon={BookOpen} collapsed={collapsed} />
           <NavItem to="/signals" label="Signals" icon={Radar} collapsed={collapsed} />
-          <NavItem to="/searches" label="Searches" icon={SearchCheck} collapsed={collapsed} />
-          <NavItem to="/functions" label="Functions" icon={Blocks} collapsed={collapsed} />
         </nav>
 
         <SectionLabel collapsed={collapsed} action={<button title="New table" onClick={() => navigate('/')} className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200/60 hover:text-zinc-700"><Plus className="size-3.5" /></button>}>Tables</SectionLabel>
@@ -237,7 +233,6 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
       </div>
 
       <nav className="flex flex-col gap-px border-t border-zinc-200/80 px-2 py-2">
-        <NavItem to="/activity" label="Activity" icon={Activity} collapsed={collapsed} />
         <NavItem to="/integrations" label="Integrations" icon={Puzzle} collapsed={collapsed} />
         {collapsed ? (
           <NavItem to="/developers/api" label="Developers" icon={Code2} collapsed />

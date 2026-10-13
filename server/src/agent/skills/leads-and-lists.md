@@ -17,6 +17,9 @@ as leads). Finding leads by email activity is `lead-filters-by-email-stats`; do-
   names; values are the CSV column headers. `include_unmapped` keeps the other
   columns as custom variables. `campaign_id` adds the imported leads to that campaign.
 
+## Where each lead came from
+Every lead records its `source` (e.g. `Table "Funded tech" · found by ai_read · verified · published on https://acme.com/team`, `CSV import`, `API`) and `source_detail` (table, column, provider, method, page). Table pushes fill it from the email cell automatically. Use it when someone asks "where did you get my email?" — and never invent a source.
+
 ## Read and change
 - `GET /api/leads/{id}`; history: `GET /api/leads/{id}/sent-emails`, `GET /api/leads/{id}/replies`, `GET /api/leads/{id}/scheduled-emails`.
 - Update: `PATCH /api/leads/{id}` (only given fields) or `PUT` (replace).
@@ -30,7 +33,9 @@ as leads). Finding leads by email activity is `lead-filters-by-email-stats`; do-
 
 ## Do-not-email lists (blacklists)
 Blacklisted addresses and domains are never emailed by any campaign (wider exclusion lists for prospecting are in
-`exclusions`).
+`exclusions`). **Unsubscribes are permanent:** every unsubscribe (link, reply, manual) is added to the email blacklist with
+`reason: "unsubscribed"` and stays there even if the lead is deleted or imported again; `GET /api/leads/{id}` shows it as
+`suppressed`. Never remove an unsubscribed address unless the person themselves asked to be emailed again.
 - Emails: `GET /api/blacklisted-emails` (`search`, paging), `GET /api/blacklisted-emails/{id}`, add
   `POST /api/blacklisted-emails` `{ "email": "…" }` or `POST /api/blacklisted-emails/bulk` `{ "emails": [..] }`,
   remove `DELETE /api/blacklisted-emails/{id}` (approval).

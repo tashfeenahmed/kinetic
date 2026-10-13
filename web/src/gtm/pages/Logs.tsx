@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../lib/api';
+import { Icon } from '../components/Icon';
 
 export function Logs() {
   const [logs, setLogs] = useState<any[]>([]);
@@ -13,7 +14,7 @@ export function Logs() {
   return (
     <div className="page">
       <div className="page-inner">
-        <div className="page-head"><div><h1>Activity</h1><div className="sub">Provider calls, errors, webhooks and scheduled refreshes.</div></div></div>
+        <div className="page-head"><div><div className="crumbs" style={{ marginBottom: 4 }}><Link to="/settings">Settings</Link><Icon name="chevronRight" size={14} /></div><h1>Activity log</h1><div className="sub">Provider calls, errors, webhooks and scheduled refreshes.</div></div></div>
         {logs.length === 0 ? <div className="empty-state">Nothing yet.</div> : (
           <table className="list">
             <thead><tr><th>Time</th><th>Level</th><th>Source</th><th>Table</th><th>Message</th></tr></thead>

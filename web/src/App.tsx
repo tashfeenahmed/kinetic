@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ComponentType } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router';
 import { AuthProvider, useAuth } from './lib/auth.tsx';
 import { UiProvider, Loading } from './components/ui.tsx';
 import { AppLayout } from './components/Layout.tsx';
@@ -37,6 +37,17 @@ const AgentPage = page(() => import('./pages/Agent.tsx'), 'AgentPage');
 const KnowledgePage = page(() => import('./pages/Knowledge.tsx'), 'KnowledgePage');
 const AutomationsPage = page(() => import('./pages/automations/AutomationsPage.tsx'), 'AutomationsPage');
 
+/** Redirect keeping the query string (e.g. /searches?tab=exclusions). */
+function KeepQuery({ to }: { to: string }) {
+  const { search } = useLocation();
+  return <Navigate to={`${to}${search}`} replace />;
+}
+
+function OldFunctions() {
+  const { id } = useParams();
+  return <Navigate to={id ? `/settings/functions/${id}` : '/settings/functions'} replace />;
+}
+
 function Gate() {
   const { me, loading, needsSetup } = useAuth();
   if (loading) return <Loading />;
@@ -51,9 +62,13 @@ function Gate() {
         <Route path="knowledge" element={<KnowledgePage />} />
         <Route path="tables/:id" element={<GtmTablePage />} />
         <Route path="signals" element={<GtmSignalsPage />} />
-        <Route path="activity" element={<GtmActivityPage />} />
-        <Route path="functions/:id?" element={<GtmFunctionsPage />} />
-        <Route path="searches" element={<SearchesPage />} />
+        {/* Saved searches, Functions and Activity live under Settings; the old addresses redirect. */}
+        <Route path="settings/searches" element={<SearchesPage />} />
+        <Route path="settings/functions/:id?" element={<GtmFunctionsPage />} />
+        <Route path="settings/activity" element={<GtmActivityPage />} />
+        <Route path="searches" element={<KeepQuery to="/settings/searches" />} />
+        <Route path="functions/:id?" element={<OldFunctions />} />
+        <Route path="activity" element={<Navigate to="/settings/activity" replace />} />
         <Route path="dashboard" element={<Navigate to="/" replace />} />
         <Route path="leads" element={<LeadsPage />} />
         <Route path="campaigns" element={<CampaignsPage />} />

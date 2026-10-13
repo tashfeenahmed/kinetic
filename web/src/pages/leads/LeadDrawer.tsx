@@ -89,6 +89,12 @@ export function LeadDrawer({ leadId, onClose }: { leadId: number | null; onClose
               </div>
             </div>
 
+            {l.suppressed && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800">
+                <b>Never emailed again</b> — {l.suppressed.reason === 'unsubscribed' ? 'unsubscribed' : 'on the blacklist'}{l.suppressed.source ? ` (${l.suppressed.source})` : ''} on {fmtDateTime(l.suppressed.created_at)}. This stays even if the lead is deleted or imported again.
+              </div>
+            )}
+
             <div className="grid grid-cols-3 gap-3">
               {[['Emails sent', l.overall_stats.emails_sent], ['Opens', l.overall_stats.opens], ['Replies', l.overall_stats.replies]].map(([k, v]) => (
                 <div key={k} className="rounded-lg border border-slate-200 px-3 py-2"><div className="text-lg font-semibold">{fmtNumber(v as number)}</div><div className="text-xs text-slate-500">{k}</div></div>
@@ -98,7 +104,7 @@ export function LeadDrawer({ leadId, onClose }: { leadId: number | null; onClose
             <section>
               <h3 className="mb-2 text-sm font-semibold text-slate-900">Details</h3>
               <dl className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-2 text-sm">
-                {[['First name', l.first_name], ['Last name', l.last_name], ['Company', l.company], ['Title', l.title], ['Added', fmtDateTime(l.created_at)]].map(([k, v]) => (
+                {[['First name', l.first_name], ['Last name', l.last_name], ['Company', l.company], ['Title', l.title], ['Added', fmtDateTime(l.created_at)], ['Email source', [l.source, l.source_detail?.page].filter(Boolean).join(' · ')]].map(([k, v]) => (
                   <div key={k} className="contents"><dt className="text-slate-500">{k}</dt><dd className="text-slate-800">{v || <span className="text-slate-400">—</span>}</dd></div>
                 ))}
                 {l.custom_variables.map((v) => (

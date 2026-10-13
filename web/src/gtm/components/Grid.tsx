@@ -12,7 +12,8 @@ interface Props {
   rows: RowView[];
   onEditColumn: (col: Column) => void;
   onAddColumn: () => void;
-  onSelectCell: (rowId: number, colId: number) => void;
+  /** `click`: the user clicked a cell (opens the panel). `move`: the selection moved by keyboard (only follows an open panel). */
+  onSelectCell: (rowId: number, colId: number, how: 'click' | 'move') => void;
   onEdit: (changes: { rowId: number; columnId: number; value: string }[]) => void;
   onRun: (rowIds: number[], columnIds: number[], force: boolean) => void;
   onDeleteRows: (rowIds: number[]) => void;
@@ -122,12 +123,24 @@ export function Grid(props: Props) {
         const col = ref.current.columns[coords.col ?? -1];
         if (col && (target.closest('.col-menu') || (event as MouseEvent).detail === 2)) ref.current.onEditColumn(col);
       }}
-      afterSelectionEnd={(row, col) => {
-        if (row < 0 || col < 0) return;
+      afterOnCellMouseUp={(event, coords) => {
+        // Only a real click on a single cell opens the panel (not a drag over a range, and not
+        // the grid restoring its selection after a re-render). Links inside cells just open.
+        const { row, col } = coords;
+        if (row == null || col == null || row < 0 || col < 0 || (event.target as HTMLElement).closest('a')) return;
+        const h = hot.current?.hotInstance;
+        const [r1, c1, r2, c2] = h?.getSelectedLast() ?? [];
+        if (r1 !== r2 || c1 !== c2) return;
+        const r = ref.current.rows[h!.toPhysicalRow(row)];
+        const c = ref.current.columns[col];
+        if (r && c) ref.current.onSelectCell(r.id, c.id, 'click');
+      }}
+      afterSelectionEnd={(row, col, row2, col2) => {
+        if (row < 0 || col < 0 || row !== row2 || col !== col2) return;
         const h = hot.current?.hotInstance;
         const r = ref.current.rows[h!.toPhysicalRow(row)];
         const c = ref.current.columns[col];
-        if (r && c) ref.current.onSelectCell(r.id, c.id);
+        if (r && c) ref.current.onSelectCell(r.id, c.id, 'move');
       }}
       afterChange={(changes, source) => {
         if (!changes || source === 'loadData' || source === 'updateData') return;

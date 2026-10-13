@@ -7,6 +7,7 @@ import { auth, canWrite, requireAdmin, defineRoutes, type Auth } from '../http.t
 import { RUNNABLE, type ColumnType } from './engine/store.ts';
 import { listModels, DEFAULT_MODEL } from './engine/agent.ts';
 import { ENRICH_KINDS } from './providers/catalog.ts';
+import { CREDIT_PROVIDERS, creditsOverview, setBudgets } from './providers/credits.ts';
 import { SIGNAL_KINDS } from './providers/signals.ts';
 import * as integ from './providers/integrations.ts';
 import { webSearch } from './providers/search.ts';
@@ -33,6 +34,19 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
   const tableOf = (req: any, a: Auth) => store.tableIn(id.parse(req.params.id), a.workspaceId).id;
   const columnOf = (req: any, a: Auth) => { const c = store.column(id.parse(req.params.id)); store.tableIn(c.table_id, a.workspaceId); return c; };
   // ---------- catalog (drives the column editor) ----------
+  // ---------- paid data credits ----------
+  r.get('/api/gtm/credits', 'Paid data credits (Apollo, Hunter, Prospeo, People Data Labs): used this month, monthly budget, live balance', async (req) => {
+    auth(req);
+    return { data: await creditsOverview(settings) };
+  });
+  const budgetBody = z.object(Object.fromEntries(CREDIT_PROVIDERS.map((p) => [p, z.number().int().min(0).max(1_000_000).optional()])) as Record<string, z.ZodOptional<z.ZodNumber>>);
+  r.put('/api/gtm/credits/budgets', 'Set the monthly credit budget per paid data vendor (0 = never use it); waterfalls skip a vendor once its budget is used', async (req) => {
+    requireAdmin(req);
+    const b = budgetBody.parse(req.body ?? {});
+    setBudgets(settings.db, b as any);
+    return { data: await creditsOverview(settings) };
+  }, { body: budgetBody });
+
   r.get('/api/gtm/catalog', 'Enrichments, signals, actions and AI models', async () => ({
     enrich: ENRICH_KINDS.map((k) => ({ id: k.id, label: k.label, description: k.description, inputs: k.inputs, needs: k.needs, steps: k.steps.map((s) => ({ id: s.id, label: s.label, cost: s.cost, requires: s.requires, ready: s.requires.every((r) => settings.has(r)) })) })),
     signals: SIGNAL_KINDS.map((k) => ({ id: k.id, label: k.label, description: k.description, inputs: k.inputs, requires: k.requires, missing: missingConnections(k.requires, settings) })),

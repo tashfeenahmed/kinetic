@@ -217,13 +217,13 @@ export function FunctionColumnForm({ config, set, others, onName }: FormProps & 
           {(fns.data ?? []).map((f) => <option key={f.id} value={f.id}>{f.name} · v{f.version}{f.tags.length ? ` · ${f.tags.join(', ')}` : ''}</option>)}
         </select>
       </label>
-      {fns.data?.length === 0 && <p className="hint">No functions yet — <Link to="/functions">create one</Link>, or select columns in a table and choose “Save as function”.</p>}
+      {fns.data?.length === 0 && <p className="hint">No functions yet — <Link to="/settings/functions">create one</Link>, or select columns in a table and choose “Save as function”.</p>}
       {fn && (
         <>
           {fn.description && <p className="hint">{fn.description}</p>}
           {version && version < fn.version ? (
             <p className="warn">Pinned to v{version}; v{fn.version} is available. <button className="sm" onClick={() => set({ version: fn.version })}>Upgrade to v{fn.version}</button></p>
-          ) : <p className="hint">Version {version}. <Link to={`/functions/${fn.id}`}>Open in Functions →</Link></p>}
+          ) : <p className="hint">Version {version}. <Link to={`/settings/functions/${fn.id}`}>Open in Functions →</Link></p>}
           <fieldset>
             <legend>Inputs</legend>
             {(def?.inputs ?? []).map((i) => (
