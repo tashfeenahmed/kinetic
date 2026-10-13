@@ -2,12 +2,13 @@
  * What the agent's `api` tool may call. Hard-denied routes never run (auth, tokens,
  * users/passwords, workspace delete/members, secrets, streaming endpoints, the agent's
  * own sessions). Risky routes — anything that sends, launches, deletes, touches
- * LinkedIn/social, or spends on paid enrichment for more than ~100 rows — run only with
+ * LinkedIn/social, or may spend paid credits on more than ~100 rows — run only with
  * an approval token the user grants by clicking Approve in the UI.
  */
 import type { Db } from '../db/db.ts';
 import type { Settings } from '../gtm/settings.ts';
-import { ENRICH_KINDS } from '../gtm/providers/catalog.ts';
+import { Store } from '../gtm/engine/store.ts';
+import { estimateRun } from '../gtm/engine/estimate.ts';
 
 export const PAID_ROW_LIMIT = 100;
 
@@ -78,13 +79,8 @@ export function classify(method: string, path: string, body: any, env: { db: Db;
   const cfg = (c: { config: string }) => { try { return JSON.parse(c.config) ?? {}; } catch { return {}; } };
   const outbound = wanted.filter((c) => c.type === 'action' && OUTBOUND_ACTIONS.has(cfg(c).kind));
   if (outbound.length) return { kind: 'approve', reason: `Running this sends data out (${[...new Set(outbound.map((c) => cfg(c).kind))].join(', ')}).` };
-  const rows = Array.isArray(body?.rowIds) && body.rowIds.length ? body.rowIds.length : env.db.get<{ n: number }>('SELECT COUNT(*) n FROM gtm_rows WHERE table_id = ?', [tableId])!.n;
-  if (rows <= PAID_ROW_LIMIT) return v;
-  const paid = wanted.filter((c) => c.type === 'enrich').filter((c) => {
-    const kind = ENRICH_KINDS.find((k) => k.id === cfg(c).kind);
-    const order: string[] = cfg(c).providers?.length ? cfg(c).providers : kind?.steps.map((s) => s.id) ?? [];
-    return kind?.steps.some((s) => order.includes(s.id) && s.cost !== 'free' && s.requires.length > 0 && s.requires.every((k) => env.settings.has(k)));
-  });
-  if (paid.length) return { kind: 'approve', reason: `Paid enrichment (${paid.length} column${paid.length === 1 ? '' : 's'}) on ${rows} rows may spend credits.` };
+  const ids = (x: unknown) => (Array.isArray(x) && x.length ? x.map(Number).filter(Number.isInteger) : undefined);
+  const est = estimateRun(new Store(env.db), env.settings, tableId, { columnIds: ids(body?.columnIds), rowIds: ids(body?.rowIds), force: !!body?.force });
+  if (est.paidCells > PAID_ROW_LIMIT) return { kind: 'approve', reason: `Paid enrichment may spend credits. ${est.summary}` };
   return v;
 }

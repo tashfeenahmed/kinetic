@@ -218,6 +218,19 @@ export function DeveloperApiPage() {
         </Card>
       </div>
 
+      <Card title="Connect an AI assistant (MCP)" className="mt-6">
+        <p className="mb-3 text-sm text-slate-600">
+          Let Claude Code, Claude Desktop, Cursor or any other MCP client work in Kinetic with the same tools as the Kinetic Agent: playbooks, the API, the Knowledge Hub and web search.
+          It acts as the token's user, so use an <b>api-user</b> token. Unlike the in-app agent it doesn't stop to ask before sending email or spending credits — your assistant should check with you.
+        </p>
+        <p className="mb-1 text-xs font-medium text-slate-500">Server URL</p>
+        <div className="mb-3"><CopyText value={`${origin}/mcp`} /></div>
+        <p className="mb-1 text-xs font-medium text-slate-500">Claude Code</p>
+        <Code>{`claude mcp add --transport http kinetic ${origin}/mcp \\\n  --header "Authorization: Bearer YOUR_API_TOKEN"`}</Code>
+        <p className="mb-1 mt-3 text-xs font-medium text-slate-500">Other clients (JSON config)</p>
+        <Code>{JSON.stringify({ mcpServers: { kinetic: { type: 'http', url: `${origin}/mcp`, headers: { Authorization: 'Bearer YOUR_API_TOKEN' } } } }, null, 2)}</Code>
+      </Card>
+
       <Modal open={creating} onClose={() => setCreating(false)} title="New API token" size="sm"
         footer={<><Button onClick={() => setCreating(false)}>Cancel</Button><Button variant="primary" disabled={!name.trim()} loading={create.isPending} onClick={() => create.mutate()}>Create token</Button></>}>
         <div className="space-y-4">
