@@ -21,6 +21,7 @@ function workspaceJson(ctx: Ctx, id: number) {
     sync_all_emails: !!w.sync_all_emails,
     smart_warmup_filter: !!w.smart_warmup_filter,
     auto_interested_categorization: !!w.auto_interested_categorization,
+    auto_pause_senders: !!w.auto_pause_senders,
     members,
   };
 }
@@ -146,15 +147,15 @@ export function workspaceRoutes(app: FastifyInstance, ctx: Ctx) {
   // ---- master inbox settings ----
   r.get('/api/workspaces/v1.1/master-inbox-settings', 'Get master inbox settings', (req) => {
     const w = workspaceJson(ctx, auth(req).workspaceId);
-    return { data: { sync_all_emails: w.sync_all_emails, smart_warmup_filter: w.smart_warmup_filter, auto_interested_categorization: w.auto_interested_categorization, ...inboxAiSettings(ctx, w) } };
+    return { data: { sync_all_emails: w.sync_all_emails, smart_warmup_filter: w.smart_warmup_filter, auto_interested_categorization: w.auto_interested_categorization, auto_pause_senders: w.auto_pause_senders, ...inboxAiSettings(ctx, w) } };
   });
 
-  const inboxBody = z.object({ sync_all_emails: bool.optional(), smart_warmup_filter: bool.optional(), auto_interested_categorization: bool.optional(), ...inboxAiBody });
+  const inboxBody = z.object({ sync_all_emails: bool.optional(), smart_warmup_filter: bool.optional(), auto_interested_categorization: bool.optional(), auto_pause_senders: bool.optional(), ...inboxAiBody });
   r.patch('/api/workspaces/v1.1/master-inbox-settings', 'Update master inbox settings', (req) => {
     const a = requireAdmin(req);
     db.update('workspaces', a.workspaceId, parse(inboxBody, req.body));
     const w = workspaceJson(ctx, a.workspaceId);
-    return { data: { sync_all_emails: w.sync_all_emails, smart_warmup_filter: w.smart_warmup_filter, auto_interested_categorization: w.auto_interested_categorization, ...inboxAiSettings(ctx, w) } };
+    return { data: { sync_all_emails: w.sync_all_emails, smart_warmup_filter: w.smart_warmup_filter, auto_interested_categorization: w.auto_interested_categorization, auto_pause_senders: w.auto_pause_senders, ...inboxAiSettings(ctx, w) } };
   }, { body: inboxBody });
 
   // ---- API tokens ----

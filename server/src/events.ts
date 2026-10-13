@@ -15,6 +15,7 @@ export const EVENT_TYPES = {
   EMAIL_ACCOUNT_ADDED: 'Email Account Added',
   EMAIL_ACCOUNT_DISCONNECTED: 'Email Account Disconnected',
   EMAIL_ACCOUNT_RECONNECTED: 'Email Account Reconnected',
+  SENDER_AUTO_PAUSED: 'Email Account Auto-Paused',
   TAG_ATTACHED: 'Tag Attached',
   TAG_REMOVED: 'Tag Removed',
   CAMPAIGN_COMPLETED: 'Campaign Completed',
