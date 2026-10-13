@@ -38,6 +38,13 @@ function sender(port: number, extra: Record<string, unknown> = {}) {
   return { id: 1, email: 'sam@north.example', imap_server: '127.0.0.1', imap_port: port, imap_secure: 0, auth_type: 'password', secret_enc: encrypt('pw'), ...extra };
 }
 
+describe('sign-in errors', () => {
+  it('treats Microsoft "MFA required" token errors as needing a reconnect', () => {
+    expect(isAuthError(new Error('OAuth token error (400): AADSTS50076: Due to a configuration change made by your administrator, or because you moved to a new location, you must use multi-factor authentication'))).toBe(true);
+    expect(isAuthError(new Error('OAuth token error (503): service unavailable'))).toBe(false);
+  });
+});
+
 describe('IMAP retries', () => {
   it('retries an OAuth login once with a freshly refreshed token, then gives up', async () => {
     const imap = await rejectingImap(); closers.push(imap.close);
