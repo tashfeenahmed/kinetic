@@ -225,7 +225,7 @@ export function TargetsInput({ field, value, onChange }: { field: Pick<PhantomFi
           {(['urls', 'table'] as const).map((m) => (
             <button key={m} type="button" onClick={() => onChange(m === 'urls' ? { mode: 'urls', text: '' } : { mode: 'table', table_id: null, column: '' })}
               className={cx('rounded-md px-2 py-0.5', value.mode === m ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:bg-zinc-100')}>
-              {m === 'urls' ? 'Paste URLs' : 'From a table'}
+              {m === 'urls' ? 'Paste a list' : 'From a table'}
             </button>
           ))}
         </div>
@@ -233,7 +233,7 @@ export function TargetsInput({ field, value, onChange }: { field: Pick<PhantomFi
       {value.mode === 'urls' ? (
         <>
           <Textarea rows={5} placeholder={field.placeholder} value={value.text} onChange={(e) => onChange({ mode: 'urls', text: e.target.value })} className="font-mono text-[12.5px]" />
-          <div className="mt-1 text-xs text-slate-500">{count ? `${count} URL${count === 1 ? '' : 's'}` : field.help}</div>
+          <div className="mt-1 text-xs text-slate-500">{count ? `${count} ${count === 1 ? 'entry' : 'entries'}` : field.help}</div>
         </>
       ) : (
         <div className="grid grid-cols-2 gap-2">

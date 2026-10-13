@@ -23,6 +23,7 @@ const entries = [
   { entry: 'sites/instagram.ts', out: 'sites/instagram.js', format: 'iife' },
   { entry: 'sites/x.ts', out: 'sites/x.js', format: 'iife' },
   { entry: 'sites/facebook.ts', out: 'sites/facebook.js', format: 'iife' },
+  { entry: 'sites/whatsapp.ts', out: 'sites/whatsapp.js', format: 'iife' },
   { entry: 'options.ts', out: 'options.js', format: 'iife' },
   { entry: 'popup.ts', out: 'popup.js', format: 'iife' },
 ];

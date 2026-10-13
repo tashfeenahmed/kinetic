@@ -5,7 +5,7 @@ import { Alert, Input, Loading, cx } from '../../components/ui.tsx';
 import { JobForm } from './JobForm.tsx';
 import { CATEGORY_LABEL, CategoryChip, NETWORK_LABEL, NetworkIcon, useCompanionStatus, usePhantoms, type Category, type Network, type Phantom } from './shared.tsx';
 
-const ORDER: Network[] = ['linkedin', 'sales_navigator', 'instagram', 'x', 'facebook', 'reddit', 'github'];
+const ORDER: Network[] = ['linkedin', 'sales_navigator', 'instagram', 'x', 'facebook', 'whatsapp', 'reddit', 'github'];
 
 /** Phantom catalogue: a card grid grouped by network. */
 export function Catalogue() {

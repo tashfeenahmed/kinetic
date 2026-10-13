@@ -52,6 +52,8 @@ export function pageFor(task: TaskPayload): string {
       return trim(str(p.event_url));
     case 'facebook.page_scraper':
       return url;
+    case 'whatsapp.message_sender':
+      return str(p.text) ? `${task.openUrl}&text=${encodeURIComponent(str(p.text))}` : task.openUrl;
     default:
       return task.site === 'linkedin' || task.site === 'instagram' ? SITE_HOME[task.site] : task.openUrl || SITE_HOME[task.site];
   }
@@ -74,5 +76,6 @@ export function samePage(a: string | undefined, b: string): boolean {
 export function anyPageOnSite(task: TaskPayload): boolean {
   if (['linkedin.visit', 'linkedin.profile_visitor', 'linkedin.connect', 'linkedin.auto_connect', 'linkedin.message', 'linkedin.message_sender', 'linkedin.auto_follow'].includes(task.kind)) return false;
   if (task.kind === 'linkedin.profile_scraper' && task.params?.visit) return false;
+  if (task.site === 'whatsapp') return false; // every message opens its own chat URL
   return task.site === 'linkedin' || task.site === 'instagram';
 }

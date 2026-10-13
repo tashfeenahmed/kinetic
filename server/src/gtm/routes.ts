@@ -437,11 +437,11 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
   });
 
   /** Pull prospects from a source into the table. */
-  r.post('/api/gtm/tables/:id/import/source', 'Import rows from YC, GitHub, job boards, HubSpot, Apollo, Google Maps or lookalikes (exclusions applied)', async (req) => {
+  r.post('/api/gtm/tables/:id/import/source', 'Import rows from YC, GitHub, job boards, Hacker News, HubSpot, Apollo, Google Maps or lookalikes (exclusions applied)', async (req) => {
     const a = canWrite(req);
     const tableId = tableOf(req, a);
     const body = z.object({
-      source: z.enum(['hubspot_contacts', 'hubspot_companies', 'apollo_people', 'apollo_companies', 'yc_companies', 'github_people', 'jobs', 'google_maps', 'company_lookalikes', 'people_lookalikes']),
+      source: z.enum(['hubspot_contacts', 'hubspot_companies', 'apollo_people', 'apollo_companies', 'yc_companies', 'github_people', 'jobs', 'hacker_news', 'google_maps', 'company_lookalikes', 'people_lookalikes']),
       exclude: z.boolean().default(true),
       params: z.record(z.string(), z.any()).default({}),
       limit: z.number().int().min(1).max(2000).default(100),

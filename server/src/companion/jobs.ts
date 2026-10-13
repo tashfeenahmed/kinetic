@@ -13,6 +13,7 @@ import { phantom as findPhantom, type Phantom } from './catalog.ts';
 import { AI_TOKEN, aiReady, draftComment } from './render.ts';
 import { normalizeUrl } from './parsers/index.ts';
 import type { Rec, Site } from './protocol.ts';
+import { SKIP_TEXT, whatsappTargets, type WhatsappTarget } from './whatsapp.ts';
 
 export type JobStatus = 'draft' | 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type Every = 'hourly' | 'daily' | 'weekly';
@@ -91,21 +92,24 @@ export function validateParams(ctx: Ctx, p: Phantom, input: Record<string, unkno
   return out;
 }
 
-/** Targets are stored as {urls:[...]} or {table_id, column}. */
-function normalizeTargetsInput(v: unknown): { urls?: string[]; table_id?: number; column?: string } | null {
+/** Targets are stored as {urls:[...]} or {table_id, column, row_ids?} (row_ids = only those rows). */
+function normalizeTargetsInput(v: unknown): { urls?: string[]; table_id?: number; column?: string; row_ids?: number[] } | null {
   const split = (s: string) => s.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean);
   if (typeof v === 'string') return split(v).length ? { urls: split(v) } : null;
   if (Array.isArray(v)) { const urls = v.map(String).flatMap(split); return urls.length ? { urls } : null; }
   if (v && typeof v === 'object') {
     const o = v as any;
-    if (o.table_id && o.column) return { table_id: Number(o.table_id), column: String(o.column) };
+    if (o.table_id && o.column) {
+      const rowIds = Array.isArray(o.row_ids) ? o.row_ids.map(Number).filter((n: number) => Number.isInteger(n) && n > 0) : [];
+      return { table_id: Number(o.table_id), column: String(o.column), ...(rowIds.length ? { row_ids: rowIds } : {}) };
+    }
     if (o.urls) return normalizeTargetsInput(o.urls);
   }
   return null;
 }
 
 /** The concrete target list for a run: URLs as given, or the column values of a table (with each row's other values). */
-export function resolveTargets(ctx: Ctx, workspaceId: number, site: Site, spec: { urls?: string[]; table_id?: number; column?: string } | undefined): Target[] {
+export function resolveTargets(ctx: Ctx, workspaceId: number, site: Site, spec: { urls?: string[]; table_id?: number; column?: string; row_ids?: number[] } | undefined): Target[] {
   if (!spec) return [];
   const out: Target[] = [];
   const seen = new Set<string>();
@@ -123,7 +127,9 @@ export function resolveTargets(ctx: Ctx, workspaceId: number, site: Site, spec: 
     store.tableIn(spec.table_id, workspaceId);
     const cols = store.columns(spec.table_id);
     if (!cols.some((c) => c.name === spec.column)) throw new HttpError(422, { error: 'validation_error', message: `Column "${spec.column}" not found in that table` });
+    const only = spec.row_ids?.length ? new Set(spec.row_ids) : null;
     for (const rowId of store.rowIds(spec.table_id)) {
+      if (only && !only.has(rowId)) continue;
       const raw = store.rowValues(rowId, cols);
       const row = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, unwrap(v)]));
       const v = row[spec.column!];
@@ -219,20 +225,29 @@ export function startRun(ctx: Ctx, jobId: number, now: Date): number {
   return ctx.db.tx(() => {
     const runId = ctx.db.insert('companion_runs', { job_id: jobId, workspace_id: job.workspace_id, status: 'running', started_at: iso });
     const { targets: spec, ...params } = job.params;
-    const targets: (Target | null)[] = p.perTarget ? resolveTargets(ctx, job.workspace_id, p.site, spec) : [null];
+    const resolved: (Target | null)[] = p.perTarget ? resolveTargets(ctx, job.workspace_id, p.site, spec) : [null];
+    // WhatsApp: numbers normalised to E.164; invalid numbers and opt-outs are skipped up front.
+    const targets: WhatsappTarget[] = p.site === 'whatsapp'
+      ? whatsappTargets(ctx, job.workspace_id, resolved.filter((t): t is Target => !!t), params.country_code)
+      : resolved.map((t) => ({ target: t ?? {} }));
     const action = p.id === 'linkedin.ai_post_responder' ? 'linkedin.scrape' : p.action;
+    const skipped: { id: number; target: Rec; why: string }[] = [];
     // Tasks are leased in id order, so targets run in list order.
-    for (const t of targets) {
-      ctx.db.insert('companion_tasks', {
+    for (const { target, skip } of targets) {
+      const id = ctx.db.insert('companion_tasks', {
         workspace_id: job.workspace_id, job_id: jobId, run_id: runId, kind: p.id, site: p.site, runner: p.runner, action,
-        target: JSON.stringify(t ?? {}), params: JSON.stringify(params), status: 'pending', created_at: iso, updated_at: iso,
+        target: JSON.stringify(target), params: JSON.stringify(params), status: skip ? 'skipped' : 'pending', error: skip ?? null, created_at: iso, updated_at: iso,
       });
+      if (skip) skipped.push({ id, target, why: SKIP_TEXT[skip] });
     }
     ctx.db.update('companion_jobs', jobId, {
       status: 'running', last_run_at: iso, next_run_at: null, error: null, updated_at: iso,
       progress: JSON.stringify({ done: 0, total: targets.length, message: targets.length ? 'Waiting for the extension' : 'No targets' }),
     });
     if (!targets.length) finishRun(ctx, runId, now, 'No targets to process');
+    // Skipped numbers show up in the results table with the reason (nothing async runs for these).
+    for (const s of skipped) void ingestJobRecords(ctx, loadTask(ctx, s.id)!, [{ phone: s.target.phone, name: s.target.name || undefined, status: 'skipped', detail: s.why, at: iso }], now);
+    if (skipped.length) refreshRun(ctx, runId, now);
     return runId;
   });
 }
