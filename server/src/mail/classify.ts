@@ -16,7 +16,8 @@ export interface InboundMessage {
   html: string;
   date: Date;
   headers: Map<string, unknown>;
-  attachments: { filename: string; size: number; contentType: string; content: Buffer }[];
+  /** inline: an image shown inside the HTML body (a logo or pasted screenshot), not a file the sender attached. */
+  attachments: { filename: string; size: number; contentType: string; content: Buffer; inline?: boolean }[];
   /** For delivery-status notifications: details of the bounced message. */
   bounce: { originalMessageId: string | null; recipient: string | null; permanent: boolean; diagnostic: string } | null;
 }
@@ -50,7 +51,7 @@ export async function parseInbound(source: Buffer | string): Promise<InboundMess
     headers: m.headers,
     attachments: m.attachments
       .filter((a) => a.contentType !== 'message/delivery-status' && a.contentType !== 'text/rfc822-headers' && a.contentType !== 'message/rfc822')
-      .map((a) => ({ filename: a.filename ?? 'attachment', size: a.size, contentType: a.contentType, content: a.content })),
+      .map((a) => ({ filename: a.filename ?? 'attachment', size: a.size, contentType: a.contentType, content: a.content, inline: !!a.related || (a.contentDisposition === 'inline' && !!a.cid && a.contentType.startsWith('image/')) })),
     bounce: null,
   };
   msg.bounce = detectBounce(m, msg);

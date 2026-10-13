@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, errorMessage } from '../../lib/api.ts';
-import { Button, Field, Input, Modal, Select, Textarea, useUi } from '../../components/ui.tsx';
-import { AttachmentPicker, parseEmails, useAttachments } from './shared.tsx';
+import { Button, Field, Input, Modal, Select, useUi } from '../../components/ui.tsx';
+import { AttachmentPicker, MarkdownEditor, parseEmails, useAttachments } from './shared.tsx';
 
 export function ComposeModal({ open, onClose, defaultTo }: { open: boolean; onClose: () => void; defaultTo?: string }) {
   const qc = useQueryClient();
@@ -51,7 +51,7 @@ export function ComposeModal({ open, onClose, defaultTo }: { open: boolean; onCl
           </div>
         )}
         <Field label="Subject"><Input value={form.subject} onChange={set('subject')} /></Field>
-        <Field label="Message" hint="Your mailbox signature is added automatically."><Textarea rows={9} value={form.body} onChange={set('body')} /></Field>
+        <Field label="Message" hint="Your mailbox signature is added automatically."><MarkdownEditor rows={9} value={form.body} onChange={(v) => setForm((f) => ({ ...f, body: v }))} /></Field>
         <AttachmentPicker att={att} />
       </div>
     </Modal>

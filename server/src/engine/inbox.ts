@@ -293,13 +293,18 @@ export function unsubscribeLead(ctx: Ctx, lead: Row, source: string) {
 }
 
 function saveAttachments(ctx: Ctx, msg: InboundMessage) {
-  if (!msg.attachments.length) return [];
-  const dir = join(ctx.config.dataDir, 'attachments', msg.messageId.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120));
+  return storeAttachments(ctx, msg.messageId, msg.attachments.slice(0, 20));
+}
+
+/** Writes message attachments under data/attachments/<message id>/ and returns what to keep in the row's attachments JSON. */
+export function storeAttachments(ctx: Ctx, messageId: string, list: { filename: string; content: Buffer; contentType?: string; inline?: boolean }[]) {
+  if (!list.length) return [];
+  const dir = join(ctx.config.dataDir, 'attachments', messageId.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120));
   mkdirSync(dir, { recursive: true });
-  return msg.attachments.slice(0, 20).map((a, i) => {
+  return list.map((a, i) => {
     const safe = `${i}-${a.filename.replace(/[^A-Za-z0-9._ -]/g, '_').slice(0, 100)}`;
     writeFileSync(join(dir, safe), a.content);
-    return { filename: a.filename, size: a.size, content_type: a.contentType, path: join(dir, safe) };
+    return { filename: a.filename, size: a.content.length, content_type: a.contentType || 'application/octet-stream', path: join(dir, safe), ...(a.inline ? { inline: true } : {}) };
   });
 }
 

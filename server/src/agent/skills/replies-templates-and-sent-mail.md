@@ -24,8 +24,14 @@ A reply containing an ignore phrase (anywhere in subject or body, case-insensiti
 would hide real replies.
 
 ## Attachments
-A reply's `attachments[]` lists files; download one with `GET /api/replies/{id}/attachments/{index}` (0-based). Binary
-files come back as raw bytes; for anything but text, tell the user to open it in the Inbox instead.
+A reply's `attachments[]` lists files (`inline: true` = an image shown inside the email body, like a logo); download one
+with `GET /api/replies/{id}/attachments/{index}` (0-based). Files sent from the inbox are kept too: a sent email's
+`attachments[]` downloads with `GET /api/sent-emails/{id}/attachments/{index}`. Add `?inline=1` to open images, PDFs and
+text in the browser. Binary files come back as raw bytes; for anything but text, tell the user to open it in the Inbox instead.
+Forwarding a reply sends its attachments along.
+
+Message bodies you send (replies, new emails, sequence steps) are Markdown: `**bold**`, `_italic_`, `[text](https://…)`,
+`- ` lists. They go out as formatted HTML with a matching plain-text part.
 
 ## Sent mail
 - `GET /api/sent-emails` (`kind` all|campaign|manual|reply, `sender_email_id`, `search`, paging) → what went out, from
