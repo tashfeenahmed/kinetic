@@ -27,7 +27,7 @@ export function SaveAsFunctionDialog({ tableId, columns, initialIds, onClose, on
       });
       void qc.invalidateQueries({ queryKey: ['gtm-functions'] });
       onDone();
-      navigate(`/functions/${r.id}`);
+      navigate(`/settings/functions/${r.id}`);
     } catch (e: any) {
       setError(e.message);
     } finally {

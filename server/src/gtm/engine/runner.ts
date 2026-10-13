@@ -8,6 +8,7 @@ import type { Settings } from '../settings.ts';
 import { evaluate, truthy } from '../lib/sandbox.ts';
 import { getPath, render, renderDeep, renderValue, stringify } from '../lib/template.ts';
 import { enrichKind } from '../providers/catalog.ts';
+import { budgetBlock, STEP_PROVIDER } from '../providers/credits.ts';
 import { signalKind } from '../providers/signals.ts';
 import * as integ from '../providers/integrations.ts';
 import type { Ctx, EnrichInput, Hit } from '../providers/types.ts';
@@ -297,7 +298,7 @@ export class Engine {
       }
       case 'action':
         if (cfg.kind === 'send_to_table') return this.links.send(cfg, row, j, this.workspaceOf(j));
-        return this.action(cfg, row, this.workspaceOf(j));
+        return this.action(cfg, row, this.workspaceOf(j), j.tableId);
       case 'lookup': return this.links.lookup(cfg, row, j, this.workspaceOf(j));
       case 'function': return this.functions.runColumn(cfg, row, { ...j, workspaceId: this.workspaceOf(j) });
       default:
@@ -319,6 +320,10 @@ export class Engine {
       const step = kind.steps.find((s) => s.id === id);
       if (!step) continue;
       if (step.requires.some((k) => !this.settings.has(k))) { attempts.push({ provider: id, result: 'no key', ms: 0 }); continue; }
+      // Paid vendors stop at their monthly credit budget (Integrations → Credits).
+      const paid = STEP_PROVIDER[id];
+      const blocked = paid ? budgetBlock(this.settings.db, paid) : null;
+      if (blocked) { attempts.push({ provider: id, result: `skipped: ${blocked}`, ms: 0 }); continue; }
       const t = Date.now();
       try {
         const hit = await step.run(input, this.ctx(j));
@@ -344,7 +349,7 @@ export class Engine {
     return { value: null, status: 'empty', meta: { attempts } };
   }
 
-  private async action(cfg: any, row: Record<string, unknown>, workspaceId?: number): Promise<Outcome> {
+  private async action(cfg: any, row: Record<string, unknown>, workspaceId?: number, tableId?: number): Promise<Outcome> {
     const fields = (cfg.fields ?? []).map((f: any) => ({ name: f.name, value: renderValue(f.value ?? '', row) }));
     let hit: Hit;
     switch (cfg.kind) {
@@ -373,7 +378,7 @@ export class Engine {
         if (!email) return { value: null, status: 'skipped', error: 'No email for this row' };
         const r = this.outreach.pushLead(workspaceId, {
           email, first_name: v(cfg.firstName), last_name: v(cfg.lastName), company: v(cfg.company), title: v(cfg.title), variables,
-        }, { campaignId: cfg.kind === 'outreach_campaign' ? Number(cfg.campaignId) || null : null, listId: Number(cfg.listId) || null, behavior: cfg.behavior ?? 'patch', allowParallel: !!cfg.allowParallel });
+        }, { campaignId: cfg.kind === 'outreach_campaign' ? Number(cfg.campaignId) || null : null, listId: Number(cfg.listId) || null, behavior: cfg.behavior ?? 'patch', allowParallel: !!cfg.allowParallel, source: emailProvenance(cfg.email, row, tableId ?? 0, this.store) });
         const label = r.campaign ? (r.campaign.attached ? `Added to ${r.campaign.name}` : `Not added: ${r.campaign.reason}`) : r.created ? 'Lead created' : 'Lead updated';
         return { value: { value: label, data: r }, status: r.campaign && !r.campaign.attached ? 'skipped' : 'done', error: r.campaign && !r.campaign.attached ? label : undefined, meta: { provider: 'outreach', leadId: r.leadId } };
       }
@@ -441,4 +446,26 @@ function hitOutcome(hit: Hit | null, meta: Record<string, unknown>): Outcome {
     return { value: hit?.data ? { value: null, data: hit.data } : null, status: 'empty', meta: { ...meta, note: hit?.data?.note } };
   }
   return { value: { value: hit.value, confidence: hit.confidence, data: hit.data }, status: 'done', meta };
+}
+
+/**
+ * Where the row's email came from, for the lead's record: the enrichment column the
+ * email template points at (provider, confidence, the page or method behind it), or the
+ * plain table column when the email was typed in or imported.
+ */
+export function emailProvenance(template: string | undefined, row: Record<string, unknown>, tableId: number, store: { table: (id: number) => { name: string } }): { label: string; detail: Record<string, unknown> } {
+  const col = String(template ?? '').match(/\{\{\s*([^}.]+?)\s*(?:\.[^}]*)?\}\}/)?.[1]?.trim();
+  let tableName = '';
+  try { tableName = store.table(tableId).name; } catch { /* table gone */ }
+  const cell = col ? row[col] : undefined;
+  const base = { table_id: tableId, table: tableName, column: col ?? null };
+  if (cell && typeof cell === 'object' && 'value' in (cell as any)) {
+    const c = cell as { provider?: string; confidence?: string; data?: Record<string, any> };
+    const d = c.data ?? {};
+    const page = d.source_url ?? d.sources?.[0] ?? (typeof d.source === 'string' && /^https?:/.test(d.source) ? d.source : undefined);
+    const how = d.email_source ?? (typeof d.source === 'string' ? d.source : undefined);
+    const label = [`Table "${tableName || tableId}"`, c.provider ? `found by ${c.provider}` : null, how ?? c.confidence ?? null].filter(Boolean).join(' · ');
+    return { label, detail: { ...base, provider: c.provider ?? null, confidence: c.confidence ?? null, method: how ?? null, page: page ?? null, found_by: d.found_by ?? null } };
+  }
+  return { label: `Table "${tableName || tableId}"${col ? ` · column ${col}` : ''}`, detail: base };
 }

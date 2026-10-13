@@ -4,12 +4,15 @@ description: Use to find and verify work emails, mobile phones, LinkedIn URLs or
 ---
 # Enrich emails, phones and profiles
 
-Enrichment columns run a provider waterfall and stop at the first confident hit. Free steps come first; paid steps run only when their API key is set (Integrations page). Check what's ready with `GET /api/gtm/catalog` → `enrich[].steps[].ready` and `cost`.
+Enrichment columns run a provider waterfall and stop at the first confident hit. **Free steps always come first** (reading the website and web with AI, email patterns checked over SMTP); the paid vendors are a fallback for when those find nothing — Apollo → Hunter → Prospeo → People Data Labs — and each is skipped once its monthly credit budget is used. Check what's ready with `GET /api/gtm/catalog` → `enrich[].steps[].ready` and `cost`.
+
+**Credits:** `GET /api/gtm/credits` → per vendor `used` this month, `budget`, `blocked` (budget reached) and the vendor's `live.remaining` balance (Hunter, Prospeo). Change budgets with `PUT /api/gtm/credits/budgets` `{ "hunter": 50, "apollo": 0 }` (0 = never use it; admins only; ask the user first). Tell the user how many credits a run may use before running paid steps on many rows, and never reorder a waterfall to put paid vendors before the free steps unless the user asks.
 
 ## Add a column — `POST /api/gtm/tables/{id}/columns`
 | kind | needs (any one group) | notes |
 |---|---|---|
-| `work_email` | fullName+domain, firstName+domain, fullName+companyName, linkedinUrl | free finder (website + GitHub commit patterns + SMTP check) → web search (the person's address on public pages — directories, press, PDFs, other businesses they run — or the company pattern learned from colleagues' addresses; free via SearXNG) → MillionVerifier pattern → Icypeas → Findymail → Prospeo → LeadMagic → Hunter → Apollo → PDL → pattern guess (unverified) |
+| `decision_makers` | domain (+ companyName, + `title` = roles to look for, e.g. "CEO, founder") | **Use when you only have companies.** Free: reads the company's team/about/leadership/contact pages and web search results with AI, picks the best person for the roles, finds their email (published, or pattern + SMTP check). Only if nobody is found: Apollo (search free, 1 credit/email) → Hunter domain search → Prospeo → PDL. Value = the email (or the name when no email); data: `name`, `first_name`, `last_name`, `title`, `email`, `email_status` (verified, catch-all, unverified), `email_source`, `linkedin`, `source_url`, `found_by`, `people[]` (everyone found) |
+| `work_email` | fullName+domain, firstName+domain, fullName+companyName, linkedinUrl | free finder (website + GitHub commit patterns + SMTP check) → web search (the person's address on public pages — directories, press, PDFs, other businesses they run — or the company pattern learned from colleagues' addresses; free via SearXNG) → Apollo → Hunter → Prospeo → PDL → MillionVerifier pattern → Icypeas → Findymail → LeadMagic → pattern guess (unverified) |
 | `verify_email` | email | free SMTP check → MillionVerifier → ZeroBounce → Hunter → MX check. Value: valid, catch_all, risky, invalid, unknown |
 | `mobile_phone` | linkedinUrl, email, fullName+domain | paid only (LeadMagic, Findymail, Prospeo, PDL). No free source — tell the user |
 | `linkedin_url` | fullName, firstName+lastName, email | free web search first |
@@ -18,7 +21,15 @@ Enrichment columns run a provider waterfall and stop at the first confident hit.
 | `company_profile` | domain or companyName | YC, Wikidata, Apollo, PDL, Hunter, website scrape |
 | `company_linkedin` | companyName or domain | Wikidata, website footer, search |
 
-Example:
+Example — company rows → a person and their email, then pull fields out (extract columns run automatically):
+```json
+{ "name": "Contact", "type": "enrich", "auto_run": true,
+  "config": { "kind": "decision_makers", "inputs": { "domain": "{{Company domain}}", "companyName": "{{Company}}", "title": "CEO, founder, managing director" } } }
+{ "name": "Contact name", "type": "extract", "config": { "source": "Contact", "path": "name" } }
+{ "name": "Contact title", "type": "extract", "config": { "source": "Contact", "path": "title" } }
+{ "name": "Contact email", "type": "extract", "config": { "source": "Contact", "path": "email" } }
+```
+Person rows:
 ```json
 { "name": "Work email", "type": "enrich", "auto_run": true,
   "config": { "kind": "work_email", "inputs": { "fullName": "{{Full name}}", "domain": "{{Company domain}}" } } }

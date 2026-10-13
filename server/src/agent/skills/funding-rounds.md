@@ -46,8 +46,8 @@ Add these with `POST /api/gtm/tables/{id}/columns`, in this order:
 { "name": "Email status", "type": "enrich", "auto_run": true, "config": { "kind": "verify_email", "inputs": { "email": "{{Work email}}" } } }
 ```
 - When most rows already have `Company domain` (Norway), use `{{Company domain}}` and skip the Domain column.
-- Rows without a person (common in Spain and Switzerland): add the AI "CEO" column from `build-prospect-list`
-  step 2, and feed its extracted name into Work email instead of `{{Full name}}`.
+- Rows without a person (common in Spain and Switzerland): add a `decision_makers` column on `{{Domain}}` instead —
+  it finds the right person and their email for free first (see `enrich-emails-and-phones`).
 - For the opening line, use an AI column with `useKnowledge: true`, and give it the funding facts so it doesn't make any up:
 ```json
 { "name": "Opener", "type": "ai", "config": { "prompt": "{{Company}} ({{Domain}}, {{City}}, {{Country}}) just raised new money: {{Signal}} on {{Funding date}}. In one short sentence for a cold email to {{First name}} ({{Title}}), congratulate them on the raise without inventing figures, and connect it to what they will need next that our offer solves.", "outputs": [{ "name": "opener", "type": "string" }], "webSearch": true, "maxSteps": 4, "useKnowledge": true } }

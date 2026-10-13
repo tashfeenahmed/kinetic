@@ -8,6 +8,7 @@ import { EnrichmentPicker } from '../components/EnrichmentPicker';
 import { ImportDialog, ScheduleDialog, SendToCampaignDialog, SignalPackDialog } from '../components/Dialogs';
 import { Icon } from '../components/Icon';
 import { SaveAsFunctionDialog } from '../components/SaveAsFunctionDialog';
+import { useEventStream } from '../../lib/useEventStream';
 
 type Panel =
   | { kind: 'picker' }
@@ -38,33 +39,29 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (loc.search) navigate(`/tables/${tableId}`, { replace: true }); }, [tableId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Live updates: cell events are batched into one state update per animation frame.
-  useEffect(() => {
-    const es = new EventSource(`/api/gtm/tables/${tableId}/events`);
-    let frame = 0;
-    const flush = () => {
-      frame = 0;
-      const batch = [...pending.current.values()];
-      pending.current.clear();
-      setView((v) => {
-        if (!v) return v;
-        const byRow = new Map<number, typeof batch>();
-        for (const e of batch) byRow.set(e.rowId, [...(byRow.get(e.rowId) ?? []), e]);
-        return { ...v, rows: v.rows.map((r) => (byRow.has(r.id) ? { ...r, cells: { ...r.cells, ...Object.fromEntries(byRow.get(r.id)!.map((e) => [e.columnId, e.cell])) } } : r)) };
-      });
-      const p = panelRef.current;
-      if (p?.kind === 'cell' && batch.some((e) => e.rowId === p.rowId && e.columnId === p.colId)) setCellVersion((x) => x + 1);
-    };
-    es.onmessage = (m) => {
-      const e = JSON.parse(m.data);
-      if (e.type === 'cell') {
-        pending.current.set(`${e.rowId}:${e.columnId}`, e);
-        if (!frame) frame = requestAnimationFrame(flush);
-      } else if (e.type === 'rows' || e.type === 'columns') { void load(); onTablesChanged(); }
-      else if (e.type === 'queue') setQueue({ pending: e.pending, running: e.running });
-    };
-    return () => { es.close(); if (frame) cancelAnimationFrame(frame); };
-  }, [tableId, load, onTablesChanged]);
+  // Live updates (only while the tab is visible): cell events are batched into one state update per animation frame.
+  const frame = useRef(0);
+  useEffect(() => () => { if (frame.current) cancelAnimationFrame(frame.current); }, []);
+  const flush = () => {
+    frame.current = 0;
+    const batch = [...pending.current.values()];
+    pending.current.clear();
+    setView((v) => {
+      if (!v) return v;
+      const byRow = new Map<number, typeof batch>();
+      for (const e of batch) byRow.set(e.rowId, [...(byRow.get(e.rowId) ?? []), e]);
+      return { ...v, rows: v.rows.map((r) => (byRow.has(r.id) ? { ...r, cells: { ...r.cells, ...Object.fromEntries(byRow.get(r.id)!.map((e) => [e.columnId, e.cell])) } } : r)) };
+    });
+    const p = panelRef.current;
+    if (p?.kind === 'cell' && batch.some((e) => e.rowId === p.rowId && e.columnId === p.colId)) setCellVersion((x) => x + 1);
+  };
+  useEventStream(`/api/gtm/tables/${tableId}/events`, (e) => {
+    if (e.type === 'cell') {
+      pending.current.set(`${e.rowId}:${e.columnId}`, e);
+      if (!frame.current) frame.current = requestAnimationFrame(flush);
+    } else if (e.type === 'rows' || e.type === 'columns') { void load(); onTablesChanged(); }
+    else if (e.type === 'queue') setQueue({ pending: e.pending, running: e.running });
+  }, () => { void load(); });
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 3000); };
   const run = async (body: { columnIds?: number[]; rowIds?: number[]; force?: boolean }) => {
@@ -105,6 +102,7 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
           <Icon name="clock" size={14} />{view.table.schedule?.enabled ? `Every ${fmtEvery(view.table.schedule.everyMinutes)}` : 'Schedule'}
         </button>
         <a className="btn ghost sm" style={{ border: 'none', boxShadow: 'none', color: 'var(--text-2)', background: 'transparent' }} href={`/api/gtm/tables/${tableId}/export.csv`}><Icon name="download" size={14} />Export</a>
+        <Link className="btn ghost sm" style={{ border: 'none', boxShadow: 'none', color: 'var(--text-2)', background: 'transparent' }} to="/settings/functions" title="Reusable enrichment recipes — add one as a column, or save columns as one from Column actions"><Icon name="fn" size={14} />Functions</Link>
         {runnable.length > 0 && <span className="sep" />}
         {runnable.length > 0 && (
           <select
@@ -150,7 +148,7 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
               rows={view.rows}
               onEditColumn={(c) => setPanel({ kind: 'editor', column: c })}
               onAddColumn={() => setPanel({ kind: 'picker' })}
-              onSelectCell={(rowId, colId) => setPanel((p) => (p?.kind === 'editor' || p?.kind === 'picker' ? p : { kind: 'cell', rowId, colId }))}
+              onSelectCell={(rowId, colId, how) => setPanel((p) => (p?.kind === 'editor' || p?.kind === 'picker' ? p : how === 'move' && p?.kind !== 'cell' ? p : { kind: 'cell', rowId, colId }))}
               onEdit={(changes) => api(`/api/gtm/tables/${tableId}/cells`, { method: 'PATCH', body: { changes } }).then(load)}
               onRun={(rowIds, columnIds, force) => run({ rowIds, columnIds, force })}
               onDeleteRows={(ids) => api(`/api/gtm/tables/${tableId}/rows`, { method: 'DELETE', body: { ids } })}

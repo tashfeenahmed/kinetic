@@ -281,6 +281,8 @@ function handleBounce(ctx: Ctx, sender: Row, msg: InboundMessage) {
 /** Marks a lead unsubscribed everywhere in its workspace and stops all future sends. */
 export function unsubscribeLead(ctx: Ctx, lead: Row, source: string) {
   const { db } = ctx;
+  // Permanent suppression: the address stays blocked even if the lead is deleted or re-imported.
+  suppress(ctx, lead.workspace_id, lead.email, 'unsubscribed', source);
   if (lead.status === 'unsubscribed') return;
   db.tx(() => {
     db.run(`UPDATE leads SET status = 'unsubscribed', updated_at = ? WHERE id = ?`, [ctx.now().toISOString(), lead.id]);
@@ -299,4 +301,12 @@ function saveAttachments(ctx: Ctx, msg: InboundMessage) {
     writeFileSync(join(dir, safe), a.content);
     return { filename: a.filename, size: a.size, content_type: a.contentType, path: join(dir, safe) };
   });
+}
+
+/** Add an address to the workspace's permanent do-not-email list (keeps the first reason). */
+export function suppress(ctx: Ctx, workspaceId: number, email: string, reason: string, source: string) {
+  ctx.db.run(`INSERT INTO blacklisted_emails (workspace_id, email, reason, source, created_at) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(workspace_id, email) DO UPDATE SET reason = CASE WHEN blacklisted_emails.reason = 'manual' AND excluded.reason != 'manual' THEN excluded.reason ELSE blacklisted_emails.reason END,
+      source = CASE WHEN blacklisted_emails.source = '' THEN excluded.source ELSE blacklisted_emails.source END`,
+  [workspaceId, String(email).trim().toLowerCase(), reason, source, ctx.now().toISOString()]);
 }

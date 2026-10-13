@@ -26,10 +26,11 @@ export function FunctionsList() {
       <div className="page-inner">
         <div className="page-head">
           <div className="grow">
+            <div className="crumbs" style={{ marginBottom: 4 }}><Link to="/settings">Settings</Link><Icon name="chevronRight" size={14} /></div>
             <h1>Functions</h1>
             <div className="sub">Reusable enrichment recipes: define inputs, steps and outputs once, then use them as a column in any table.</div>
           </div>
-          <button className="primary" onClick={() => navigate('/functions/new')}><Icon name="plus" size={15} />New function</button>
+          <button className="primary" onClick={() => navigate('/settings/functions/new')}><Icon name="plus" size={15} />New function</button>
         </div>
         {tags.length > 0 && (
           <div className="filters">
@@ -47,7 +48,7 @@ export function FunctionsList() {
             <thead><tr><th>Name</th><th>Steps</th><th>Outputs</th><th>Version</th><th>Used in</th><th>Updated</th></tr></thead>
             <tbody>
               {shown.map((f) => (
-                <tr key={f.id} onClick={() => navigate(`/functions/${f.id}`)}>
+                <tr key={f.id} onClick={() => navigate(`/settings/functions/${f.id}`)}>
                   <td>
                     <div style={{ fontWeight: 500 }}>{f.name}</div>
                     {(f.description || f.tags.length > 0) && <div className="hint" style={{ margin: '2px 0 0' }}>{f.tags.map((t) => <span key={t} className="tag-pill">{t}</span>)}{f.description}</div>}
@@ -160,7 +161,7 @@ export function FunctionEditor({ id, catalog }: { id: number | null; catalog: Ca
         const r = await api<{ id: number }>('/api/gtm/functions', { body });
         setDirty(false);
         void qc.invalidateQueries({ queryKey: ['gtm-functions'] });
-        navigate(`/functions/${r.id}`, { replace: true });
+        navigate(`/settings/functions/${r.id}`, { replace: true });
         return;
       }
       const r = await api<{ version: number; bumped: boolean }>(`/api/gtm/functions/${id}`, { method: 'PATCH', body });
@@ -180,7 +181,7 @@ export function FunctionEditor({ id, catalog }: { id: number | null; catalog: Ca
     if (!id || !confirm(`Delete function "${draft!.name}"? Columns using it will stop running.`)) return;
     await api(`/api/gtm/functions/${id}`, { method: 'DELETE' });
     void qc.invalidateQueries({ queryKey: ['gtm-functions'] });
-    navigate('/functions');
+    navigate('/settings/functions');
   }
 
   const editingStep = editing?.index != null ? def.steps[editing.index] : null;
@@ -190,7 +191,7 @@ export function FunctionEditor({ id, catalog }: { id: number | null; catalog: Ca
       <div className="page-inner">
         <div className="page-head">
           <div className="grow">
-            <div className="crumbs" style={{ marginBottom: 4 }}><Link to="/functions">Functions</Link><Icon name="chevronRight" size={14} /></div>
+            <div className="crumbs" style={{ marginBottom: 4 }}><Link to="/settings">Settings</Link><Icon name="chevronRight" size={14} /><Link to="/settings/functions">Functions</Link><Icon name="chevronRight" size={14} /></div>
             <div className="row-flex" style={{ marginTop: 0 }}>
               <input className="title-input" style={{ fontSize: 20, minWidth: 260 }} value={draft.name} onChange={(e) => update({ name: e.target.value })} placeholder="Function name" />
               {detail.data && <span className="ver">v{detail.data.version}</span>}

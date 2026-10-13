@@ -4,13 +4,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
   ArrowRight, ArrowUp, AtSign, Globe, Building2, CheckCircle2, ChevronRight, Circle, FileText, Flame, Inbox, Mail, Radar, Rocket,
-  Table2, Users,
+  Table2, Users, Bookmark, MoreHorizontal, ListChecks, Ban,
 } from 'lucide-react';
 import { api, errorMessage } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import { avatarColor, fmtDate, fmtNumber, fmtPct, fmtRelative, initials } from '../lib/format.ts';
 import { Page } from '../components/Layout.tsx';
-import { Alert, Button, Card, EmptyState, Loading, ProgressBar, Select, cx } from '../components/ui.tsx';
+import { Alert, Button, Card, EmptyState, IconButton, Loading, Menu, ProgressBar, Select, cx } from '../components/ui.tsx';
 import { CampaignStatus, ReplyCategory } from '../components/status.tsx';
 import { useGtmTables } from '../gtm/lib/queries.ts';
 
@@ -284,9 +284,11 @@ function FindBox() {
   const config = useQuery({ queryKey: ['agent-config'], queryFn: () => api.get('/api/agent/config').then((r) => r.data as { aiReady: boolean }), staleTime: 5 * 60_000 });
   const noAi = config.data && !config.data.aiReady;
 
-  async function start() {
-    const message = q.trim();
-    if (!message || busy) return;
+  async function start(save = false) {
+    const text = q.trim();
+    if (!text || busy) return;
+    // "Save as a saved search": the agent turns the request into a scheduled watcher (saved-searches skill).
+    const message = save ? `Set this up as a saved search that runs daily and adds only new results to one table (use the saved-searches-and-watchers skill; ask me if the schedule or table should differ): ${text}` : text;
     setBusy(true);
     setErr('');
     try {
@@ -302,7 +304,16 @@ function FindBox() {
   return (
     <div id="find" className="scroll-mt-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_12px_40px_rgba(16,16,20,.08)] focus-within:border-slate-300">
-        <div className="mb-2 text-[15px] font-semibold text-slate-900">Find new prospects</div>
+        <div className="mb-2 flex items-center gap-2">
+          <span className="flex-1 text-[15px] font-semibold text-slate-900">Find new prospects</span>
+          <Menu trigger={(open) => <IconButton label="Saved searches" onClick={open} className="size-7"><MoreHorizontal className="size-4" /></IconButton>} items={[
+            { label: 'Save this search', icon: <Bookmark className="size-4" />, disabled: !q.trim() || busy, onClick: () => void start(true) },
+            { label: 'New saved search…', icon: <Bookmark className="size-4" />, onClick: () => navigate('/settings/searches?new=1') },
+            'divider',
+            { label: 'Saved searches', icon: <ListChecks className="size-4" />, onClick: () => navigate('/settings/searches') },
+            { label: 'Exclusions', icon: <Ban className="size-4" />, onClick: () => navigate('/settings/searches?tab=exclusions') },
+          ]} />
+        </div>
         <textarea
           ref={ref}
           rows={2}
@@ -317,7 +328,7 @@ function FindBox() {
             {noAi ? <>The agent needs an AI key. Add OpenRouter (or a local model URL) on <Link to="/integrations" className="font-medium text-slate-600 underline hover:text-slate-900">Integrations</Link>.</>
               : 'The agent finds them, builds the table and enriches it. Enter to send, Shift+Enter for a new line.'}
           </span>
-          <button onClick={start} disabled={busy || !q.trim()} className="inline-flex size-8 items-center justify-center rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 disabled:opacity-40" aria-label="Find" title="Find (Enter)">
+          <button onClick={() => void start()} disabled={busy || !q.trim()} className="inline-flex size-8 items-center justify-center rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 disabled:opacity-40" aria-label="Find" title="Find (Enter)">
             <ArrowUp className="size-4" />
           </button>
         </div>

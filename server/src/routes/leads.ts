@@ -4,7 +4,7 @@ import { parse as parseCsv } from 'csv-parse/sync';
 import type { Ctx } from '../context.ts';
 import type { Row } from '../db/db.ts';
 import { auth, badRequest, canWrite, defineRoutes, idList, idParam, notFound, pageQuery, paginate, parse, bool } from '../http.ts';
-import { unsubscribeLead } from '../engine/inbox.ts';
+import { suppress, unsubscribeLead } from '../engine/inbox.ts';
 import { cancelScheduled } from '../engine/sequencer.ts';
 import { domainOf } from '../lib/dns.ts';
 import { tagsFor } from './tags.ts';
@@ -53,13 +53,18 @@ export function leadJson(ctx: Ctx, l: Row) {
     lead_list: l.lead_list_id ? ctx.db.get('SELECT id, name FROM lead_lists WHERE id = ?', [l.lead_list_id]) ?? null : null,
     overall_stats: stats,
     email_stats: leadEmailStats(ctx, l.id),
+    source_detail: safeJson(l.source_detail),
+    suppressed: ctx.db.get('SELECT reason, source, created_at FROM blacklisted_emails WHERE workspace_id = ? AND email = ?', [l.workspace_id, l.email]) ?? null,
   };
 }
 
 export type ExistingBehavior = 'put' | 'patch' | 'skip';
 
 /** Creates or updates leads by email. Returns created/updated ids. */
-export function upsertLeads(ctx: Ctx, workspaceId: number, rows: LeadInput[], behavior: ExistingBehavior, listId: number | null) {
+/** Where a lead's email came from, kept on the lead (shown in the lead drawer). */
+export interface LeadSource { label: string; detail?: Record<string, unknown> }
+
+export function upsertLeads(ctx: Ctx, workspaceId: number, rows: LeadInput[], behavior: ExistingBehavior, listId: number | null, source?: LeadSource) {
   const { db } = ctx;
   const result = { created: 0, updated: 0, skipped: 0, lead_ids: [] as number[] };
   const now = ctx.now().toISOString();
@@ -77,6 +82,7 @@ export function upsertLeads(ctx: Ctx, workspaceId: number, rows: LeadInput[], be
           workspace_id: workspaceId, email: row.email, first_name: row.first_name ?? '', last_name: row.last_name ?? '',
           title: row.title ?? '', company: row.company ?? '', notes: row.notes ?? '', custom_variables: JSON.stringify(vars),
           lead_list_id: listId, created_at: now, updated_at: now,
+          source: source?.label ?? '', source_detail: JSON.stringify({ ...(source?.detail ?? {}), recorded_at: now }),
         });
         result.created++;
         result.lead_ids.push(id);
@@ -92,6 +98,8 @@ export function upsertLeads(ctx: Ctx, workspaceId: number, rows: LeadInput[], be
       const merged = behavior === 'put' ? vars : { ...JSON.parse(existing.custom_variables || '{}'), ...Object.fromEntries(Object.entries(vars).filter(([, v]) => v !== '')) };
       update.custom_variables = JSON.stringify(merged);
       if (listId) update.lead_list_id = listId;
+      // Keep the original source; fill it in for leads that never had one.
+      if (source && !existing.source) { update.source = source.label; update.source_detail = JSON.stringify({ ...(source.detail ?? {}), recorded_at: now }); }
       db.update('leads', existing.id, update);
       result.updated++;
     }
@@ -150,7 +158,7 @@ export function leadRoutes(app: FastifyInstance, ctx: Ctx) {
     if (db.get('SELECT 1 FROM leads WHERE workspace_id = ? AND email = ?', [a.workspaceId, b.email])) {
       throw Object.assign(badRequest('A lead with this email already exists.'), { status: 422, body: { error: 'validation_error', message: 'A lead with this email already exists.', fields: { email: ['has already been taken'] } } });
     }
-    const res = upsertLeads(ctx, a.workspaceId, [b], 'skip', b.lead_list_id ?? null);
+    const res = upsertLeads(ctx, a.workspaceId, [b], 'skip', b.lead_list_id ?? null, { label: a.via === 'session' ? 'Added by hand' : 'API', detail: { via: a.via } });
     return { data: leadJson(ctx, getLead(a.workspaceId, res.lead_ids[0]!)) };
   }, { body: leadInput });
 
@@ -166,7 +174,7 @@ export function leadRoutes(app: FastifyInstance, ctx: Ctx) {
       else invalid.push({ index: i, email: String((l as any)?.email ?? ''), reason: p.error.issues[0]?.message ?? 'invalid' });
     });
     if (b.lead_list_id && !db.get('SELECT 1 FROM lead_lists WHERE id = ? AND workspace_id = ?', [b.lead_list_id, a.workspaceId])) throw notFound('lead list');
-    const res = upsertLeads(ctx, a.workspaceId, valid, b.existing_lead_behavior, b.lead_list_id ?? null);
+    const res = upsertLeads(ctx, a.workspaceId, valid, b.existing_lead_behavior, b.lead_list_id ?? null, { label: a.via === 'session' ? 'Bulk import' : 'API import', detail: { via: a.via } });
     return { data: { ...res, invalid } };
   };
   r.post('/api/leads/multiple', 'Bulk create leads', bulk, { body: multiBody });
@@ -189,7 +197,7 @@ export function leadRoutes(app: FastifyInstance, ctx: Ctx) {
     if (!listId && b.new_list_name) listId = db.insert('lead_lists', { workspace_id: a.workspaceId, name: b.new_list_name });
     let parsed;
     try { parsed = csvToLeads(b.csv, b.mapping, b.include_unmapped); } catch (e: any) { throw badRequest(`Could not read CSV: ${e.message}`); }
-    const res = upsertLeads(ctx, a.workspaceId, parsed.rows, b.existing_lead_behavior, listId);
+    const res = upsertLeads(ctx, a.workspaceId, parsed.rows, b.existing_lead_behavior, listId, { label: 'CSV import', detail: { via: a.via } });
     let attached = 0;
     if (b.campaign_id) attached = attachLeads(ctx, a.workspaceId, b.campaign_id, res.lead_ids, false);
     return { data: { ...res, invalid: parsed.invalid, lead_list_id: listId, attached_to_campaign: attached } };
@@ -275,7 +283,7 @@ export function leadRoutes(app: FastifyInstance, ctx: Ctx) {
   r.post('/api/leads/:id/blacklist', 'Add lead to blacklist', (req) => {
     const a = canWrite(req);
     const lead = getLead(a.workspaceId, idParam(req));
-    db.run('INSERT OR IGNORE INTO blacklisted_emails (workspace_id, email) VALUES (?, ?)', [a.workspaceId, lead.email]);
+    suppress(ctx, a.workspaceId, lead.email, 'blacklisted', 'lead page');
     db.run(`UPDATE campaign_leads SET status = 'stopped', next_due_at = NULL WHERE lead_id = ? AND status IN ('pending','in_sequence')`, [lead.id]);
     cancelScheduled(ctx, { leadId: lead.id }, 'blacklisted');
     return { data: { success: true } };
@@ -352,3 +360,7 @@ export function attachLeads(ctx: Ctx, workspaceId: number, campaignId: number, l
   return added;
 }
 
+
+function safeJson(s: unknown): Record<string, unknown> {
+  try { return JSON.parse(String(s || '{}')); } catch { return {}; }
+}

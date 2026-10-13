@@ -4,7 +4,7 @@
  * attached to campaigns; campaign activity flows back as a per-row status.
  */
 import type { Ctx } from '../context.ts';
-import { attachLeads, upsertLeads, type ExistingBehavior } from '../routes/leads.ts';
+import { attachLeads, upsertLeads, type ExistingBehavior, type LeadSource } from '../routes/leads.ts';
 import { domainOf } from '../lib/dns.ts';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -43,7 +43,7 @@ export class OutreachBridge {
   }
 
   /** Create or update the lead, then optionally attach it to a campaign and/or list. */
-  pushLead(workspaceId: number, f: LeadFields, opts: { campaignId?: number | null; listId?: number | null; behavior?: ExistingBehavior; allowParallel?: boolean } = {}): PushResult {
+  pushLead(workspaceId: number, f: LeadFields, opts: { campaignId?: number | null; listId?: number | null; behavior?: ExistingBehavior; allowParallel?: boolean; source?: LeadSource } = {}): PushResult {
     const { db } = this.ctx;
     const email = f.email.trim().toLowerCase();
     if (!EMAIL_RE.test(email)) throw new Error(`Not a valid email: "${f.email}"`);
@@ -53,7 +53,7 @@ export class OutreachBridge {
       email, first_name: clip(f.first_name, 200), last_name: clip(f.last_name, 200), title: clip(f.title, 300), company: clip(f.company, 300),
       notes: f.notes ? clip(f.notes, 5000) : undefined,
       custom_variables: f.variables ? Object.fromEntries(Object.entries(f.variables).map(([k, v]) => [k, clip(v, 5000) ?? ''])) : undefined,
-    }], opts.behavior ?? 'patch', opts.listId ?? null);
+    }], opts.behavior ?? 'patch', opts.listId ?? null, opts.source);
     const leadId = r.lead_ids[0];
     const out: PushResult = { leadId, created: !existed };
     if (opts.campaignId) {
