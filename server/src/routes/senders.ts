@@ -13,6 +13,8 @@ import { getOAuthApp } from '../settings.ts';
 import { newMessageId } from '../engine/compose.ts';
 import { warmupStats } from '../engine/warmup.ts';
 import { syncSender } from '../engine/inbox.ts';
+import { pauseSender } from '../engine/sequencer.ts';
+import { refreshSenderHealth } from '../engine/health.ts';
 import { notWarmupMailbox, tagsFor } from './tags.ts';
 
 const SECRET_COLUMNS = ['secret_enc', 'oauth_access_token_enc'];
@@ -43,6 +45,7 @@ export function senderJson(ctx: Ctx, s: Row) {
     sent_last_24h: sentToday,
     ...stats,
     ...replies,
+    health_reasons: JSON.parse(s.health_reasons || '[]'),
     tags: tagsFor(ctx, 'sender_email', s.id),
   };
 }
@@ -226,11 +229,19 @@ export function senderRoutes(app: FastifyInstance, ctx: Ctx) {
     r.patch(`/api/sender-emails/:id/${action}`, `${action === 'pause' ? 'Pause' : 'Resume'} email account`, (req) => {
       const a = canWrite(req);
       const s = getSender(a.workspaceId, idParam(req));
-      db.update('sender_emails', s.id, { status, updated_at: ctx.now().toISOString() });
-      if (status === 'Paused') db.run(`UPDATE scheduled_emails SET status = 'cancelled', error = 'sender paused' WHERE sender_email_id = ? AND status = 'scheduled'`, [s.id]);
+      // A manual resume clears the automatic pause reason; bounces and listings before it no longer count.
+      if (status === 'Paused') pauseSender(ctx, s);
+      else db.update('sender_emails', s.id, { status, paused_reason: null, resumed_at: ctx.now().toISOString(), updated_at: ctx.now().toISOString() });
       return { data: senderJson(ctx, getSender(a.workspaceId, s.id)) };
     });
   }
+
+  r.post('/api/sender-emails/:id/check-health', 'Recheck mailbox health (bounces, warmup, blocklists, DNS) now', async (req) => {
+    const a = canWrite(req);
+    const s = getSender(a.workspaceId, idParam(req));
+    await refreshSenderHealth(ctx, s);
+    return { data: senderJson(ctx, getSender(a.workspaceId, s.id)) };
+  });
 
   r.delete('/api/sender-emails/:id', 'Delete email account', (req) => {
     const a = canWrite(req);

@@ -369,12 +369,19 @@ export function markDisconnected(ctx: Ctx, sender: Row, error: string) {
   emit(ctx, sender.workspace_id, 'EMAIL_ACCOUNT_DISCONNECTED', { sender_email_id: sender.id, email: sender.email, error }, { sender_email_id: sender.id });
 }
 
+/** Pauses a mailbox and cancels its booked slots. `reason` is set when Kinetic paused it on its own (engine/health.ts). */
+export function pauseSender(ctx: Ctx, sender: Row, reason: string | null = null) {
+  ctx.db.update('sender_emails', sender.id, { status: 'Paused', paused_reason: reason, updated_at: ctx.now().toISOString() });
+  cancelScheduled(ctx, { senderId: sender.id }, 'sender paused');
+}
+
 /** Cancels booked slots, e.g. when a campaign is paused or a lead replies. */
-export function cancelScheduled(ctx: Ctx, where: { campaignId?: number; leadId?: number; campaignLeadId?: number }, reason: string) {
+export function cancelScheduled(ctx: Ctx, where: { campaignId?: number; leadId?: number; campaignLeadId?: number; senderId?: number }, reason: string) {
   const clauses: string[] = [`status = 'scheduled'`];
   const params: (number | string)[] = [];
   if (where.campaignId) { clauses.push('campaign_id = ?'); params.push(where.campaignId); }
   if (where.leadId) { clauses.push('lead_id = ?'); params.push(where.leadId); }
   if (where.campaignLeadId) { clauses.push('campaign_lead_id = ?'); params.push(where.campaignLeadId); }
+  if (where.senderId) { clauses.push('sender_email_id = ?'); params.push(where.senderId); }
   ctx.db.run(`UPDATE scheduled_emails SET status = 'cancelled', error = ? WHERE ${clauses.join(' AND ')}`, [reason, ...params]);
 }

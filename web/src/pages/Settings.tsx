@@ -273,6 +273,7 @@ function InboxSettings() {
         <div className="max-w-2xl space-y-5">
           <Toggle checked={s.data.sync_all_emails} onChange={(v) => save({ sync_all_emails: v })} label="Show all incoming email" description="Off: only replies to your campaigns appear. On: every message your mailboxes receive appears (warmup traffic is always hidden)." />
           <Toggle checked={s.data.auto_interested_categorization} onChange={(v) => save({ auto_interested_categorization: v })} label="Detect interested replies automatically" description="Replies like “sounds good, let's talk” are labelled Interested and stop the sequence for that lead." />
+          <Toggle checked={s.data.auto_pause_senders} onChange={(v) => save({ auto_pause_senders: v })} label="Pause mailboxes that are in trouble" description="If too many emails bounce or the domain shows up on a spam blocklist, the mailbox stops sending and you get an alert. Resume it when it’s fixed." />
           <Toggle checked={s.data.smart_warmup_filter} onChange={(v) => save({ smart_warmup_filter: v })} label="Hide warmup emails" description="Warmup conversations are filed into the “Kinetic Warmup” folder and never shown here." />
         </div>
       </Card>

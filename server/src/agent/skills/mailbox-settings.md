@@ -22,6 +22,9 @@ Microsoft 365 admin to approve the app for the whole organisation.
 - Is it working? `POST /api/sender-emails/{id}/test-connection` → SMTP and IMAP results with the server's error text.
   A "Login failed" usually means the password changed or the Microsoft/Google sign-in expired → the user reconnects it.
 - Pull new mail now: `POST /api/sender-emails/{id}/sync-now`.
+- Health: every mailbox has `health_score` (0-100, refreshed hourly) and `health_reasons` (plain-English problems: bounce rate,
+  warmup inbox rate, placement tests, Spamhaus/SURBL/URIBL listings of the domain, pinned IP listings, SPF/DKIM/DMARC).
+  Recheck now: `POST /api/sender-emails/{id}/check-health`.
 - Test send: `POST /api/sender-emails/{id}/send-test` `{ "to_email": "…" }` (approval; ask which address).
 
 ## Change
@@ -30,6 +33,10 @@ Microsoft 365 admin to approve the app for the whole organisation.
   Keep new mailboxes at 20–30 cold emails a day; raise slowly and only when warmup health is good.
 - Bulk signatures: `PATCH /api/sender-emails/signatures/bulk` `{ "sender_email_ids": [..], "email_signature": "<p>{SENDER_NAME}</p>" }`.
 - Pause a mailbox: `PATCH /api/sender-emails/{id}/pause`; resume it: `PATCH /api/sender-emails/{id}/resume`.
+  Kinetic also pauses a mailbox on its own when bounces spike (≥ 5% over 7 days with 20+ sends, or 3+ bounces and ≥ 10%
+  in 24h) or its domain is on a blocklist: `paused_reason` says why and a `SENDER_AUTO_PAUSED` event fires. Fix the cause
+  (clean the list, check DNS) before resuming; a resume ignores the bounces and listing that caused the pause. Workspace
+  switch: `auto_pause_senders` on `PATCH /api/workspaces/v1.1/master-inbox-settings`.
 - Move mailboxes to another workspace: `POST /api/sender-emails/move-to-another-workspace-bulk` (approval).
 
 ## Sending IP routes (proxies)

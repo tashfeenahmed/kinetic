@@ -17,6 +17,11 @@ export interface Sender {
   daily_limit: number;
   status: 'Connected' | 'Disconnected' | 'Paused';
   last_error: string | null;
+  /** 0-100 from bounces, warmup, placement tests, blocklists and DNS; null until first checked. */
+  health_score: number | null;
+  health_reasons: string[];
+  /** Set when Kinetic paused the mailbox itself (bounce spike or blocklist). */
+  paused_reason: string | null;
   last_synced_at: string | null;
   egress_route_id: number | null;
   egress_route: { id: number; name: string } | null;

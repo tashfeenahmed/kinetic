@@ -356,6 +356,7 @@ function sampleData(type: EventType): Record<string, unknown> {
     case 'MANUAL_EMAIL_SENT': return { sent_email_id: 556, ...sender, to: ['jane@acme.com'], subject: 'Re: Quick question', lead_id: 42 };
     case 'EMAIL_ACCOUNT_ADDED': case 'EMAIL_ACCOUNT_RECONNECTED': return { ...sender, email: sender.sender_email };
     case 'EMAIL_ACCOUNT_DISCONNECTED': return { ...sender, email: sender.sender_email, error: 'Invalid credentials' };
+    case 'SENDER_AUTO_PAUSED': return { ...sender, reason: '6% of emails bounced in the last 7 days (3 of 50)' };
     case 'TAG_ATTACHED': case 'TAG_REMOVED': return { tag_id: 1, tag_name: 'Interested', taggable_id: 20, taggable_type: 'Campaign' };
     case 'CAMPAIGN_COMPLETED': return { campaign_id: 3, campaign_name: 'Q4 outreach' };
     case 'SIGNAL_CHANGED': return { table: { id: 4, name: 'Target accounts' }, row: { id: 18, label: 'Acme' }, column: { id: 31, name: 'Hiring (open roles)', kind: 'hiring' }, from: 12, to: 19 };

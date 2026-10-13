@@ -15,6 +15,7 @@ import { cancelScheduled, isAuthError, markDisconnected } from './sequencer.ts';
 import { afterReplyStored } from './replyAi.ts';
 import { ensureThread } from './threads.ts';
 import { handleWarmupMessage, isWarmupMessage } from './warmup.ts';
+import { checkBounces } from './health.ts';
 
 export type FolderKind = 'inbox' | 'spam';
 const FIRST_SYNC_DAYS = 14;
@@ -154,6 +155,7 @@ export async function processInbound(ctx: Ctx, sender: Row, msg: InboundMessage,
 
   if (msg.bounce) {
     handleBounce(ctx, sender, msg);
+    if (msg.bounce.permanent) checkBounces(ctx, sender.id);
     return 'bounce';
   }
 
