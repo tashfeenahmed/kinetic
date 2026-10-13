@@ -10,6 +10,8 @@ Spreadsheet-style tables with waterfall enrichment, AI research and buying signa
 wired straight into cold email: campaigns, warmup, a master inbox and an AI agent that runs it all.
 
 <p>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-3b5bfd?style=flat-square" /></a>
+  <a href="CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-14b8a6?style=flat-square" /></a>
   <img alt="Self-hosted" src="https://img.shields.io/badge/self--hosted-yes-14b8a6?style=flat-square" />
   <img alt="Node 24+" src="https://img.shields.io/badge/node-24%2B-3b5bfd?style=flat-square&logo=node.js&logoColor=white" />
   <img alt="SQLite" src="https://img.shields.io/badge/database-SQLite-0f172a?style=flat-square&logo=sqlite&logoColor=white" />
@@ -25,7 +27,8 @@ wired straight into cold email: campaigns, warmup, a master inbox and an AI agen
 [Deliverability](#-mailboxes-warmup-and-deliverability) ·
 [Integrations](#-integrations) ·
 [API](#-api-webhooks-and-automation) ·
-[Deploy](#-running-it-for-real)
+[Deploy](#-running-it-for-real) ·
+[Contributing](#-contributing)
 
 <br/>
 
@@ -228,6 +231,16 @@ Configuration lives in `.env` (see [`.env.example`](.env.example)); every provid
 
 - [`docs/RESEARCH.md`](docs/RESEARCH.md) — provider pricing and what each one is good for
 - [`docs/FREE_ALTERNATIVES.md`](docs/FREE_ALTERNATIVES.md) — free and open sources for every paid data feed
+
+<br/>
+
+## 🤝 Contributing
+
+Kinetic is open source and contributions are welcome: bug reports, docs, new lead sources, enrichment providers, signals, agent skills and UI polish. Read [CONTRIBUTING.md](CONTRIBUTING.md) to get set up, then open an issue or a pull request.
+
+## 📄 License
+
+[MIT](LICENSE) — use it, change it, ship it.
 
 <div align="center">
 <br/>
