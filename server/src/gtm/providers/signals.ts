@@ -14,6 +14,7 @@ import { mxProvider } from './free.ts';
 import { apolloPerson, pdlPerson } from './vendors.ts';
 import type { Ctx, Hit } from './types.ts';
 import { websiteVisits } from '../../visitors/signal.ts';
+import { websiteAudit } from './websiteAudit.ts';
 
 export interface SignalInput {
   domain?: string;
@@ -199,7 +200,7 @@ async function secFormD(input: SignalInput, ctx: Ctx): Promise<Hit | null> {
 }
 
 // ---------- Technographics: HTML/header/DNS fingerprints ----------
-const FINGERPRINTS: [string, string, RegExp][] = [
+export const FINGERPRINTS: [string, string, RegExp][] = [
   // [name, category, pattern over html+headers]
   ['Google Analytics', 'analytics', /googletagmanager\.com\/gtag|google-analytics\.com\/(analytics|ga)\.js/i],
   ['Google Tag Manager', 'analytics', /googletagmanager\.com\/gtm\.js/i],
@@ -226,6 +227,7 @@ const FINGERPRINTS: [string, string, RegExp][] = [
   ['LinkedIn Insight', 'ads', /snap\.licdn\.com/i],
   ['Meta Pixel', 'ads', /connect\.facebook\.net\/.*fbevents/i],
   ['Google Ads', 'ads', /googleadservices\.com|gtag\('config', 'AW-/i],
+  ['TikTok Pixel', 'ads', /analytics\.tiktok\.com/i],
   ['Stripe', 'payments', /js\.stripe\.com/i],
   ['Paddle', 'payments', /cdn\.paddle\.com/i],
   ['Chargebee', 'payments', /js\.chargebee\.com/i],
@@ -255,6 +257,22 @@ const FINGERPRINTS: [string, string, RegExp][] = [
   ['Datadog RUM', 'monitoring', /datadoghq-browser-agent|dd_rum/i],
   ['Calendly', 'scheduling', /assets\.calendly\.com/i],
   ['Chili Piper', 'scheduling', /chilipiper/i],
+  // Online booking for local businesses (salons, clinics, restaurants, studios).
+  ['Acuity Scheduling', 'booking', /acuityscheduling\.com|\.as\.me\//i],
+  ['SimplyBook.me', 'booking', /simplybook\.(me|it|asia|net)/i],
+  ['Setmore', 'booking', /setmore\.com/i],
+  ['Booksy', 'booking', /booksy\.com/i],
+  ['Fresha', 'booking', /fresha\.com|shedul\.com/i],
+  ['Square Appointments', 'booking', /squareup\.com\/appointments|square\.site\/book/i],
+  ['Mindbody', 'booking', /mindbodyonline\.com|healcode\.com/i],
+  ['OpenTable', 'booking', /opentable\.(com|co\.uk|ie|de|ca|com\.au)/i],
+  ['ResDiary', 'booking', /resdiary\.com/i],
+  ['Treatwell', 'booking', /treatwell\.(co\.uk|ie|com|de|fr|nl|es|it)/i],
+  ['Vagaro', 'booking', /vagaro\.com/i],
+  ['Timely', 'booking', /gettimely\.com/i],
+  ['Cal.com', 'booking', /(?<![\w.-])(?:app\.|embed\.)?cal\.com\//i],
+  ['Zoho Bookings', 'booking', /zohobookings\.|bookings\.zoho\./i],
+  ['Google appointment booking', 'booking', /calendar\.app\.google|calendar\.google\.com\/calendar\/(?:u\/\d\/)?appointments/i],
   ['Gong', 'sales', /gong\.io/i],
   ['Greenhouse', 'ats', /greenhouse\.io/i],
   ['Lever', 'ats', /lever\.co/i],
@@ -558,6 +576,7 @@ export const SIGNAL_KINDS: SignalKind[] = [
   { id: 'gov_contracts', label: 'US government contracts', description: 'Federal contract awards from USAspending.gov. Value = latest award id; total $ in data.', inputs: ['companyName', 'days'], requires: [], run: govContracts },
   { id: 'uk_filings', label: 'UK Companies House filings', description: 'Filing history (accounts, officer changes, charges) for a UK company. Target = company number (optional).', inputs: ['companyName', 'target'], requires: ['COMPANIES_HOUSE_API_KEY'], run: ukFilings },
   { id: 'tech_stack', label: 'Tech stack', description: 'Detects 3,000+ technologies with the open-source Wappalyzer fingerprints (website HTML, scripts, headers, cookies, DNS). Value = list of tools.', inputs: ['domain'], requires: [], run: techStack },
+  { id: 'website_audit', label: 'Website audit', description: 'Free homepage + robots.txt check for local/SMB leads: who built the site ("website by" credit), online booking or not, ad pixels running (Meta, Google Ads, TikTok, LinkedIn), stale copyright year, no HTTPS / mobile viewport / meta description / LocalBusiness schema, AI crawlers blocked, slow response. Value = short plain-English summary; changes (started ads, new agency, added booking) are flagged.', inputs: ['domain', 'target'], requires: [], run: (i, c) => websiteAudit(i, c, FINGERPRINTS) },
   { id: 'website_change', label: 'Website / page change', description: 'Watches a page (pricing, careers, homepage). Value = content hash; changes trigger dependants.', inputs: ['target', 'domain'], requires: [], run: websiteChange },
   { id: 'github', label: 'GitHub activity', description: 'Public repos for an org. Value = last push time.', inputs: ['target', 'domain'], requires: [], run: github },
   { id: 'new_subdomains', label: 'New subdomains (certificates)', description: 'New hostnames from TLS certificate logs (Cert Spotter, crt.sh fallback) — often precedes launches. Free tier ≈10 lookups/hour, so use on a short list or add a Cert Spotter key. Value = list of new hostnames.', inputs: ['domain', 'days'], requires: [], run: newSubdomains },

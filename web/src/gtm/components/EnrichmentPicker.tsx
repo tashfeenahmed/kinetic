@@ -11,7 +11,7 @@ interface Item extends Pick { cat: string; title: string; desc: string; free?: b
 const CATS = ['All', 'AI', 'Outreach', 'People', 'Company', 'Email', 'Signals', 'Tables', 'Functions', 'Actions', 'Utilities'];
 const ENRICH_CAT: Record<string, string> = {
   work_email: 'Email', verify_email: 'Email', mobile_phone: 'People', linkedin_url: 'People', person_profile: 'People',
-  company_profile: 'Company', company_domain: 'Company', company_linkedin: 'Company',
+  company_profile: 'Company', company_domain: 'Company', company_linkedin: 'Company', fit_score: 'AI',
 };
 const ACTION_ICON: Record<string, string> = { outreach_campaign: 'send', outreach_update_lead: 'user', slack: 'send', webhook: 'link', hubspot_contact: 'user', hubspot_company: 'building', salesforce: 'layers' };
 
@@ -26,7 +26,7 @@ export function EnrichmentPicker({ catalog, onPick, onClose }: { catalog: Catalo
     ...catalog.enrich.map((k) => ({
       cat: ENRICH_CAT[k.id] ?? 'Company', type: 'enrich' as const, kind: k.id, name: k.label.replace(/^Find |^Enrich /, '').replace(/^./, (c) => c.toUpperCase()),
       title: k.label, desc: `${k.description} ${k.steps.length} provider${k.steps.length === 1 ? '' : 's'}: ${k.steps.map((s) => s.label.replace(/ \(.*\)/, '')).join(', ')}.`,
-      icon: ENRICH_CAT[k.id] === 'Email' ? 'mail' : ENRICH_CAT[k.id] === 'People' ? 'user' : 'building',
+      icon: ENRICH_CAT[k.id] === 'AI' ? 'brain' : ENRICH_CAT[k.id] === 'Email' ? 'mail' : ENRICH_CAT[k.id] === 'People' ? 'user' : 'building',
       free: k.steps.some((s) => s.requires.length === 0),
       // Usable once any provider in the waterfall is connected.
       missing: k.steps.some((s) => s.ready) ? [] : [...new Set(k.steps.slice(0, 2).map((s) => s.label.replace(/ \(.*\)/, '')))],

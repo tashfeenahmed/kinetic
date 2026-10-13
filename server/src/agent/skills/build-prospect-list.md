@@ -58,8 +58,14 @@ The waterfall order (free finder first, then paid providers whose keys are set, 
 ```
 `useKnowledge: true` appends the Knowledge Hub so the AI judges fit and writes on-brand lines.
 
+## 4b. Fit score (always add it to prospect lists)
+```json
+{ "name": "Fit score", "type": "enrich", "auto_run": true, "config": { "kind": "fit_score", "inputs": { "companyName": "{{Company}}", "domain": "{{Company domain}}", "title": "{{Title}}", "context": "{{Research.summary}}" } } }
+```
+Scores each row 0–100 against the Knowledge Hub ICP and personas (tier strong/possible/poor + one-sentence reason, one cheap AI call). `context` makes it wait for Research. If the cells say "Add your ideal customer profile in the Knowledge Hub", offer to draft that doc (`knowledge-hub`) and re-run. Use it to filter what goes to a campaign (`campaign-from-table`).
+
 ## 5. Run it
-`POST /api/gtm/tables/{id}/run` with `{ "columnIds": [<CEO col>, <Work email col>, <Email status col>, <Research col>] }` → `{ "queued": n }`.
+`POST /api/gtm/tables/{id}/run` with `{ "columnIds": [<CEO col>, <Work email col>, <Email status col>, <Research col>, <Fit score col>] }` → `{ "queued": n }`.
 - Dependants (email after name, verify after email) re-run automatically when their inputs fill in; `auto_run` columns also run on new rows.
 - Paid providers on >100 rows pause for the user's approval automatically — mention the cost first.
 - Runs continue in the background. Check progress with `GET /api/gtm/tables/{id}` (`queue.pending` / `queue.running`; row cells are keyed by column id).

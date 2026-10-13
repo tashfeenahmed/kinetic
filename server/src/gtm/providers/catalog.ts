@@ -8,6 +8,7 @@ import { freeEmailFinder } from './freeEmail.ts';
 import * as open from './openData.ts';
 import { smtpVerifyStep } from './freeVerify.ts';
 import * as v from './vendors.ts';
+import { fitScore } from './fit.ts';
 import { lookalikeStep } from '../../sourcing/lookalikeStep.ts';
 import { aiReadContacts, apolloContacts, hunterContacts, pdlContacts, prospeoContacts } from './people.ts';
 import type { EnrichKind, ProviderStep } from './types.ts';
@@ -147,6 +148,16 @@ export const ENRICH_KINDS: EnrichKind[] = [
     inputs: ['domain'],
     needs: [['domain']],
     steps: [lookalikeStep],
+  },
+  {
+    id: 'fit_score',
+    label: 'Fit score',
+    description: 'Scores the row 0–100 against your ideal customer profile and buyer personas in the Knowledge Hub, with a fit tier (strong / possible / poor) and a one-sentence reason. Reads the row\'s other columns (industry, size, title, location, signals, AI research); Extra details adds more and waits for those columns. Use {{Fit score}}, {{Fit score.tier}}, {{Fit score.reason}}.',
+    inputs: ['companyName', 'domain', 'fullName', 'title', 'context'],
+    needs: [['companyName'], ['domain'], ['fullName'], ['title'], ['context']],
+    steps: [
+      step({ id: 'ai_icp', label: 'AI vs your ICP (Knowledge Hub)', requires: [], cost: 'free (AI tokens)', run: fitScore }),
+    ],
   },
 ];
 
