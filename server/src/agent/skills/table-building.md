@@ -39,7 +39,8 @@ Body `{ "name", "type", "config", "auto_run"?, "run_if"? }` → `{ id }`. Update
 
 ## Import / export / sources
 - CSV text: `POST /api/gtm/tables/{id}/import/csv` `{ "csv": "Company,Company domain\nAcme,acme.com" }` → `{ imported }`
-- Export: `GET /api/gtm/tables/{id}/export.csv` (CSV text).
+- Export: `GET /api/gtm/tables/{id}/export.csv` (CSV text, all rows). Only some rows, in a given order: `POST /api/gtm/tables/{id}/export.csv` `{ "ids": [rowId, ...] }`.
+- Flow: tables (research) → Leads (`campaign-from-table`: push rows to a lead list or straight into a campaign) → campaigns → Master Inbox.
 - Sources: `POST /api/gtm/tables/{id}/import/source` `{ "source": "yc_companies|github_people|jobs|apollo_people|apollo_companies|hubspot_contacts|hubspot_companies", "params": {...}, "limit": 100 }`
   - yc_companies: `query`, `batch` ("W24"), `region`, `hiring` ("yes"/"no"), `status`
   - github_people: `org` or `domain`. jobs: `domains` (comma list), `keywords`

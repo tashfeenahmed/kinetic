@@ -403,19 +403,37 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
     return { imported: ids.length, excluded: excl.excluded };
   });
 
-  r.get('/api/gtm/tables/:id/export.csv', 'Export a table as CSV', async (req, reply) => {
-    const a = auth(req);
-    const tableId = tableOf(req, a);
-    const table = store.table(tableId);
+  const exportCsv = (tableId: number, ids?: number[]) => {
     const cols = store.columns(tableId);
-    const rows = store.grid(tableId);
+    let rows = store.grid(tableId);
+    if (ids) {
+      // Keep the order the user sees (filters and sorting applied in the grid).
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      rows = ids.map((id) => byId.get(id)).filter((r): r is (typeof rows)[number] => !!r);
+    }
     const records = rows.map((r) => cols.map((c) => {
       const cell: any = r.cells[c.id];
       return cell ? stringify(unwrap(cell.value)) : '';
     }));
-    reply.header('content-type', 'text/csv; charset=utf-8');
-    reply.header('content-disposition', `attachment; filename="${table.name.replace(/[^\w.-]+/g, '_')}.csv"`);
     return toCsv([cols.map((c) => c.name), ...records]);
+  };
+  const csvName = (tableId: number) => `${store.table(tableId).name.replace(/[^\w.-]+/g, '_')}.csv`;
+
+  r.get('/api/gtm/tables/:id/export.csv', 'Export a table as CSV', async (req, reply) => {
+    const a = auth(req);
+    const tableId = tableOf(req, a);
+    reply.header('content-type', 'text/csv; charset=utf-8');
+    reply.header('content-disposition', `attachment; filename="${csvName(tableId)}"`);
+    return exportCsv(tableId);
+  });
+
+  r.post('/api/gtm/tables/:id/export.csv', 'Export chosen rows as CSV, in the order given (e.g. the rows left after filters, or the selected rows)', async (req, reply) => {
+    const a = auth(req);
+    const tableId = tableOf(req, a);
+    const body = z.object({ ids: z.array(z.number().int()).max(100_000) }).parse(req.body ?? {});
+    reply.header('content-type', 'text/csv; charset=utf-8');
+    reply.header('content-disposition', `attachment; filename="${csvName(tableId)}"`);
+    return exportCsv(tableId, body.ids);
   });
 
   /** Pull prospects from a source into the table. */

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { HotTable, type HotTableRef } from '@handsontable/react-wrapper';
 import { registerAllModules } from 'handsontable/registry';
 import type Handsontable from 'handsontable';
@@ -20,9 +20,29 @@ interface Props {
   onAddRows: (count: number) => void;
   onResize: (colId: number, width: number) => void;
   onSaveAsFunction?: (columnIds: number[]) => void;
+  /** Rows covered by the selection; `whole` when entire rows are selected (row headers). */
+  onSelectionChange?: (sel: { rowIds: number[]; whole: boolean }) => void;
+  /** Rows left after the column filters, as a count, whenever filters change. */
+  onFilterChange?: (visible: number) => void;
+  /** Lets the page read what the grid shows (for exports) and clear filters. */
+  apiRef?: React.MutableRefObject<GridApi | null>;
 }
 
-export function Grid(props: Props) {
+export interface GridApi {
+  /** Row ids in on-screen order, after filters and sorting. */
+  visibleRowIds: () => number[];
+  clearFilters: () => void;
+  deselect: () => void;
+}
+
+/**
+ * Re-renders only when rows or columns change. The wrapper pushes every setting (data
+ * included) back into Handsontable on each render, which drops active filters; callbacks
+ * are read through a ref, so unrelated page state (menus, toasts, dialogs) needn't reach it.
+ */
+export const Grid = memo(GridInner, (a, b) => a.rows === b.rows && a.columns === b.columns);
+
+function GridInner(props: Props) {
   const hot = useRef<HotTableRef>(null);
   // Renderers and hooks read the latest props through refs so Handsontable settings stay stable.
   const ref = useRef(props);
@@ -66,6 +86,9 @@ export function Grid(props: Props) {
     return { renderer, addRenderer };
   }, []);
 
+  // Active column filters, re-applied after new data loads (loading data clears them).
+  const savedFilters = useRef<unknown[]>([]);
+
   const selected = () => {
     const h = hot.current?.hotInstance;
     const { rows, columns } = ref.current;
@@ -82,8 +105,37 @@ export function Grid(props: Props) {
   };
 
   useEffect(() => {
-    // Keep the grid's column widths in sync with saved widths after column changes.
-    hot.current?.hotInstance?.render();
+    if (!props.apiRef) return;
+    props.apiRef.current = {
+      visibleRowIds: () => {
+        const h = hot.current?.hotInstance;
+        if (!h) return ref.current.rows.map((r) => r.id);
+        const out: number[] = [];
+        for (let v = 0; v < h.countRows(); v++) {
+          const r = ref.current.rows[h.toPhysicalRow(v)];
+          if (r) out.push(r.id);
+        }
+        return out;
+      },
+      clearFilters: () => {
+        const f = hot.current?.hotInstance?.getPlugin('filters');
+        f?.clearConditions();
+        f?.filter();
+      },
+      deselect: () => hot.current?.hotInstance?.deselectCell(),
+    };
+  });
+
+  useEffect(() => {
+    // Keep the grid's column widths in sync with saved widths after column changes, and
+    // re-apply any column filters to the new data (loading data resets the filtered view).
+    const h = hot.current?.hotInstance;
+    if (!h) return;
+    if (savedFilters.current.length) {
+      const filters = h.getPlugin('filters');
+      filters.importConditions(savedFilters.current as any);
+      filters.filter();
+    } else h.render();
   }, [props.rows]);
 
   return (
@@ -136,6 +188,16 @@ export function Grid(props: Props) {
         if (r && c) ref.current.onSelectCell(r.id, c.id, 'click');
       }}
       afterSelectionEnd={(row, col, row2, col2) => {
+        if (ref.current.onSelectionChange) {
+          const h = hot.current?.hotInstance;
+          const last = ref.current.columns.length - 1;
+          const ranges = h?.getSelected() ?? [];
+          const whole = ranges.length > 0 && ranges.every(([, c1, , c2]) => Math.min(c1, c2) <= 0 && Math.max(c1, c2) >= last);
+          // Clicking a column header selects the whole column: that's not picking rows.
+          const lastRow = (h?.countRows() ?? 0) - 1;
+          const column = !whole && ranges.length > 0 && ranges.every(([r1, , r2]) => Math.min(r1, r2) <= 0 && Math.max(r1, r2) >= lastRow);
+          ref.current.onSelectionChange(column ? { rowIds: [], whole: false } : { rowIds: selected().rowIds, whole });
+        }
         if (row < 0 || col < 0 || row !== row2 || col !== col2) return;
         const h = hot.current?.hotInstance;
         const r = ref.current.rows[h!.toPhysicalRow(row)];
@@ -154,6 +216,12 @@ export function Grid(props: Props) {
         }
         if (out.length) ref.current.onEdit(out);
       }}
+      afterFilter={(stack) => {
+        savedFilters.current = stack ?? [];
+        const h = hot.current?.hotInstance;
+        if (h) ref.current.onFilterChange?.(h.countRows());
+      }}
+      afterDeselect={() => ref.current.onSelectionChange?.({ rowIds: [], whole: false })}
       afterColumnResize={(width, col) => {
         const c = ref.current.columns[col];
         if (c) ref.current.onResize(c.id, Math.round(width));

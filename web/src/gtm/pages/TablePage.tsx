@@ -5,7 +5,9 @@ import { Grid } from '../components/Grid';
 import { ColumnEditor } from '../components/ColumnEditor';
 import { CellPanel } from '../components/CellPanel';
 import { EnrichmentPicker } from '../components/EnrichmentPicker';
-import { ImportDialog, ScheduleDialog, SendToCampaignDialog, SignalPackDialog } from '../components/Dialogs';
+import { ImportDialog, ScheduleDialog, SendRowsDialog, SignalPackDialog } from '../components/Dialogs';
+import { downloadRowsCsv } from '../lib/push';
+import type { GridApi } from '../components/Grid';
 import { Icon } from '../components/Icon';
 import { SaveAsFunctionDialog } from '../components/SaveAsFunctionDialog';
 import { useEventStream } from '../../lib/useEventStream';
@@ -23,7 +25,11 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
   const loc = useLocation();
   const navigate = useNavigate();
   const [fnColumns, setFnColumns] = useState<number[] | null>(null);
-  const [dialog, setDialog] = useState<'import' | 'schedule' | 'signals' | 'campaign' | null>(() => (loc.search.includes('signals=1') ? 'signals' : loc.search.includes('campaign=1') ? 'campaign' : null));
+  const [dialog, setDialog] = useState<'import' | 'schedule' | 'signals' | 'campaign' | 'leads' | null>(() => (loc.search.includes('signals=1') ? 'signals' : loc.search.includes('campaign=1') ? 'campaign' : null));
+  const [sel, setSel] = useState<{ rowIds: number[]; whole: boolean }>({ rowIds: [], whole: false });
+  const [visible, setVisible] = useState<number | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const grid = useRef<GridApi | null>(null);
   const [queue, setQueue] = useState({ pending: 0, running: 0 });
   const [toast, setToast] = useState('');
   const pending = useRef(new Map<string, { rowId: number; columnId: number; cell: CellView }>());
@@ -36,7 +42,7 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
     setQueue(v.queue);
   }, [tableId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); setSel({ rowIds: [], whole: false }); setVisible(null); }, [load]);
   useEffect(() => { if (loc.search) navigate(`/tables/${tableId}`, { replace: true }); }, [tableId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live updates (only while the tab is visible): cell events are batched into one state update per animation frame.
@@ -70,6 +76,35 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
   };
 
   if (!view) return <div className="loading">Loading…</div>;
+  const total = view.rows.length;
+  const filtered = visible != null && visible < total;
+  // A selection bar for several rows, or whole rows picked from the row numbers.
+  const picked = sel.rowIds.length > 1 || sel.whole ? sel.rowIds : [];
+  const plural = (n: number) => `${n.toLocaleString()} row${n === 1 ? '' : 's'}`;
+  const visibleIds = () => grid.current?.visibleRowIds() ?? view.rows.map((r) => r.id);
+  const exportRows = async (ids: number[] | null) => {
+    setExportOpen(false);
+    try {
+      if (!ids) { window.location.href = `/api/gtm/tables/${tableId}/export.csv`; return; }
+      await downloadRowsCsv(tableId, ids, view.table.name);
+    } catch (e: any) { flash(e.message); }
+  };
+  const deleteRows = async (ids: number[]) => {
+    if (!ids.length || !confirm(`Delete ${plural(ids.length)}? Leads already created from them are kept.`)) return;
+    await api(`/api/gtm/tables/${tableId}/rows`, { method: 'DELETE', body: { ids } });
+    grid.current?.deselect();
+    setSel({ rowIds: [], whole: false });
+    flash(`Deleted ${plural(ids.length)}`);
+  };
+  const addRow = async () => {
+    await api(`/api/gtm/tables/${tableId}/rows`, { body: { count: 1 } });
+    flash('Row added at the bottom — click a cell to type');
+  };
+  const scopes = [
+    { id: 'all', label: `All ${plural(total)}` },
+    ...(filtered ? [{ id: 'visible', label: `Rows shown by your filters (${plural(visible!)})`, rowIds: visibleIds() }] : []),
+    ...(picked.length ? [{ id: 'selected', label: `Selected rows (${plural(picked.length)})`, rowIds: picked }] : []),
+  ];
   const busy = queue.pending + queue.running;
   const runnable = view.columns.filter((c) => c.type !== 'text');
   const selColumn = panel?.kind === 'cell' ? view.columns.find((c) => c.id === panel.colId) : undefined;
@@ -88,20 +123,36 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
             <button className="ghost sm" onClick={() => api(`/api/gtm/tables/${tableId}/stop`, { body: {} })}><Icon name="stop" size={12} />Stop</button>
           </span>
         )}
-        <button onClick={() => setDialog('import')}><Icon name="upload" size={15} />Add rows</button>
-        <button onClick={() => setDialog('campaign')} disabled={!view.rows.length} title="Push rows into an outreach campaign"><Icon name="send" size={15} />Send to campaign</button>
+        <button onClick={() => setDialog('import')} title="Import a CSV, pull from a source or a webhook"><Icon name="upload" size={15} />Import</button>
+        <button onClick={addRow} title="Add a blank row"><Icon name="plus" size={15} />Row</button>
+        <button onClick={() => setDialog('leads')} disabled={!total} title="Turn rows into leads in a lead list, ready for a campaign"><Icon name="send" size={15} />Send to leads</button>
+        <button onClick={() => setDialog('campaign')} disabled={!total} title="Push rows straight into an outreach campaign"><Icon name="send" size={15} />Send to campaign</button>
         <button className="primary" onClick={() => setPanel({ kind: 'picker' })}><Icon name="plus" size={15} />Add enrichment</button>
       </div>
 
       <div className="subbar">
-        <span className="meta-pill"><Icon name="table" size={14} />{view.rows.length.toLocaleString()} rows · {view.columns.length} columns</span>
+        <span className="meta-pill"><Icon name="table" size={14} />{filtered ? `${visible!.toLocaleString()} of ${total.toLocaleString()} rows` : `${total.toLocaleString()} rows`} · {view.columns.length} columns</span>
+        {filtered && <button className="ghost sm" onClick={() => grid.current?.clearFilters()} title="Show every row again">Clear filters</button>}
         <span className="sep" />
         <button className="ghost sm" onClick={() => run({})} title="Run every cell that hasn't run yet"><Icon name="play" size={13} />Run all</button>
         <button className="ghost sm" onClick={() => setDialog('signals')} title="Add signal monitors and alerts"><Icon name="radar" size={14} />Signals</button>
         <button className="ghost sm" onClick={() => setDialog('schedule')} title="Re-run columns on a schedule">
           <Icon name="clock" size={14} />{view.table.schedule?.enabled ? `Every ${fmtEvery(view.table.schedule.everyMinutes)}` : 'Schedule'}
         </button>
-        <a className="btn ghost sm" style={{ border: 'none', boxShadow: 'none', color: 'var(--text-2)', background: 'transparent' }} href={`/api/gtm/tables/${tableId}/export.csv`}><Icon name="download" size={14} />Export</a>
+        <span style={{ position: 'relative' }}>
+          <button className="ghost sm" onClick={() => setExportOpen((o) => !o)} disabled={!total} title="Download as CSV"><Icon name="download" size={14} />Export CSV</button>
+          {exportOpen && (
+            <>
+              <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onMouseDown={() => setExportOpen(false)} />
+              <div className="menu-pop" style={{ position: 'absolute', top: 30, left: 0, zIndex: 50, minWidth: 230, background: 'var(--bg, #fff)', border: '1px solid var(--border, #e4e4e7)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.08)', padding: 4 }}>
+                <button className="ghost sm" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={() => exportRows(null)}>All {plural(total)}</button>
+                {filtered && <button className="ghost sm" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={() => exportRows(visibleIds())}>Filtered rows ({plural(visible!)})</button>}
+                {picked.length > 0 && <button className="ghost sm" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={() => exportRows(picked)}>Selected rows ({plural(picked.length)})</button>}
+                {!filtered && <button className="ghost sm" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={() => exportRows(visibleIds())} title="In the order shown, after sorting">As sorted on screen</button>}
+              </div>
+            </>
+          )}
+        </span>
         <Link className="btn ghost sm" style={{ border: 'none', boxShadow: 'none', color: 'var(--text-2)', background: 'transparent' }} to="/settings/functions" title="Reusable enrichment recipes — add one as a column, or save columns as one from Column actions"><Icon name="fn" size={14} />Functions</Link>
         {runnable.length > 0 && <span className="sep" />}
         {runnable.length > 0 && (
@@ -131,6 +182,20 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
         )}
       </div>
 
+      {picked.length > 0 && (
+        <div className="subbar selbar" role="toolbar" aria-label="Selected rows" style={{ background: 'var(--accent-soft, #eef2ff)' }}>
+          <b style={{ fontSize: 12.5 }}>{plural(picked.length)} selected</b>
+          <span className="sep" />
+          <button className="ghost sm" onClick={() => run({ rowIds: picked })} title="Run every column that hasn't run for these rows"><Icon name="play" size={13} />Run</button>
+          <button className="ghost sm" onClick={() => setDialog('leads')}><Icon name="send" size={13} />Send to leads</button>
+          <button className="ghost sm" onClick={() => setDialog('campaign')}><Icon name="send" size={13} />Send to campaign</button>
+          <button className="ghost sm" onClick={() => exportRows(picked)}><Icon name="download" size={13} />Export CSV</button>
+          <button className="ghost sm" style={{ color: 'var(--red, #dc2626)' }} onClick={() => deleteRows(picked)}><Icon name="trash" size={13} />Delete</button>
+          <span className="grow" />
+          <button className="ghost sm" onClick={() => { grid.current?.deselect(); setSel({ rowIds: [], whole: false }); }}><Icon name="x" size={13} />Clear selection</button>
+        </div>
+      )}
+
       <div className="workspace">
         <div className="grid-wrap">
           {view.rows.length === 0 ? (
@@ -152,6 +217,10 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
               onEdit={(changes) => api(`/api/gtm/tables/${tableId}/cells`, { method: 'PATCH', body: { changes } }).then(load)}
               onRun={(rowIds, columnIds, force) => run({ rowIds, columnIds, force })}
               onDeleteRows={(ids) => api(`/api/gtm/tables/${tableId}/rows`, { method: 'DELETE', body: { ids } })}
+              // Skip no-op updates: a re-render mid-click rebuilds the headers and swallows the filter-menu click.
+              onSelectionChange={(n) => setSel((o) => (o.whole === n.whole && o.rowIds.length === n.rowIds.length && o.rowIds.every((id, i) => id === n.rowIds[i]) ? o : n))}
+              onFilterChange={setVisible}
+              apiRef={grid}
               onAddRows={(count) => api(`/api/gtm/tables/${tableId}/rows`, { body: { count } })}
               onResize={(colId, width) => api(`/api/gtm/columns/${colId}`, { method: 'PATCH', body: { width } })}
               onSaveAsFunction={(ids) => setFnColumns(ids)}
@@ -201,7 +270,10 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
 
       {dialog === 'import' && <ImportDialog tableId={tableId} webhookUrl={view.table.webhookUrl} onClose={() => setDialog(null)} onDone={load} />}
       {dialog === 'signals' && <SignalPackDialog tableId={tableId} columns={view.columns} catalog={catalog} onClose={() => setDialog(null)} onDone={load} />}
-      {dialog === 'campaign' && <SendToCampaignDialog tableId={tableId} columns={view.columns} onClose={() => setDialog(null)} onDone={(m) => { flash(m); void load(); }} />}
+      {(dialog === 'campaign' || dialog === 'leads') && (
+        <SendRowsDialog tableId={tableId} tableName={view.table.name} columns={view.columns} scopes={scopes} initialDest={dialog}
+          onClose={() => setDialog(null)} onDone={(m) => { flash(m); void load(); }} />
+      )}
       {dialog === 'schedule' && <ScheduleDialog tableId={tableId} schedule={view.table.schedule} columns={view.columns} onClose={() => setDialog(null)} onSaved={load} />}
       {fnColumns && <SaveAsFunctionDialog tableId={tableId} columns={view.columns} initialIds={fnColumns} onClose={() => setFnColumns(null)} onDone={() => { setFnColumns(null); void load(); }} />}
       {toast && <div className="toast">{toast}</div>}

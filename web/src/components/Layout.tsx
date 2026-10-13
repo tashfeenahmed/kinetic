@@ -11,15 +11,21 @@ import { useAuth } from '../lib/auth.tsx';
 import { initials } from '../lib/format.ts';
 import { cx, Button, Field, Input, Loading, Modal, useUi } from './ui.tsx';
 
+// The sidebar follows how data moves: tables (research) → leads → campaigns → inbox.
+// Outreach is that pipeline; Setup is what feeds it (mailboxes, knowledge, signals).
 const OUTREACH_NAV = [
-  { to: '/campaigns', label: 'Campaigns', icon: Send },
-  { to: '/automations', label: 'Automations', icon: Bot },
   { to: '/leads', label: 'Leads', icon: Users },
-  { to: '/visitors', label: 'Visitors', icon: Eye },
+  { to: '/campaigns', label: 'Campaigns', icon: Send },
   { to: '/inbox', label: 'Master Inbox', icon: Inbox, badge: 'unread' as const },
+  { to: '/automations', label: 'Automations', icon: Bot },
+  { to: '/visitors', label: 'Visitors', icon: Eye },
+];
+const SETUP_NAV = [
   { to: '/sender-emails', label: 'Sender Emails', icon: AtSign },
   { to: '/warmup', label: 'Email Warmup', icon: Flame },
   { to: '/sending-schedule', label: 'Sending Schedule', icon: Clock },
+  { to: '/knowledge', label: 'Knowledge', icon: BookOpen },
+  { to: '/signals', label: 'Signals', icon: Radar },
 ];
 
 const DEV_NAV = [
@@ -149,11 +155,25 @@ function NavItem({ to, label, icon: Icon, end, collapsed, badge, count }: { to: 
   );
 }
 
-/** Section heading; collapses to a short rule so the items below don't move. */
-function SectionLabel({ children, action, collapsed }: { children: ReactNode; action?: ReactNode; collapsed: boolean }) {
+/** A sidebar section that can be folded away; remembered per browser. */
+function useSection(id: string, activeInside: boolean) {
+  const key = `k:nav:${id}`;
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(key) !== 'closed'; } catch { return true; } });
+  const toggle = () => setOpen((o) => { try { localStorage.setItem(key, o ? 'closed' : 'open'); } catch { /* private mode */ } return !o; });
+  // Never hide the page you're on.
+  return { open: open || activeInside, toggle };
+}
+
+/** Section heading; collapses to a short rule so the items below don't move. Click to fold the section. */
+function SectionLabel({ children, action, collapsed, open, onToggle }: { children: ReactNode; action?: ReactNode; collapsed: boolean; open?: boolean; onToggle?: () => void }) {
   return (
-    <div className="relative flex h-[38px] items-end justify-between whitespace-nowrap px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-[.06em] text-zinc-400">
-      <span className={fade(collapsed)}>{children}</span>
+    <div className="group/sec relative flex h-[38px] items-end justify-between whitespace-nowrap px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-[.06em] text-zinc-400">
+      {onToggle && !collapsed ? (
+        <button onClick={onToggle} aria-expanded={open} className={cx('-ml-1 flex items-center gap-1 rounded px-1 uppercase tracking-[.06em] hover:text-zinc-600', fade(collapsed))}>
+          {children}
+          <ChevronDown className={cx('size-3 transition-transform', !open && '-rotate-90', open && 'opacity-0 group-hover/sec:opacity-100')} />
+        </button>
+      ) : <span className={fade(collapsed)}>{children}</span>}
       {action && <span className={fade(collapsed)}>{action}</span>}
       <span className={cx('absolute bottom-[11px] left-2.5 h-px w-4 bg-zinc-300 transition-opacity duration-200', collapsed ? 'opacity-100' : 'opacity-0')} />
     </div>
@@ -172,6 +192,10 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
     refetchInterval: 60_000,
   });
   const tables = useGtmTables();
+  const inside = (items: { to: string }[]) => items.some((n) => location.pathname.startsWith(n.to));
+  const outreach = useSection('outreach', inside(OUTREACH_NAV));
+  const setup = useSection('setup', inside(SETUP_NAV));
+  const tablesSec = useSection('tables', location.pathname.startsWith('/tables/'));
   const [menu, setMenu] = useState<{ id: number; name: string; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(null);
   const { toast, confirm } = useUi();
@@ -212,24 +236,36 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
         <nav className="mt-1 flex flex-col gap-px pt-px">
           <NavItem to="/" end label="Home" icon={HomeIcon} collapsed={collapsed} />
           <NavItem to="/agent" label="Agent" icon={MessageSquareText} collapsed={collapsed} />
-          <NavItem to="/knowledge" label="Knowledge" icon={BookOpen} collapsed={collapsed} />
-          <NavItem to="/signals" label="Signals" icon={Radar} collapsed={collapsed} />
         </nav>
 
-        <SectionLabel collapsed={collapsed} action={<button title="New table" onClick={() => navigate('/')} className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200/60 hover:text-zinc-700"><Plus className="size-3.5" /></button>}>Tables</SectionLabel>
-        <nav className="flex flex-col gap-px">
-          {(tables.data ?? []).map((t) => (
-            <div key={t.id} onContextMenu={(e) => { e.preventDefault(); setMenu({ id: t.id, name: t.name, x: e.clientX, y: e.clientY }); }}>
-              <NavItem to={`/tables/${t.id}`} label={t.name} icon={Table2} collapsed={collapsed} count={t.row_count} />
-            </div>
-          ))}
-          {!collapsed && tables.data?.length === 0 && <span className="px-2 py-1 text-[12.5px] text-zinc-400">No tables yet</span>}
-        </nav>
+        <SectionLabel collapsed={collapsed} open={outreach.open} onToggle={outreach.toggle}>Outreach</SectionLabel>
+        {(outreach.open || collapsed) && (
+          <nav className="flex flex-col gap-px">
+            {OUTREACH_NAV.map((n) => <NavItem key={n.to} {...n} collapsed={collapsed} badge={n.badge === 'unread' ? unread.data : undefined} />)}
+          </nav>
+        )}
 
-        <SectionLabel collapsed={collapsed}>Outreach</SectionLabel>
-        <nav className="flex flex-col gap-px">
-          {OUTREACH_NAV.map((n) => <NavItem key={n.to} {...n} collapsed={collapsed} badge={n.badge === 'unread' ? unread.data : undefined} />)}
-        </nav>
+        <SectionLabel collapsed={collapsed} open={setup.open} onToggle={setup.toggle}>Setup</SectionLabel>
+        {(setup.open || collapsed) && (
+          <nav className="flex flex-col gap-px">
+            {SETUP_NAV.map((n) => <NavItem key={n.to} {...n} collapsed={collapsed} />)}
+          </nav>
+        )}
+
+        <SectionLabel collapsed={collapsed} open={tablesSec.open} onToggle={tablesSec.toggle}
+          action={<button title="New table" onClick={() => navigate('/')} className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200/60 hover:text-zinc-700"><Plus className="size-3.5" /></button>}>
+          Tables{!tablesSec.open && tables.data?.length ? <span className="ml-1 font-normal normal-case tracking-normal">{tables.data.length}</span> : null}
+        </SectionLabel>
+        {(tablesSec.open || collapsed) && (
+          <nav className="flex flex-col gap-px">
+            {(tables.data ?? []).map((t) => (
+              <div key={t.id} onContextMenu={(e) => { e.preventDefault(); setMenu({ id: t.id, name: t.name, x: e.clientX, y: e.clientY }); }}>
+                <NavItem to={`/tables/${t.id}`} label={t.name} icon={Table2} collapsed={collapsed} count={t.row_count} />
+              </div>
+            ))}
+            {!collapsed && tables.data?.length === 0 && <span className="px-2 py-1 text-[12.5px] text-zinc-400">No tables yet</span>}
+          </nav>
+        )}
       </div>
 
       <nav className="flex flex-col gap-px border-t border-zinc-200/80 px-2 py-2">
