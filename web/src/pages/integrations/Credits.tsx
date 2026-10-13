@@ -8,7 +8,7 @@ import { BrandIcon } from '../../components/BrandIcon.tsx';
 export interface CreditRow {
   id: 'apollo' | 'hunter' | 'prospeo' | 'pdl'; label: string; note: string; connected: boolean;
   month: string; used: number; calls: number; last_at: string | null; budget: number; free_monthly: number;
-  blocked: string | null; plan_blocked: string[]; live: { remaining: number | null; used?: number | null; available?: number | null; resets?: string | null; plan?: string | null } | null;
+  blocked: string | null; plan_blocked: string[]; plan_reason: string | null; live: { remaining: number | null; used?: number | null; available?: number | null; resets?: string | null; plan?: string | null } | null;
 }
 
 const DOMAINS: Record<CreditRow['id'], string> = { apollo: 'apollo.io', hunter: 'hunter.io', prospeo: 'prospeo.io', pdl: 'peopledatalabs.com' };
@@ -58,7 +58,7 @@ export function CreditsPanel() {
                     <div className="truncate text-[12.5px] text-slate-500">{c.note}</div>
                     {c.plan_blocked?.length > 0 && (
                       <div className="mt-0.5 text-[12.5px] text-amber-700">
-                        Your {c.label} plan refuses {c.plan_blocked.map((k) => k.replace(/_/g, ' ')).join(', ')} lookups, so Kinetic skips them.
+                        {c.label} refuses {c.plan_blocked.map((k) => k.replace(/_/g, ' ')).join(', ')} lookups, so Kinetic skips them{c.plan_reason ? `: “${c.plan_reason}”` : '.'}
                       </div>
                     )}
                   </div>

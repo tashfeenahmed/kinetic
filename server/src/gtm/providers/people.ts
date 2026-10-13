@@ -133,17 +133,20 @@ export async function aiReadContacts(input: EnrichInput, ctx: Ctx): Promise<Hit 
     ...pages.map((p) => `### Page ${p.url}\n${p.emails.length ? `Emails on page: ${p.emails.join(', ')}\n` : ''}${p.text}`),
     `### Web search results\n${search.results.map((r) => `- ${r.title} — ${r.url}\n  ${r.snippet}`).join('\n')}`,
   ].join('\n\n').slice(0, 30_000);
-  const r = await runAgent({
-    prompt: `Who works at ${company} (${domain}) in these roles: ${roles.join(', ')}?
-Below are pages from the company's website and web search results. Extract the real people who CURRENTLY work at ${company}, with their job title.
-Only include people the text names explicitly; never invent names or emails. Include an email only if it appears in the text next to that person.
-If the text names nobody, you may search the web and read a page or two (e.g. LinkedIn results, press, Companies House) — no more.
+  const ask = (nudge: string) => runAgent({
+    prompt: `Who runs ${company} (${domain}), in these roles: ${roles.join(', ')}?
+Below are pages from the company's website and web search results. List the real people the text names as working at, owning, founding or running ${company}, with their job title.
+Include founders and owners even when the text doesn't say whether they are still there — list them rather than leaving them out. Never invent names or emails; include an email only if it appears in the text next to that person.
+If the text names nobody, search the web and read a page or two (e.g. LinkedIn results, press, Companies House, the CRO register) — no more.${nudge}
 
 ${corpus}`,
     outputs: [{ name: 'people', type: 'list', description: 'Each exactly "Full Name | Job title | email or - | LinkedIn URL or - | URL of the page that names them". The job title as written in the source, at most 6 words, no notes or caveats. Most senior first. Max 10.' }],
     webSearch: true, fetchPages: true, maxSteps: 4,
   }, ctx);
-  const people = ((r.output.people as unknown[] | null) ?? []).map((x) => parsePersonLine(String(x), 'ai_read')).filter(Boolean) as Contact[];
+  const parse = (out: Record<string, unknown>) => ((out.people as unknown[] | null) ?? []).map((x) => parsePersonLine(String(x), 'ai_read')).filter(Boolean) as Contact[];
+  let people = parse((await ask('')).output);
+  // Models sometimes play it safe and return nobody; one more pass with a nudge usually finds the owner.
+  if (!people.length) people = parse((await ask('\nA first pass found nobody: look harder, e.g. search "<company> owner" or "<company> director" and read the most promising result.')).output);
   ctx.log(`AI read ${domain}: ${people.length} people from ${pages.length} pages`);
   if (!people.length) return null;
 
@@ -212,16 +215,16 @@ export async function prospeoContacts(input: EnrichInput, ctx: Ctx): Promise<Hit
   if (!domain) return null;
   const roles = wantedRoles(input);
   const headers = { 'X-KEY': ctx.settings.get('PROSPEO_API_KEY')! };
-  const s = await getJson('https://api.prospeo.io/search-person', {
+  const s = await prospeoCall(() => getJson('https://api.prospeo.io/search-person', {
     method: 'POST', headers,
     json: { page: 1, filters: { company: { websites: { include: [domain] } }, person_job_title: { include: roles.slice(0, 10), match_mode: 'CONTAINS' } } },
-  }).catch((e) => { if (e instanceof HttpError && /NO_RESULTS|NO_MATCH/i.test(e.message)) return null; throw e; });
+  })).catch((e) => { if (e instanceof HttpError && /NO_RESULTS|NO_MATCH/i.test(e.message)) return null; throw e; });
   const results: any[] = s?.results ?? [];
   if (!results.length) return null;
   if (!s.free) useCredits(ctx.settings.db, 'prospeo', 1);
   const pick = [...results].sort((a, b) => roleRank(a.person?.current_job_title ?? '', roles) - roleRank(b.person?.current_job_title ?? '', roles))[0]?.person;
   if (!pick?.person_id) return null;
-  const e = await getJson('https://api.prospeo.io/enrich-person', { method: 'POST', headers, json: { only_verified_email: true, data: { person_id: pick.person_id } } })
+  const e = await prospeoCall(() => getJson('https://api.prospeo.io/enrich-person', { method: 'POST', headers, json: { only_verified_email: true, data: { person_id: pick.person_id } } }))
     .catch((err) => { if (err instanceof HttpError && /NO_MATCH/i.test(err.message)) return null; throw err; });
   const email = e?.person?.email?.email ? String(e.person.email.email).toLowerCase() : null;
   if (email && !e.free_enrichment) useCredits(ctx.settings.db, 'prospeo', 1);
@@ -231,6 +234,20 @@ export async function prospeoContacts(input: EnrichInput, ctx: Ctx): Promise<Hit
   };
   return toHit(c, [c], !email);
 }
+
+/** Prospeo's free plan rate-limits back-to-back calls (429): wait a moment and try once more. */
+async function prospeoCall<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (!(e instanceof HttpError) || e.status !== 429 || /restricted/i.test(e.message)) throw e;
+    await new Promise((r) => setTimeout(r, prospeoRetryMs));
+    return fn();
+  }
+}
+/** Exposed for tests. */
+export let prospeoRetryMs = 4000;
+export function setProspeoRetryMs(ms: number) { prospeoRetryMs = ms; }
 
 // ---------- 5. People Data Labs person search (1 credit per record) ----------
 export async function pdlContacts(input: EnrichInput, ctx: Ctx): Promise<Hit | null> {

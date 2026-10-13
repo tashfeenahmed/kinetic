@@ -7,11 +7,15 @@ import { emailProvenance } from '../src/gtm/engine/runner.ts';
 let env: TestEnv;
 let calls: string[];
 let apolloFree = false;
+let hunterRestricted = false;
 
 /** Fake Hunter and Apollo. */
 function vendors(url: string, init: any) {
   calls.push(url);
   const u = new URL(url);
+  if (u.host === 'api.hunter.io' && hunterRestricted && u.pathname !== '/v2/account') {
+    return Response.json({ errors: [{ id: 'restricted_account', code: 429, details: 'Your account was restricted. Please log in to Hunter for more information.' }] }, { status: 429 });
+  }
   if (u.host === 'api.hunter.io' && u.pathname === '/v2/email-finder') return Response.json({ data: { email: 'jane.doe@acme.test', score: 96, verification: { status: 'valid' } } });
   if (u.host === 'api.hunter.io' && u.pathname === '/v2/domain-search') {
     return Response.json({ data: { emails: [
@@ -37,6 +41,7 @@ function vendors(url: string, init: any) {
 beforeEach(async () => {
   calls = [];
   apolloFree = false;
+  hunterRestricted = false;
   env = await makeEnv({ fetch: (async (url: any, init: any) => vendors(String(url), init)) as typeof fetch });
 });
 afterEach(() => env.close());
@@ -103,6 +108,21 @@ describe('paid credits', () => {
     // A new key (e.g. after upgrading) is tried again.
     await env.api('PUT', '/api/gtm/keys', { APOLLO_API_KEY: 'paid-key-2' });
     expect((await env.api('GET', '/api/gtm/credits')).body.data.find((c: any) => c.id === 'apollo').plan_blocked).toEqual([]);
+  });
+
+  it('stops calling a vendor that restricted the account, and says why in Credits', async () => {
+    hunterRestricted = true;
+    await env.api('PUT', '/api/gtm/keys', { HUNTER_API_KEY: 'hk' });
+    const { tableId, ids } = await tableWith([{ 'Full name': 'Jane Doe', Domain: 'acme.test' }, { 'Full name': 'John Roe', Domain: 'acme.test' }]);
+    const col = (await env.api('POST', `/api/gtm/tables/${tableId}/columns`, { name: 'Work email', type: 'enrich', config: { kind: 'work_email', providers: ['hunter'], inputs: { fullName: '{{Full name}}', domain: '{{Domain}}' } } })).body.id;
+    await env.api('POST', `/api/gtm/tables/${tableId}/run`, { columnIds: [col], rowIds: [ids[0]] });
+    await settle(tableId);
+    await env.api('POST', `/api/gtm/tables/${tableId}/run`, { columnIds: [col], rowIds: [ids[1]] });
+    await settle(tableId);
+    expect((await cell(tableId, ids[1], 'Work email')).meta.attempts[0]).toEqual({ provider: 'hunter', result: 'skipped: account restricted', ms: 0 });
+    expect(calls.filter((u) => u.includes('email-finder'))).toHaveLength(1);
+    const hunter = (await env.api('GET', '/api/gtm/credits')).body.data.find((c: any) => c.id === 'hunter');
+    expect(hunter).toMatchObject({ plan_blocked: ['work_email'], plan_reason: expect.stringContaining('restricted') });
   });
 
   it('budget helpers', () => {
