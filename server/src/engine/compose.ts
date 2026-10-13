@@ -40,6 +40,8 @@ export interface ComposeInput {
 export interface Composed {
   message: OutgoingMessage;
   trackingToken: string;
+  /** The step as rendered for this lead, before quoting and tracking (for the pre-send check). */
+  rendered: { subject: string; body: string; threaded: boolean };
 }
 
 /** Builds the exact message for one campaign step to one lead. */
@@ -65,6 +67,7 @@ export function composeCampaignEmail(ctx: Ctx, input: ComposeInput): Composed {
   }
 
   let body = render(step.email_body ?? '', vars, { seed: seed + 1 });
+  const renderedBody = body;
   const signature = (sender.email_signature ?? '').trim();
   const usedSignatureVar = /\{SIGNATURE\}/i.test(step.email_body ?? '');
   const isHtml = looksLikeHtml(body) || looksLikeHtml(signature);
@@ -105,6 +108,7 @@ export function composeCampaignEmail(ctx: Ctx, input: ComposeInput): Composed {
   const references = threaded ? referenceChain(ctx, previous!) : [];
   return {
     trackingToken: token,
+    rendered: { subject, body: renderedBody, threaded },
     message: {
       from: { name: sender.name, email: sender.email },
       to: lead.first_name || lead.last_name ? `"${`${lead.first_name} ${lead.last_name}`.trim().replace(/"/g, '')}" <${lead.email}>` : lead.email,

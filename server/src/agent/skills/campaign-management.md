@@ -60,6 +60,6 @@ Connected and warmed up (check `warmup-and-placement`).
 ## Sequence steps (quick changes)
 - Turn a step variant on/off: `PATCH /api/campaigns/sequence-steps/{id}/activate-or-deactivate` `{ "active": false }`.
 - Delete a step: `DELETE /api/campaigns/sequence-steps/{id}` (approval).
-- Preview with a real lead: `POST /api/campaigns/{id}/preview` `{ "email_subject": "…", "email_body": "…", "lead_id": 5 }`.
+- Preview with a real lead: `POST /api/campaigns/{id}/preview` `{ "email_subject": "…", "email_body": "…", "lead_id": 5 }`. The response includes the pre-send check: `errors` (unfilled variables, broken `{a|b}` options, empty parts — such emails are held back at send time) and `warnings` (spammy or machine-sounding phrases, too long, too many links). Fix warnings before launching; launch-check lists them too.
 - Send a test of a step: `POST /api/campaigns/sequence-steps/{id}/test-email` `{ "sender_email_id": 2, "to_email": "me@…" }`
   (approval; ask the user which address).
