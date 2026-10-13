@@ -334,8 +334,10 @@ export function followUpDue(campaign: Row, sentAt: string, waitDays: number): st
 
 export function isAuthError(err: any): boolean {
   const s = `${err?.code ?? ''} ${err?.responseCode ?? ''} ${err?.message ?? ''} ${err?.responseText ?? ''}`;
-  // Outlook's IMAP answers a refused XOAUTH2 login with a bare "Login failed."
-  return !!err?.authenticationFailed || /EAUTH|\b535\b|\b534\b|AUTHENTICATIONFAILED|Invalid credentials|authentication failed|invalid_grant|Username and Password not accepted|Login failed/i.test(s);
+  // Outlook's IMAP answers a refused XOAUTH2 login with a bare "Login failed."; Microsoft's token
+  // endpoint answers "OAuth token error (400): AADSTS…" when the sign-in needs the user again
+  // (MFA required, consent revoked, password changed) — only a reconnect fixes those.
+  return !!err?.authenticationFailed || /OAuth token error \(40[01]\)|interaction_required|EAUTH|\b535\b|\b534\b|AUTHENTICATIONFAILED|Invalid credentials|authentication failed|invalid_grant|Username and Password not accepted|Login failed/i.test(s);
 }
 
 export function markDisconnected(ctx: Ctx, sender: Row, error: string) {
