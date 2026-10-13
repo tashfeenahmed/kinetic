@@ -68,7 +68,7 @@ describe('Hacker News lead source', () => {
     setHttpFetch(fake([]));
     const rows = await hackerNewsSearch({ mode: 'intent', keywords: 'crm' }, 50);
     expect(rows.map((r) => r.Author)).toEqual(['buyer', 'asker']);
-    expect(rows[0]).toMatchObject({ Phrase: 'looking for a', Thread: 'Ask HN: Best CRM in 2026?' });
+    expect(rows[0]).toMatchObject({ Phrase: 'looking for', Thread: 'Ask HN: Best CRM in 2026?' });
     expect(rows[1].Phrase).toBe('alternatives to');
     await expect(hackerNewsSearch({ mode: 'intent' }, 5)).rejects.toThrow(/keywords/);
   });

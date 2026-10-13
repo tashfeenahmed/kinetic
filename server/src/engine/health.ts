@@ -165,7 +165,9 @@ export async function refreshSenderHealth(ctx: Ctx, sender: Row): Promise<Health
   const hit = (points: number, reason: string) => { score -= points; reasons.push(reason); };
 
   const week = bounceWindow(ctx, sender, 7 * DAY_MS);
-  if (week.sent >= 10 && week.rate >= 0.02) hit(week.rate >= 0.05 ? 40 : 15, `${pct(week.rate)} of campaign emails bounced in the last 7 days (${week.bounced} of ${week.sent})`);
+  const spike = bounceTrigger(ctx, sender);
+  if (spike) hit(40, spike);
+  else if (week.sent >= 10 && week.rate >= 0.02) hit(week.rate >= 0.05 ? 40 : 15, `${pct(week.rate)} of campaign emails bounced in the last 7 days (${week.bounced} of ${week.sent})`);
 
   const w = warmupStats(ctx, sender.id);
   if (w.landed_inbox + w.landed_spam >= 5 && w.health_score! < 90) hit(w.health_score! < 70 ? 30 : 10, `Only ${w.health_score}% of warmup emails landed in the inbox in the last 7 days`);

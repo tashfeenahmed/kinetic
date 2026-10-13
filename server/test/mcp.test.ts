@@ -50,6 +50,9 @@ describe('MCP server', () => {
     expect(d.body.result).toMatchObject({ resultType: 'complete', supportedVersions: expect.arrayContaining(['2026-07-28', '2025-11-25']), capabilities: { tools: {} } });
     expect(d.body.result._meta['io.modelcontextprotocol/serverInfo'].name).toBe('kinetic');
 
+    const tl = await rpc('tools/list', { _meta: meta }, h('tools/list'));
+    expect(tl.body.result).toMatchObject({ resultType: 'complete', ttlMs: expect.any(Number), cacheScope: 'public' });
+
     const t = await rpc('tools/call', { name: 'list_skills', arguments: {}, _meta: meta }, h('tools/call', { 'mcp-name': 'list_skills' }));
     expect(t.body.result).toMatchObject({ resultType: 'complete', isError: false });
     expect(t.body.result.content[0].text).toContain('table-building');

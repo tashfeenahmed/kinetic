@@ -98,7 +98,8 @@ async function handle(method: string, params: any, env: ToolEnv, modern: boolean
     case 'server/discover':
       return { supportedVersions: SUPPORTED, capabilities: { tools: {} }, instructions: MCP_INSTRUCTIONS, ...(modern ? {} : { serverInfo: SERVER_INFO }) };
     case 'ping': return {};
-    case 'tools/list': return { tools: MCP_TOOLS };
+    // 2026-07-28 list results say how long a client may cache them; the tool set never changes per token.
+    case 'tools/list': return { tools: MCP_TOOLS, ...(modern ? { ttlMs: 3_600_000, cacheScope: 'public' } : {}) };
     case 'tools/call': {
       const name = String(params.name ?? '');
       if (!MCP_TOOLS.some((t) => t.name === name)) throw new RpcError(-32602, `Unknown tool: ${name}`);

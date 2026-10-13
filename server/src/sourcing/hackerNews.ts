@@ -14,7 +14,7 @@ export type HnMode = 'launches' | 'hiring' | 'intent';
 export const HN_MODES: HnMode[] = ['launches', 'hiring', 'intent'];
 
 /** Phrases that mean "I'm shopping for something" (matched case-insensitively). */
-export const INTENT_PHRASES = ['looking for a tool', 'looking for a', 'looking for an', 'alternative to', 'alternatives to', 'recommend', 'any suggestions', 'what do you use for', 'switching from', 'replacement for'];
+export const INTENT_PHRASES = ['looking for', 'alternative to', 'alternatives to', 'recommend', 'what do you use for', 'switching from', 'replacement for'];
 // Links on HN that are not the poster's own company site.
 const NOT_COMPANY = /(^|\.)(github\.com|gitlab\.com|github\.io|ycombinator\.com|apple\.com|google\.com|medium\.com|substack\.com|youtu\.be|arxiv\.org|producthunt\.com|notion\.site|vercel\.app|netlify\.app|herokuapp\.com|pages\.dev)$/i;
 
@@ -61,9 +61,13 @@ async function launches(keywords: string[], since: number, minPoints: number, li
       const kind = title.match(/^(Show|Launch) HN\b/i)?.[0];
       if (!kind || rows.has(h.objectID)) continue;
       // "Launch HN: Acme (YC W24) – Payroll for…" → "Acme"
-      const company = title.replace(/^(Show|Launch) HN\s*[:–-]\s*/i, '').split(/\s+[–—|:-]\s+|\s*\(/)[0].trim();
+      const pitch = title.replace(/^(Show|Launch) HN\s*[:–-]\s*/i, '');
+      const name = pitch.split(/\s+[–—|:-]\s+|\s*\(/)[0].trim();
+      // No "Name – pitch" split and a sentence-like title ("I built…"): name it after the domain instead.
+      const domain = companyDomain(h.url);
+      const company = name !== pitch.trim() || name.split(/\s+/).length <= 4 ? name : domain ? domainName(domain) : '';
       rows.set(h.objectID, {
-        Company: company, 'Company domain': companyDomain(h.url), Link: h.url ?? '', Title: title, Kind: kind.replace(/\s+/, ' '),
+        Company: company, 'Company domain': domain, Link: h.url ?? '', Title: title, Kind: kind.replace(/\s+/, ' '),
         Author: h.author, 'Author URL': user(h.author), Points: h.points ?? 0, Comments: h.num_comments ?? 0,
         Posted: h.created_at, 'HN URL': item(h.objectID), Keyword: kw,
       });
@@ -122,17 +126,28 @@ async function hiring(keywords: string[], months: number, limit: number, log: (m
 }
 
 // ---------- buyer intent (Ask HN + comments) ----------
+function near(text: string, a: string, b: string, within: number): boolean {
+  for (let i = text.indexOf(a); i !== -1; i = text.indexOf(a, i + 1)) {
+    const j = text.indexOf(b, Math.max(0, i - within));
+    if (j !== -1 && j <= i + a.length + within) return true;
+  }
+  return false;
+}
+const domainName = (d: string) => { const l = d.split('.')[0]; return l.charAt(0).toUpperCase() + l.slice(1); };
+
 async function intent(keywords: string[], phrases: string[], since: number, limit: number, log: (m: string) => void) {
   if (!keywords.length) throw new Error('Give keywords for Hacker News buyer intent, e.g. "crm, helpdesk"');
   const lower = phrases.map((s) => s.toLowerCase());
   const rows = new Map<string, Record<string, unknown>>();
   for (const kw of keywords) {
-    const hits = await search({ query: kw, tags: '(comment,ask_hn)', numericFilters: `created_at_i>${since}` }, 3);
+    // Search each phrase with the keyword ("recommend crm"), then keep hits where they sit close together.
+    const hits = (await Promise.all(phrases.map((ph) => search({ query: `${ph} ${kw}`, tags: '(comment,ask_hn)', numericFilters: `created_at_i>${since}` }, 1)))).flat();
     for (const h of hits) {
       const text = h.comment_text ? hnText(h.comment_text) : [h.title, h.story_text ? hnText(h.story_text) : ''].filter(Boolean).join('\n');
       const low = text.toLowerCase();
-      const phrase = lower.find((ph) => low.includes(ph));
-      if (!phrase || !low.includes(kw.toLowerCase()) || rows.has(h.objectID)) continue;
+      // The keyword must sit near the buying phrase ("looking for a CRM"), not anywhere in a long comment.
+      const phrase = lower.find((ph) => near(low, ph, kw.toLowerCase(), 150));
+      if (!phrase || rows.has(h.objectID)) continue;
       rows.set(h.objectID, {
         Author: h.author, 'Author URL': user(h.author), Text: text.slice(0, 1000), Phrase: phrase, Keyword: kw,
         Thread: h.story_title ?? h.title ?? '', Points: h.points ?? '', Posted: h.created_at, 'HN URL': item(h.objectID),

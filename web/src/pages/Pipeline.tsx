@@ -109,9 +109,9 @@ function DealCard({ deal: d, onRemove }: { deal: Deal; onRemove: () => void }) {
         <IconButton label="Delete deal" onClick={onRemove}><Trash2 className="size-3.5" /></IconButton>
       </div>
       {d.campaign_name && <Link to={`/campaigns/${d.campaign_id}`} className="mt-1 block truncate text-xs text-slate-500 hover:text-brand-600">{d.campaign_name}</Link>}
-      <div className="mt-2 flex gap-1.5">
-        <Input key={`v${d.value}`} type="number" min={0} placeholder="Value" defaultValue={d.value ?? ''} onBlur={(e) => save('value', e.target.value)} className="h-8 min-w-0 flex-1 text-[13px]" aria-label="Deal value" />
-        <Input key={`c${d.currency}`} placeholder="EUR" defaultValue={d.currency ?? ''} onBlur={(e) => save('currency', e.target.value)} className="h-8 w-16 text-[13px]" aria-label="Currency" />
+      <div className="mt-2 grid grid-cols-[minmax(0,1fr)_4rem] gap-1.5">
+        <Input key={`v${d.value}`} type="number" min={0} placeholder="Value" defaultValue={d.value ?? ''} onBlur={(e) => save('value', e.target.value)} className="h-8 text-[13px]" aria-label="Deal value" />
+        <Input key={`c${d.currency}`} placeholder="EUR" defaultValue={d.currency ?? ''} onBlur={(e) => save('currency', e.target.value)} className="h-8 text-[13px]" aria-label="Currency" />
       </div>
       {d.stage === 'lost' && (
         <Input key={`l${d.lost_reason}`} placeholder="Why was it lost?" defaultValue={d.lost_reason ?? ''} onBlur={(e) => save('lost_reason', e.target.value)} className="mt-1.5 h-8 text-[13px]" aria-label="Lost reason" />
