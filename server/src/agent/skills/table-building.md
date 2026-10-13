@@ -34,6 +34,7 @@ Body `{ "name", "type", "config", "auto_run"?, "run_if"? }` → `{ id }`. Update
 
 ## Running
 - `POST /api/gtm/tables/{id}/run` `{ "columnIds"?: [..], "rowIds"?: [..], "force"?: false }` → `{ queued }`. Without `force`, finished cells are skipped. Omit columnIds to run every runnable column.
+- `POST /api/gtm/tables/{id}/run/estimate` (same body as run) → what that run would do, without starting it: `cells`, `aiCalls`, per column, and per paid vendor the worst-case `credits` vs. `remaining` budget (`exceeds`), plus a plain `summary`. Check it before running paid enrichment on many rows and tell the user.
 - `POST /api/gtm/tables/{id}/stop` cancels queued cells. `GET /api/gtm/cells/{rowId}/{columnId}` → one cell with provider details.
 - `GET /api/gtm/activity?tableId=..` → recent log lines (provider errors show here).
 

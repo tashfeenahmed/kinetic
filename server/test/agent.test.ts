@@ -214,10 +214,14 @@ describe('approval gating', () => {
     await e.api('POST', `/api/gtm/tables/${t.body.id}/rows`, { count: 150 });
     const env2 = { db: e.ctx.db, settings: e.ctx.gtm!.settings, workspaceId: te.workspaceId };
     const run = `/api/gtm/tables/${t.body.id}/run`;
-    expect(classify('POST', run, {}, env2).kind).toBe('allow'); // free waterfall only
+    // Blank rows already skipped their auto-run cells, so only a forced re-run would spend.
+    expect(classify('POST', run, { force: true }, env2).kind).toBe('allow'); // free waterfall only
     e.ctx.gtm!.settings.set('ICYPEAS_API_KEY', 'k');
-    expect(classify('POST', run, {}, env2)).toMatchObject({ kind: 'approve' });
-    expect(classify('POST', run, { rowIds: [1, 2, 3] }, env2).kind).toBe('allow');
+    expect(classify('POST', run, {}, env2).kind).toBe('allow'); // nothing left to run
+    const paid = classify('POST', run, { force: true }, env2);
+    expect(paid).toMatchObject({ kind: 'approve' });
+    expect((paid as any).reason).toContain('Icypeas up to 150 lookups');
+    expect(classify('POST', run, { rowIds: [1, 2, 3], force: true }, env2).kind).toBe('allow');
     e.ctx.gtm!.settings.set('SLACK_WEBHOOK_URL', 'https://hooks.slack.test/x'); // actions need their connection
     const col = await e.api('POST', `/api/gtm/tables/${t.body.id}/columns`, { name: 'Ping', type: 'action', config: { kind: 'slack', text: 'hi' } });
     expect(classify('POST', run, { columnIds: [col.body.id], rowIds: [1] }, env2)).toMatchObject({ kind: 'approve' });

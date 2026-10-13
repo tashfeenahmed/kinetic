@@ -5,6 +5,7 @@ import { stringify as toCsv } from 'csv-stringify/sync';
 import type { Ctx } from '../context.ts';
 import { auth, canWrite, requireAdmin, defineRoutes, type Auth } from '../http.ts';
 import { RUNNABLE, type ColumnType } from './engine/store.ts';
+import { estimateRun } from './engine/estimate.ts';
 import { listModels, DEFAULT_MODEL } from './engine/agent.ts';
 import { ENRICH_KINDS } from './providers/catalog.ts';
 import { CREDIT_PROVIDERS, creditsOverview, setBudgets } from './providers/credits.ts';
@@ -359,13 +360,19 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
   });
 
   // ---------- running ----------
+  const runBody = z.object({ columnIds: z.array(z.number()).optional(), rowIds: z.array(z.number()).optional(), force: z.boolean().optional() });
   r.post('/api/gtm/tables/:id/run', 'Run cells', async (req) => {
     const a = canWrite(req);
     const tableId = tableOf(req, a);
-    const body = z.object({ columnIds: z.array(z.number()).optional(), rowIds: z.array(z.number()).optional(), force: z.boolean().optional() }).parse(req.body ?? {});
+    const body = runBody.parse(req.body ?? {});
     const own = new Set(store.rowIds(tableId));
     return { queued: engine.run(tableId, { ...body, rowIds: body.rowIds?.filter((rid) => own.has(rid)) }) };
-  });
+  }, { body: runBody });
+
+  r.post('/api/gtm/tables/:id/run/estimate', 'Estimate a run before starting it (same body as run): cells, AI tasks, worst-case paid credits per vendor vs. the monthly budget', async (req) => {
+    const tableId = tableOf(req, auth(req));
+    return estimateRun(store, settings, tableId, runBody.parse(req.body ?? {}));
+  }, { body: runBody });
 
   r.post('/api/gtm/tables/:id/stop', 'Cancel queued cells', async (req) => ({ cancelled: engine.cancel(tableOf(req, canWrite(req))) }));
 

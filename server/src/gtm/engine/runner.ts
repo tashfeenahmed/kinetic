@@ -28,6 +28,23 @@ export interface RunOptions {
   force?: boolean;
 }
 
+export type RunSelection = { columnIds?: number[]; rowIds?: number[] } & RunOptions;
+
+/**
+ * The cells a run would queue, per column (run() enqueues them; estimateRun() counts them).
+ * With no rowIds, every row; with no columnIds, every runnable column. Without force,
+ * cells that already ran (or are queued/running) are left alone.
+ */
+export function selectCells(store: Store, tableId: number, opts: RunSelection = {}): { col: Column; rowIds: number[] }[] {
+  const cols = store.columns(tableId).filter((c) => RUNNABLE.includes(c.type) && (!opts.columnIds || opts.columnIds.includes(c.id)));
+  const rowIds = opts.rowIds ?? store.rowIds(tableId);
+  return cols.map((col) => {
+    if (opts.force) return { col, rowIds };
+    const existing = new Map(store.db.all<{ row_id: number; status: string }>('SELECT row_id, status FROM gtm_cells WHERE column_id = ?', [col.id]).map((c) => [c.row_id, c.status]));
+    return { col, rowIds: rowIds.filter((id) => { const st = existing.get(id); return !st || st === 'idle' || st === 'error'; }) };
+  });
+}
+
 interface Outcome { value: unknown; status: 'done' | 'empty' | 'skipped'; error?: string; meta?: Record<string, unknown> }
 
 export class Engine {
@@ -83,18 +100,11 @@ export class Engine {
   }
 
   /** Queue cells. With no rowIds, every row; with no columnIds, every runnable column. */
-  run(tableId: number, opts: { columnIds?: number[]; rowIds?: number[] } & RunOptions = {}): number {
-    const cols = this.store.columns(tableId).filter((c) => RUNNABLE.includes(c.type) && (!opts.columnIds || opts.columnIds.includes(c.id)));
-    const rowIds = opts.rowIds ?? this.store.rowIds(tableId);
+  run(tableId: number, opts: RunSelection = {}): number {
     let n = 0;
     this.store.db.tx(() => {
-      for (const col of cols) {
-        const existing = opts.force ? new Map() : new Map(this.store.db.all(`SELECT row_id, status FROM gtm_cells WHERE column_id = ?`, [col.id]).map((c) => [c.row_id, c.status]));
-        for (const rowId of rowIds) {
-          const st = existing.get(rowId);
-          if (!opts.force && st && st !== 'idle' && st !== 'error') continue;
-          if (this.enqueue({ tableId, rowId, columnId: col.id, type: col.type })) n++;
-        }
+      for (const { col, rowIds } of selectCells(this.store, tableId, opts)) {
+        for (const rowId of rowIds) if (this.enqueue({ tableId, rowId, columnId: col.id, type: col.type })) n++;
       }
     });
     this.pump();

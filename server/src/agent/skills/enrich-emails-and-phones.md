@@ -6,7 +6,7 @@ description: Use to find and verify work emails, mobile phones, LinkedIn URLs or
 
 Enrichment columns run a provider waterfall and stop at the first confident hit. **Free steps always come first** (reading the website and web with AI, email patterns checked over SMTP); the paid vendors are a fallback for when those find nothing — Apollo → Hunter → Prospeo → People Data Labs — and each is skipped once its monthly credit budget is used. Check what's ready with `GET /api/gtm/catalog` → `enrich[].steps[].ready` and `cost`.
 
-**Credits:** `GET /api/gtm/credits` → per vendor `used` this month, `budget`, `blocked` (budget reached) and the vendor's `live.remaining` balance (Hunter, Prospeo). Change budgets with `PUT /api/gtm/credits/budgets` `{ "hunter": 50, "apollo": 0 }` (0 = never use it; admins only; ask the user first). Tell the user how many credits a run may use before running paid steps on many rows, and never reorder a waterfall to put paid vendors before the free steps unless the user asks.
+**Credits:** `GET /api/gtm/credits` → per vendor `used` this month, `budget`, `blocked` (budget reached) and the vendor's `live.remaining` balance (Hunter, Prospeo). Change budgets with `PUT /api/gtm/credits/budgets` `{ "hunter": 50, "apollo": 0 }` (0 = never use it; admins only; ask the user first). Before running paid steps on many rows, get the worst case with `POST /api/gtm/tables/{id}/run/estimate` (same body as run; assumes every free step misses, so actual use is usually lower) and tell the user its `summary`. Never reorder a waterfall to put paid vendors before the free steps unless the user asks.
 
 ## Add a column — `POST /api/gtm/tables/{id}/columns`
 | kind | needs (any one group) | notes |
