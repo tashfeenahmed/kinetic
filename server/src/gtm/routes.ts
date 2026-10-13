@@ -83,6 +83,7 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
         store.createColumn(tableId, { name: 'Tech stack', type: 'signal', auto_run: true, config: { kind: 'tech_stack', inputs: { domain: '{{Company domain}}' } } });
         store.createColumn(tableId, { name: 'Open roles', type: 'signal', auto_run: true, config: { kind: 'hiring', inputs: { domain: '{{Company domain}}', companyName: '{{Company}}' } } });
         store.createColumn(tableId, { name: 'Research', type: 'ai', config: { prompt: 'Research {{Company}} ({{Company domain}}). What do they sell, to whom, and what changed recently?', outputs: [{ name: 'summary', type: 'string', description: 'two sentences' }, { name: 'icp', type: 'string', description: 'who they sell to' }], webSearch: true, fetchPages: true, maxSteps: 6 } });
+        store.createColumn(tableId, { name: 'Fit score', type: 'enrich', config: { kind: 'fit_score', inputs: { companyName: '{{Company}}', domain: '{{Company domain}}', context: '{{Research.summary}}' } } });
         break;
       case 'find_emails':
         text('Full name', 'Company domain');

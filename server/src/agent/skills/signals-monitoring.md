@@ -1,6 +1,6 @@
 ---
 name: signals-monitoring
-description: Use to watch accounts for buying signals (hiring, funding, news, tech stack, website changes, job changes, SEC/UK filings, outreach status) on a schedule, with Slack or webhook alerts when something changes.
+description: Use to watch accounts for buying signals (hiring, funding, news, tech stack, website changes, website audits of local businesses, job changes, SEC/UK filings, outreach status) on a schedule, with Slack or webhook alerts when something changes.
 ---
 # Signals and monitoring
 
@@ -15,6 +15,7 @@ Signal columns check a source per row; the value changes when something new happ
 - `uk_filings` — Companies House (COMPANIES_HOUSE_API_KEY). companyName, target (company number)
 - `tech_stack` — Wappalyzer fingerprints. domain
 - `website_change` — page hash. target (URL) or domain
+- `website_audit` — free homepage + robots.txt audit for SMB/local leads. domain (or target URL). Value = one plain-English line (e.g. "Site by Pixel Studio (pixelstudio.ie); no online booking; running ads (Meta Pixel); footer still says © 2019; no meta description"). Fields (`{{Audit.agency.name}}`, `.booking`, `.ads`, `.staleCopyright`, `.https`, `.mobileViewport`, `.metaDescription`, `.localBusinessSchema`, `.aiCrawlersBlocked`, `.slow`, `.summary`) make good first lines; on refresh `.changes` lists e.g. "started Google Ads ads", "changed agency: A → B", "added booking (Fresha)".
 - `github` — last push for an org. `new_subdomains` — certificate logs (≈10/hour free).
 - `job_change` — person left the company (PDL or Apollo key). email/linkedinUrl/fullName + companyName/domain
 - `outreach_status` — live campaign state for the row's email. email
