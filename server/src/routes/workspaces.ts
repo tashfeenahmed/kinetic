@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Ctx } from '../context.ts';
 import { auth, bool, defineRoutes, forbidden, HttpError, idParam, notFound, parse, requireAdmin } from '../http.ts';
 import { hashPassword, randomToken, sha256 } from '../lib/crypto.ts';
-import { seedWorkspaceDefaults, userJson } from './auth.ts';
+import { emailField, seedWorkspaceDefaults, userJson } from './auth.ts';
 import { inboxAiBody, inboxAiSettings } from '../engine/replyAi.ts';
 
 function memberOf(ctx: Ctx, userId: number, workspaceId: number) {
@@ -14,7 +14,8 @@ function workspaceJson(ctx: Ctx, id: number) {
   const w = ctx.db.get('SELECT * FROM workspaces WHERE id = ?', [id]);
   if (!w) throw notFound('workspace');
   const members = ctx.db.all(
-    `SELECT u.id, u.name, u.email, m.role FROM workspace_members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? ORDER BY u.name`, [id]);
+    `SELECT u.id, u.name, u.email, m.role, u.must_change_password AS pending FROM workspace_members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? ORDER BY u.name`, [id])
+    .map((m) => ({ ...m, pending: !!m.pending }));
   return {
     ...w,
     sync_all_emails: !!w.sync_all_emails,
@@ -41,7 +42,7 @@ export function workspaceRoutes(app: FastifyInstance, ctx: Ctx) {
 
   const nameBody = z.object({ name: z.string().min(1).max(100) });
   r.post('/api/workspaces', 'Create workspace', (req) => {
-    const a = auth(req);
+    const a = requireAdmin(req);
     const b = parse(nameBody, req.body);
     const id = db.tx(() => {
       const wsId = db.insert('workspaces', { name: b.name });
@@ -87,18 +88,39 @@ export function workspaceRoutes(app: FastifyInstance, ctx: Ctx) {
   }, { body: switchBody });
 
   // ---- members ----
-  const userBody = z.object({ name: z.string().min(1), email: z.email(), password: z.string().min(8), role: z.enum(['admin', 'editor', 'viewer']).default('editor') });
+  const userBody = z.object({ name: z.string().trim().min(1), email: emailField(), password: z.string().min(8), role: z.enum(['admin', 'editor', 'viewer']).default('editor') });
   r.post('/api/workspaces/v1.1/users', 'Create user and add to current workspace', (req) => {
     const a = requireAdmin(req);
     const b = parse(userBody, req.body);
-    const existing = db.get('SELECT id FROM users WHERE email = ?', [b.email]);
+    const existing = db.get('SELECT * FROM users WHERE email = ?', [b.email]);
+    if (existing && memberOf(ctx, existing.id, a.workspaceId)) {
+      throw new HttpError(422, { error: 'validation_error', message: `${existing.email} is already in this workspace. Change their role or reset their password in the list instead.`, fields: { email: ['is already a member'] } });
+    }
+    // Someone with access to other workspaces keeps their own password; anyone else
+    // (new, or removed from everything earlier) signs in with the temporary one and picks their own.
+    const keepsPassword = !!existing && !!db.get('SELECT 1 FROM workspace_members WHERE user_id = ?', [existing.id]);
     const uid = db.tx(() => {
-      const id = existing?.id ?? db.insert('users', { name: b.name, email: b.email, password_hash: hashPassword(b.password), current_workspace_id: a.workspaceId });
-      db.run('INSERT OR REPLACE INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)', [a.workspaceId, id, b.role]);
+      let id = existing?.id as number | undefined;
+      if (!id) id = db.insert('users', { name: b.name, email: b.email, password_hash: hashPassword(b.password), must_change_password: 1, current_workspace_id: a.workspaceId });
+      else if (!keepsPassword) db.update('users', id, { name: b.name, password_hash: hashPassword(b.password), must_change_password: 1, current_workspace_id: a.workspaceId, updated_at: new Date().toISOString() });
+      db.run('INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)', [a.workspaceId, id, b.role]);
       return id;
     });
-    return { data: { id: uid, name: b.name, email: b.email, role: b.role } };
+    const u = db.get('SELECT name, email FROM users WHERE id = ?', [uid])!;
+    return { data: { id: uid, name: u.name, email: u.email, role: b.role, existing_account: keepsPassword, temporary_password_set: !keepsPassword } };
   }, { body: userBody });
+
+  const resetBody = z.object({ password: z.string().min(8) });
+  r.put('/api/workspaces/members/:user_id/password', 'Set a temporary password for a member (they choose their own at next sign-in)', (req) => {
+    const a = requireAdmin(req);
+    const userId = idParam(req, 'user_id');
+    const b = parse(resetBody, req.body);
+    if (userId === a.userId) throw new HttpError(422, { error: 'validation_error', message: 'Change your own password in Settings → Profile.' });
+    if (!memberOf(ctx, userId, a.workspaceId)) throw notFound('member');
+    db.update('users', userId, { password_hash: hashPassword(b.password), must_change_password: 1, updated_at: new Date().toISOString() });
+    db.run('DELETE FROM sessions WHERE user_id = ?', [userId]); // signed out everywhere
+    return { data: { success: true } };
+  }, { body: resetBody });
 
   const roleBody = z.object({ role: z.enum(['admin', 'editor', 'viewer']) });
   r.put('/api/workspaces/members/:user_id', 'Update member role', (req) => {
@@ -116,6 +138,8 @@ export function workspaceRoutes(app: FastifyInstance, ctx: Ctx) {
     const userId = idParam(req, 'user_id');
     if (userId === a.userId) throw new HttpError(422, { error: 'validation_error', message: 'You cannot remove yourself.' });
     db.run('DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?', [a.workspaceId, userId]);
+    // No workspace left: end their sessions too.
+    if (!db.get('SELECT 1 FROM workspace_members WHERE user_id = ?', [userId])) db.run('DELETE FROM sessions WHERE user_id = ?', [userId]);
     return { data: { success: true } };
   });
 

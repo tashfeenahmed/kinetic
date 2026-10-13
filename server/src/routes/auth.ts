@@ -43,6 +43,9 @@ export function authenticate(ctx: Ctx, req: FastifyRequest): Auth | null {
   return { userId: user.id, workspaceId: member.workspace_id, role: member.role, via: 'session' };
 }
 
+/** Emails are matched case-insensitively and pasted addresses often carry spaces. */
+export const emailField = () => z.string().trim().toLowerCase().pipe(z.email());
+
 function createSession(ctx: Ctx, userId: number): string {
   const sid = randomToken(32);
   ctx.db.insert('sessions', { id: sha256(sid), user_id: userId, expires_at: new Date(Date.now() + SESSION_DAYS * 86_400_000).toISOString() });
@@ -50,20 +53,21 @@ function createSession(ctx: Ctx, userId: number): string {
 }
 
 export function userJson(ctx: Ctx, userId: number) {
-  const u = ctx.db.get('SELECT id, name, email, current_workspace_id, created_at, updated_at FROM users WHERE id = ?', [userId])!;
+  const u = ctx.db.get('SELECT id, name, email, current_workspace_id, must_change_password, created_at, updated_at FROM users WHERE id = ?', [userId])!;
   const ws = ctx.db.get('SELECT w.id, w.name, m.role FROM workspaces w JOIN workspace_members m ON m.workspace_id = w.id WHERE w.id = ? AND m.user_id = ?', [u.current_workspace_id, userId]);
-  return { ...u, team: ws ?? null, role: ws?.role ?? null };
+  return { ...u, must_change_password: !!u.must_change_password, team: ws ?? null, role: ws?.role ?? null };
 }
 
 export function authRoutes(app: FastifyInstance, ctx: Ctx) {
   const r = defineRoutes(app, 'Account Management');
-  const cookieOpts = { path: '/', httpOnly: true, sameSite: 'lax' as const, secure: ctx.config.publicUrl.startsWith('https'), maxAge: SESSION_DAYS * 86_400 };
+  // Secure cookies only over https: the same install is often opened over plain http on the LAN.
+  const cookieOpts = (req: FastifyRequest) => ({ path: '/', httpOnly: true, sameSite: 'lax' as const, secure: req.protocol === 'https', maxAge: SESSION_DAYS * 86_400 });
 
   r.get('/api/auth/status', 'Whether the app needs first-run setup', (req) => ({
     data: { needs_setup: !ctx.db.get('SELECT 1 FROM users LIMIT 1'), authenticated: !!req.auth },
   }), { public: true });
 
-  const setupBody = z.object({ name: z.string().min(1), email: z.email(), password: z.string().min(8), workspace_name: z.string().min(1).default('Main Workspace') });
+  const setupBody = z.object({ name: z.string().trim().min(1), email: emailField(), password: z.string().min(8), workspace_name: z.string().min(1).default('Main Workspace') });
   r.post('/api/auth/setup', 'Create the first admin account', (req, reply) => {
     if (ctx.db.get('SELECT 1 FROM users LIMIT 1')) throw new HttpError(409, { error: 'already_setup', message: 'Setup has already been completed.' });
     const b = parse(setupBody, req.body);
@@ -74,18 +78,22 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
       seedWorkspaceDefaults(ctx, wsId);
       return uid;
     });
-    reply.setCookie(SESSION_COOKIE, createSession(ctx, userId), cookieOpts);
+    reply.setCookie(SESSION_COOKIE, createSession(ctx, userId), cookieOpts(req));
     return { data: userJson(ctx, userId) };
   }, { body: setupBody, public: true });
 
-  const loginBody = z.object({ email: z.email(), password: z.string().min(1) });
+  const loginBody = z.object({ email: emailField(), password: z.string().min(1) });
   r.post('/api/auth/login', 'Log in with email and password', (req, reply) => {
     const b = parse(loginBody, req.body);
     const user = ctx.db.get('SELECT * FROM users WHERE email = ?', [b.email]);
     if (!user || !verifyPassword(b.password, user.password_hash)) {
       throw new HttpError(422, { error: 'validation_error', message: 'These credentials do not match our records.', fields: { email: ['These credentials do not match our records.'] } });
     }
-    reply.setCookie(SESSION_COOKIE, createSession(ctx, user.id), cookieOpts);
+    // Removed from every workspace: a session would only lead to an empty, broken app.
+    if (!ctx.db.get('SELECT 1 FROM workspace_members WHERE user_id = ?', [user.id])) {
+      throw new HttpError(403, { error: 'no_workspace', message: 'Your account is no longer part of any workspace. Ask an admin to add you again.' });
+    }
+    reply.setCookie(SESSION_COOKIE, createSession(ctx, user.id), cookieOpts(req));
     return { data: userJson(ctx, user.id) };
   }, { body: loginBody, public: true });
 
@@ -98,24 +106,34 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
 
   r.get('/api/users', 'Account details', (req) => ({ data: userJson(ctx, auth(req).userId) }));
 
-  const profileBody = z.object({ name: z.string().min(1).optional(), email: z.email().optional() });
+  const profileBody = z.object({ name: z.string().trim().min(1).optional(), email: emailField().optional() });
   r.put('/api/users/profile', 'Update profile', (req) => {
     const a = auth(req);
     const b = parse(profileBody, req.body);
+    if (b.email && ctx.db.get('SELECT 1 FROM users WHERE email = ? AND id != ?', [b.email, a.userId])) {
+      throw new HttpError(422, { error: 'validation_error', message: 'Another account already uses this email.', fields: { email: ['Another account already uses this email.'] } });
+    }
     ctx.db.update('users', a.userId, { ...b, updated_at: new Date().toISOString() });
     return { data: userJson(ctx, a.userId) };
   }, { body: profileBody });
 
-  const pwBody = z.object({ current_password: z.string(), password: z.string().min(8), password_confirmation: z.string() })
+  const pwBody = z.object({ current_password: z.string().default(''), password: z.string().min(8), password_confirmation: z.string() })
     .refine((v) => v.password === v.password_confirmation, { path: ['password_confirmation'], message: 'Passwords do not match.' });
   r.put('/api/users/password', 'Update password', (req) => {
     const a = auth(req);
     const b = parse(pwBody, req.body);
     const user = ctx.db.get('SELECT * FROM users WHERE id = ?', [a.userId])!;
-    if (!verifyPassword(b.current_password, user.password_hash)) {
+    // Choosing a password right after signing in with a temporary one doesn't ask for it again.
+    if (!(user.must_change_password && a.via === 'session') && !verifyPassword(b.current_password, user.password_hash)) {
       throw new HttpError(422, { error: 'validation_error', message: 'Current password is incorrect.', fields: { current_password: ['Current password is incorrect.'] } });
     }
-    ctx.db.update('users', a.userId, { password_hash: hashPassword(b.password), updated_at: new Date().toISOString() });
+    if (verifyPassword(b.password, user.password_hash)) {
+      throw new HttpError(422, { error: 'validation_error', message: 'Choose a password different from the current one.', fields: { password: ['Choose a password different from the current one.'] } });
+    }
+    ctx.db.update('users', a.userId, { password_hash: hashPassword(b.password), must_change_password: 0, updated_at: new Date().toISOString() });
+    // Sign out other devices; this one stays signed in.
+    const sid = req.cookies?.[SESSION_COOKIE];
+    ctx.db.run('DELETE FROM sessions WHERE user_id = ? AND id != ?', [a.userId, sid ? sha256(sid) : '']);
     return { data: { success: true } };
   }, { body: pwBody });
 }

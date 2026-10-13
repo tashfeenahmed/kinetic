@@ -114,7 +114,9 @@ function Workspace() {
   const ws = useQuery({ queryKey: ['workspace', me?.current_workspace_id], queryFn: () => api.get(`/api/workspaces/${me!.current_workspace_id}`).then((r) => r.data) });
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
-  const [member, setMember] = useState({ name: '', email: '', password: '', role: 'editor' });
+  const [member, setMember] = useState({ name: '', email: '', password: tempPassword(), role: 'editor' });
+  // Sign-in details to hand over after adding someone or resetting their password.
+  const [share, setShare] = useState<{ name: string; email: string; password: string | null; note?: string } | null>(null);
   useEffect(() => { if (ws.data) setName(ws.data.name); }, [ws.data]);
   const isAdmin = me?.role === 'admin';
 
@@ -124,10 +126,22 @@ function Workspace() {
     onError: (e) => toast(errorMessage(e), 'error'),
   });
   const addMember = useMutation({
-    mutationFn: () => api.post('/api/workspaces/v1.1/users', member),
-    onSuccess: () => { toast('Member added'); setAdding(false); setMember({ name: '', email: '', password: '', role: 'editor' }); ws.refetch(); },
+    mutationFn: () => api.post('/api/workspaces/v1.1/users', member).then((r) => r.data as { name: string; email: string; existing_account: boolean }),
+    onSuccess: (d) => {
+      setAdding(false);
+      setShare(d.existing_account
+        ? { name: d.name, email: d.email, password: null, note: `${d.name} already has a Kinetic account, so they sign in with their own password and will find this workspace in the workspace switcher.` }
+        : { name: d.name, email: d.email, password: member.password });
+      setMember({ name: '', email: '', password: tempPassword(), role: 'editor' });
+      ws.refetch();
+    },
     onError: (e) => toast(errorMessage(e), 'error'),
   });
+  const resetPassword = async (m: any) => {
+    if (!(await confirm({ title: `Reset ${m.name}’s password?`, message: 'They are signed out and choose a new password the next time they sign in with the temporary one.', confirmLabel: 'Reset password' }))) return;
+    const password = tempPassword();
+    try { await api.put(`/api/workspaces/members/${m.id}/password`, { password }); setShare({ name: m.name, email: m.email, password }); ws.refetch(); } catch (e) { toast(errorMessage(e), 'error'); }
+  };
   const setRole = async (userId: number, role: string) => {
     try { await api.put(`/api/workspaces/members/${userId}`, { role }); ws.refetch(); toast('Role updated'); } catch (e) { toast(errorMessage(e), 'error'); }
   };
@@ -153,14 +167,17 @@ function Workspace() {
           <Button variant="primary" disabled={!isAdmin || !name.trim()} loading={rename.isPending} onClick={() => rename.mutate()}>Save</Button>
         </div>
       </Card>
-      <Card title="Team members" description="Unlimited members, no per-seat fees. Viewers can look but not change anything." padded={false}
+      <Card title="Team members" description="Admins manage mailboxes, integrations and the team · editors run campaigns and work the inbox · viewers can look but not change anything." padded={false}
         actions={isAdmin && <Button size="sm" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>Add member</Button>}>
         <Table>
           <thead><tr><Th>Name</Th><Th>Email</Th><Th>Role</Th><Th /></tr></thead>
           <tbody>
             {ws.data.members.map((m: any) => (
               <tr key={m.id}>
-                <Td className="font-medium text-slate-900">{m.name}{m.id === me?.id && <span className="ml-2 text-xs text-slate-400">(you)</span>}</Td>
+                <Td className="font-medium text-slate-900">
+                  {m.name}{m.id === me?.id && <span className="ml-2 text-xs text-slate-400">(you)</span>}
+                  {m.pending && m.id !== me?.id && <span title="Hasn't signed in and chosen their own password yet"><Badge tone="yellow" className="ml-2">Invited</Badge></span>}
+                </Td>
                 <Td>{m.email}</Td>
                 <Td>
                   {isAdmin && m.id !== me?.id ? (
@@ -169,7 +186,10 @@ function Workspace() {
                     </Select>
                   ) : <Badge tone={m.role === 'admin' ? 'purple' : 'gray'}>{m.role}</Badge>}
                 </Td>
-                <Td className="text-right">{isAdmin && m.id !== me?.id && <Button size="sm" variant="ghost" onClick={() => removeMember(m)}>Remove</Button>}</Td>
+                <Td className="whitespace-nowrap text-right">{isAdmin && m.id !== me?.id && <>
+                  <Button size="sm" variant="ghost" onClick={() => resetPassword(m)}>Reset password</Button>
+                  <Button size="sm" variant="ghost" onClick={() => removeMember(m)}>Remove</Button>
+                </>}</Td>
               </tr>
             ))}
           </tbody>
@@ -183,21 +203,48 @@ function Workspace() {
           </div>
         </Card>
       )}
-      <Modal open={adding} onClose={() => setAdding(false)} title="Add team member" description="Creates a login for them and adds them to this workspace." size="sm"
-        footer={<><Button onClick={() => setAdding(false)}>Cancel</Button><Button variant="primary" loading={addMember.isPending} onClick={() => addMember.mutate()}>Add member</Button></>}>
+      <Modal open={adding} onClose={() => setAdding(false)} title="Add team member" description="Creates their sign-in and adds them to this workspace. You’ll get the details to send them." size="sm"
+        footer={<><Button onClick={() => setAdding(false)}>Cancel</Button><Button variant="primary" loading={addMember.isPending} disabled={!member.name.trim() || !member.email.trim() || member.password.length < 8} onClick={() => addMember.mutate()}>Add member</Button></>}>
         <div className="space-y-4">
-          <Field label="Name"><Input value={member.name} onChange={(e) => setMember({ ...member, name: e.target.value })} /></Field>
+          <Field label="Name"><Input autoFocus value={member.name} onChange={(e) => setMember({ ...member, name: e.target.value })} /></Field>
           <Field label="Email"><Input type="email" value={member.email} onChange={(e) => setMember({ ...member, email: e.target.value })} /></Field>
-          <Field label="Temporary password" hint="They can change it in Settings → Profile."><Input type="password" value={member.password} onChange={(e) => setMember({ ...member, password: e.target.value })} /></Field>
+          <Field label="Temporary password" hint="They sign in with this once, then choose their own.">
+            <div className="flex gap-2">
+              <Input className="font-mono" value={member.password} onChange={(e) => setMember({ ...member, password: e.target.value })} />
+              <Button onClick={() => setMember({ ...member, password: tempPassword() })}>New</Button>
+            </div>
+          </Field>
           <Field label="Role">
             <Select value={member.role} onChange={(e) => setMember({ ...member, role: e.target.value })}>
-              <option value="admin">Admin — full access</option><option value="editor">Editor — run campaigns</option><option value="viewer">Viewer — read only</option>
+              <option value="admin">Admin — full access, manages the team</option><option value="editor">Editor — run campaigns and the inbox</option><option value="viewer">Viewer — read only</option>
             </Select>
           </Field>
         </div>
       </Modal>
+      <Modal open={!!share} onClose={() => setShare(null)} title={share?.password ? `Send ${share.name} their sign-in details` : `${share?.name ?? ''} added`} size="sm"
+        footer={<Button variant="primary" onClick={() => setShare(null)}>Done</Button>}>
+        {share && (share.password ? (
+          <div className="space-y-3 text-sm">
+            <p className="text-slate-600">Share these privately (not in a public channel). The temporary password works until they choose their own at first sign-in.</p>
+            <dl className="space-y-2">
+              <div><dt className="text-xs text-slate-500">Address</dt><dd><CopyText value={window.location.origin} /></dd></div>
+              <div><dt className="text-xs text-slate-500">Email</dt><dd><CopyText value={share.email} /></dd></div>
+              <div><dt className="text-xs text-slate-500">Temporary password</dt><dd><CopyText value={share.password} /></dd></div>
+            </dl>
+<Button className="w-full" onClick={() => { navigator.clipboard.writeText(`Sign in to Kinetic at ${window.location.origin}\nEmail: ${share.email}\nTemporary password: ${share.password}\nYou'll be asked to choose your own password.`); toast('Copied'); }}>Copy all as a message</Button>
+          </div>
+        ) : <p className="text-sm text-slate-600">{share.note}</p>)}
+      </Modal>
     </>
   );
+}
+
+/** A readable temporary password: 3 groups of 4 letters/digits, no look-alikes (0/O, 1/l). */
+function tempPassword() {
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  const s = Array.from(bytes, (b) => chars[b % chars.length]).join('');
+  return `${s.slice(0, 4)}-${s.slice(4, 8)}-${s.slice(8)}`;
 }
 
 function InboxSettings() {
