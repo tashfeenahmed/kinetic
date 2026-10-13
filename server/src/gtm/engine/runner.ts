@@ -378,8 +378,11 @@ export class Engine {
         for (const f of cfg.variables ?? []) if (f.name) variables[f.name] = v(f.value);
         const email = v(cfg.email);
         if (!email) return { value: null, status: 'skipped', error: 'No email for this row' };
+        // "First name" mapped to a full name (and no last name): split it.
+        let first = v(cfg.firstName), last = v(cfg.lastName);
+        if (first && !last && !String(cfg.lastName ?? '').trim() && /\s/.test(first)) [first, last] = [first.split(/\s+/)[0]!, first.split(/\s+/).slice(1).join(' ')];
         const r = this.outreach.pushLead(workspaceId, {
-          email, first_name: v(cfg.firstName), last_name: v(cfg.lastName), company: v(cfg.company), title: v(cfg.title), variables,
+          email, first_name: first, last_name: last, company: v(cfg.company), title: v(cfg.title), variables,
         }, { campaignId: cfg.kind === 'outreach_campaign' ? Number(cfg.campaignId) || null : null, listId: Number(cfg.listId) || null, behavior: cfg.behavior ?? 'patch', allowParallel: !!cfg.allowParallel, source: emailProvenance(cfg.email, row, tableId ?? 0, this.store) });
         const label = r.campaign ? (r.campaign.attached ? `Added to ${r.campaign.name}` : `Not added: ${r.campaign.reason}`) : r.created ? 'Lead created' : 'Lead updated';
         return { value: { value: label, data: r }, status: r.campaign && !r.campaign.attached ? 'skipped' : 'done', error: r.campaign && !r.campaign.attached ? label : undefined, meta: { provider: 'outreach', leadId: r.leadId } };

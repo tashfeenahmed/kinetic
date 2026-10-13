@@ -17,7 +17,7 @@ mailboxes are listed under their domain, each domain row shows SPF / DKIM / DMAR
    `meta.cloudflare_connected` says whether DNS can be written.
 2. `GET /api/sender-emails` (optional `search`, `status` Connected/Disconnected/Paused, `tag_id`) →
    mailboxes. Group them yourself by the part after `@`.
-Answer email-first: "neu.business: nathan@, melissa@, ella@ (all connected), SPF/DKIM/DMARC pass".
+Answer email-first: "yourdomain.com: sam@, alex@, jo@ (all connected), SPF/DKIM/DMARC pass".
 
 ## Check DNS (read-only, safe)
 - Managed domain: `POST /api/domains/{id}/check` → refreshed row (stores the report).

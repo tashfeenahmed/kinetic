@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24" role="img" aria-label="Kinetic">
+  <defs><clipPath id="k"><rect width="24" height="24" rx="6.5"/></clipPath></defs>
+  <g clip-path="url(#k)">
+    <rect width="24" height="6" fill="#3b5bfd"/><rect y="6" width="24" height="6" fill="#14b8a6"/>
+    <rect y="12" width="24" height="6" fill="#fbbf24"/><rect y="18" width="24" height="6" fill="#f97316"/>
+  </g>
+</svg>

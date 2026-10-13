@@ -42,7 +42,7 @@ describe('lookup proxy', () => {
   });
 
   it('knows private hosts', () => {
-    for (const h of ['localhost', '127.0.0.1', '192.168.1.17', '10.0.0.2', '172.20.1.1', '[::1]', 'raspberrypi.local']) expect(isPrivateHost(h), h).toBe(true);
+    for (const h of ['localhost', '127.0.0.1', '192.168.1.50', '10.0.0.2', '172.20.1.1', '[::1]', 'printer.local']) expect(isPrivateHost(h), h).toBe(true);
     for (const h of ['example.com', '8.8.8.8', '172.32.0.1']) expect(isPrivateHost(h), h).toBe(false);
   });
 });

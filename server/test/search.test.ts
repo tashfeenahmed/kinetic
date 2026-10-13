@@ -41,7 +41,7 @@ describe('web search engine order', () => {
     vi.stubGlobal('fetch', async (url: URL | string) => String(url).includes('8888')
       ? Response.json({ results: [], unresponsive_engines: [['brave', 'too many requests'], ['startpage', 'CAPTCHA']] })
       : Response.json({ web: { results: [{ title: 'Acme', url: 'https://acme.com', description: 'x' }] } }));
-    const r = await webSearch('"Peter Greaney" "@acme.ie"', ctx, 8, { emptyIsAnswer: true });
+    const r = await webSearch('"Dana Whitfield" "@acme.ie"', ctx, 8, { emptyIsAnswer: true });
     expect(r.engine).toBe('brave');
   });
 

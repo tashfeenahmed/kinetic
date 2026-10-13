@@ -37,14 +37,14 @@ function web(results: Record<string, { title: string; url: string; content: stri
 describe('web search email finder', () => {
   it('returns the person\'s own address found on another site, checked with SMTP', async () => {
     web(
-      { '"Peter Greaney" "@western.ie"': [{ title: 'Western EPoS — contact', url: 'https://directory.ie/western', content: 'Managing Director Peter Greaney' }] },
-      { 'https://directory.ie/western': '<p>Managing Director: Peter Greaney, <a href="mailto:pgreaney@western.ie">email</a></p><p>info@western.ie</p>' },
+      { '"Dana Whitfield" "@northwind.test"': [{ title: 'Northwind Tills — contact', url: 'https://directory.test/northwind', content: 'Managing Director Dana Whitfield' }] },
+      { 'https://directory.test/northwind': '<p>Managing Director: Dana Whitfield, <a href="mailto:dwhitfield@northwind.test">email</a></p><p>info@northwind.test</p>' },
     );
-    smtp.set('pgreaney@western.ie', 'valid');
-    const hit = await webSearchEmailFinder({ fullName: 'Peter Greaney', domain: 'western.ie', companyName: 'Western EPoS' }, ctx());
-    expect(hit).toMatchObject({ value: 'pgreaney@western.ie', confidence: 'found on the web · verified (SMTP)' });
+    smtp.set('dwhitfield@northwind.test', 'valid');
+    const hit = await webSearchEmailFinder({ fullName: 'Dana Whitfield', domain: 'northwind.test', companyName: 'Northwind Tills' }, ctx());
+    expect(hit).toMatchObject({ value: 'dwhitfield@northwind.test', confidence: 'found on the web · verified (SMTP)' });
     expect(hit!.weak).toBeUndefined();
-    expect(hit!.data).toMatchObject({ source: 'https://directory.ie/western', company_emails: ['info@western.ie'] });
+    expect(hit!.data).toMatchObject({ source: 'https://directory.test/northwind', company_emails: ['info@northwind.test'] });
   });
 
   it('learns the company pattern from colleagues\' addresses on the web', async () => {
@@ -56,18 +56,18 @@ describe('web search email finder', () => {
   });
 
   it('skips dead public addresses and keeps other-domain addresses as a weak fallback', async () => {
-    web({ '"Peter Greaney" email contact': [{ title: 'Peter Greaney — Galway Tills', url: 'https://galwaytills.ie', content: 'Peter Greaney, owner: peter.greaney@galwaytills.ie' }] }, {});
-    const hit = await webSearchEmailFinder({ fullName: 'Peter Greaney', domain: 'western.ie' }, ctx());
-    expect(hit).toMatchObject({ value: 'peter.greaney@galwaytills.ie', weak: true });
-    expect(hit!.data).toMatchObject({ other_emails: ['peter.greaney@galwaytills.ie'] });
+    web({ '"Dana Whitfield" email contact': [{ title: 'Dana Whitfield — Galway Tills', url: 'https://galwaytills.ie', content: 'Dana Whitfield, owner: dana.whitfield@galwaytills.ie' }] }, {});
+    const hit = await webSearchEmailFinder({ fullName: 'Dana Whitfield', domain: 'northwind.test' }, ctx());
+    expect(hit).toMatchObject({ value: 'dana.whitfield@galwaytills.ie', weak: true });
+    expect(hit!.data).toMatchObject({ other_emails: ['dana.whitfield@galwaytills.ie'] });
   });
 
   it('ignores addresses that are someone else\'s', async () => {
-    web({ '"@acme.ie"': [{ title: 'Acme', url: 'https://x.ie', content: 'sales@acme.ie peter@gmail.com' }] }, {});
-    expect(await webSearchEmailFinder({ fullName: 'Peter Greaney', domain: 'acme.ie' }, ctx())).toBeNull();
-    expect(looksLike('pgreaney', 'peter', 'greaney')).toBe(true);
-    expect(looksLike('peter.greaney', 'peter', 'greaney')).toBe(true);
-    expect(looksLike('sales', 'peter', 'greaney')).toBe(false);
-    expect(looksLike('pmurphy', 'peter', 'greaney')).toBe(false);
+    web({ '"@acme.ie"': [{ title: 'Acme', url: 'https://x.ie', content: 'sales@acme.ie dana@gmail.com' }] }, {});
+    expect(await webSearchEmailFinder({ fullName: 'Dana Whitfield', domain: 'acme.ie' }, ctx())).toBeNull();
+    expect(looksLike('dwhitfield', 'dana', 'whitfield')).toBe(true);
+    expect(looksLike('dana.whitfield', 'dana', 'whitfield')).toBe(true);
+    expect(looksLike('sales', 'dana', 'whitfield')).toBe(false);
+    expect(looksLike('dmurphy', 'dana', 'whitfield')).toBe(false);
   });
 });

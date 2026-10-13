@@ -25,7 +25,7 @@ Microsoft 365 admin to approve the app for the whole organisation.
 - Test send: `POST /api/sender-emails/{id}/send-test` `{ "to_email": "…" }` (approval; ask which address).
 
 ## Change
-- One mailbox: `PATCH /api/sender-emails/{id}` `{ "name": "Nathan Byrne", "daily_limit": 30, "email_signature": "<p>…</p>" }`.
+- One mailbox: `PATCH /api/sender-emails/{id}` `{ "name": "Sam Rivera", "daily_limit": 30, "email_signature": "<p>…</p>" }`.
 - Bulk daily limits: `PATCH /api/sender-emails/daily-limits/bulk` `{ "sender_email_ids": [..], "daily_limit": 30 }`.
   Keep new mailboxes at 20–30 cold emails a day; raise slowly and only when warmup health is good.
 - Bulk signatures: `PATCH /api/sender-emails/signatures/bulk` `{ "sender_email_ids": [..], "email_signature": "<p>{SENDER_NAME}</p>" }`.
@@ -40,9 +40,9 @@ Microsoft 365 admin to approve the app for the whole organisation.
 the user typed themselves.
 
 ## Custom tracking domains
-Opens/clicks are tracked through a link domain; using the sender's own subdomain (e.g. `track.neu.business`) is better
+Opens/clicks are tracked through a link domain; using the sender's own subdomain (e.g. `track.yourdomain.com`) is better
 for deliverability than the shared default.
-1. `POST /api/custom-tracking-domain` `{ "domain": "track.neu.business" }`. The CNAME must point at
+1. `POST /api/custom-tracking-domain` `{ "domain": "track.yourdomain.com" }`. The CNAME must point at
    `meta.cname_target` from `GET /api/custom-tracking-domain` (Kinetic's public host). If that is `localhost`, Kinetic
    isn't on a public address yet, so tracking links can't work; tell the user before going further.
 2. The user (or `sending-domains-and-mailboxes` via Cloudflare) adds the CNAME.
