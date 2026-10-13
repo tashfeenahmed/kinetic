@@ -14,6 +14,7 @@ import { checkDomain } from '../lib/dns.ts';
 import { getSetting, setSetting, warmupFilterPhrase } from '../settings.ts';
 import { isValidTimezone } from '../lib/schedule.ts';
 import { dailySeries } from './campaigns.ts';
+import { notWarmupMailbox } from './tags.ts';
 
 export function opsRoutes(app: FastifyInstance, ctx: Ctx) {
   const { db } = ctx;
@@ -272,9 +273,9 @@ export function opsRoutes(app: FastifyInstance, ctx: Ctx) {
          (SELECT COUNT(*) FROM sender_emails WHERE workspace_id = ? AND status = 'Connected') connected_senders,
          (SELECT COUNT(*) FROM sender_emails WHERE workspace_id = ? AND status = 'Disconnected') disconnected_senders,
          (SELECT COUNT(*) FROM leads WHERE workspace_id = ?) total_leads,
-         (SELECT COUNT(*) FROM replies WHERE workspace_id = ? AND folder = 'inbox' AND read = 0) unread_replies,
+         (SELECT COUNT(*) FROM replies WHERE workspace_id = ? AND folder = 'inbox' AND read = 0 AND ${notWarmupMailbox('sender_email_id')}) unread_replies,
          (SELECT COUNT(*) FROM scheduled_emails WHERE workspace_id = ? AND status = 'scheduled') scheduled_emails`,
-      Array(7).fill(a.workspaceId))!;
+      Array(8).fill(a.workspaceId))!;
     return {
       data: {
         ...s, ...r, unsubscribed: unsub,

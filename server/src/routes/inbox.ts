@@ -14,6 +14,7 @@ import { escapeHtml, htmlToText, looksLikeHtml, stripQuoted, textToHtml } from '
 import { attachLeads } from './leads.ts';
 import { markdownToHtml } from '../lib/markdown.ts';
 import { realFiles } from '../mail/classify.ts';
+import { notWarmupMailbox } from './tags.ts';
 
 const attachmentInput = z.object({ filename: z.string().min(1), content_base64: z.string(), content_type: z.string().optional() });
 const sendFields = {
@@ -60,8 +61,9 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
   const r = defineRoutes(app, 'Replies');
   const { db } = ctx;
 
+  // Mail in warmup-tagged mailboxes is hidden everywhere in the inbox, including direct links.
   const getReply = (ws: number, id: number) => {
-    const row = db.get('SELECT * FROM replies WHERE id = ? AND workspace_id = ?', [id, ws]);
+    const row = db.get(`SELECT * FROM replies WHERE id = ? AND workspace_id = ? AND ${notWarmupMailbox('sender_email_id')}`, [id, ws, ws]);
     if (!row) throw notFound('reply');
     return row;
   };
@@ -90,8 +92,8 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
   r.get('/api/replies', 'Get all replies (master inbox)', (req) => {
     const a = auth(req);
     const q = parse(listQ, req.query);
-    const where = ['r.workspace_id = ?'];
-    const params: any[] = [a.workspaceId];
+    const where = ['r.workspace_id = ?', notWarmupMailbox('r.sender_email_id')];
+    const params: any[] = [a.workspaceId, a.workspaceId];
     if (q.folder !== 'all') { where.push('r.folder = ?'); params.push(q.folder); }
     if (q.status === 'interested') where.push('r.interested = 1');
     if (q.status === 'not_interested') where.push(`r.category = 'not_interested'`);
@@ -114,7 +116,7 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
     const result = paginate(ctx, sql, params, q, (row) => ({ ...replyJson(row), preview: stripQuoted(row.body_text || htmlToText(row.body_html)).replace(/\s+/g, ' ').slice(0, 160) }));
     const counts = db.get(`SELECT COALESCE(SUM(CASE WHEN folder = 'inbox' AND read = 0 THEN 1 ELSE 0 END), 0) AS unread_inbox,
         COALESCE(SUM(CASE WHEN folder = 'inbox' AND interested = 1 AND read = 0 THEN 1 ELSE 0 END), 0) AS unread_interested
-      FROM replies WHERE workspace_id = ?`, [a.workspaceId]);
+      FROM replies WHERE workspace_id = ? AND ${notWarmupMailbox('sender_email_id')}`, [a.workspaceId, a.workspaceId]);
     return { ...result, counts };
   }, { query: listQ });
 
@@ -349,8 +351,8 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
   sent.get('/api/sent-emails', 'Sent emails', (req) => {
     const a = auth(req);
     const q = parse(sentQ, req.query);
-    const where = ['s.workspace_id = ?'];
-    const params: any[] = [a.workspaceId];
+    const where = ['s.workspace_id = ?', notWarmupMailbox('s.sender_email_id')];
+    const params: any[] = [a.workspaceId, a.workspaceId];
     if (q.kind !== 'all') { where.push('s.kind = ?'); params.push(q.kind); }
     else where.push(`s.kind != 'test'`);
     if (q.sender_email_id) { where.push('s.sender_email_id = ?'); params.push(q.sender_email_id); }
@@ -364,13 +366,13 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
   }, { query: sentQ });
   sent.get('/api/sent-emails/:id', 'Sent email details', (req) => {
     const a = auth(req);
-    const s = db.get(`SELECT s.*, se.email AS sender_email, se.name AS sender_name FROM sent_emails s LEFT JOIN sender_emails se ON se.id = s.sender_email_id WHERE s.id = ? AND s.workspace_id = ?`, [idParam(req), a.workspaceId]);
+    const s = db.get(`SELECT s.*, se.email AS sender_email, se.name AS sender_name FROM sent_emails s LEFT JOIN sender_emails se ON se.id = s.sender_email_id WHERE s.id = ? AND s.workspace_id = ? AND ${notWarmupMailbox('s.sender_email_id')}`, [idParam(req), a.workspaceId, a.workspaceId]);
     if (!s) throw notFound('email');
     return { data: sentJson(s) };
   });
   sent.get('/api/sent-emails/:id/attachments/:index', 'Download a sent attachment (?inline=1 opens images, PDFs and text in the browser)', (req, reply) => {
     const a = auth(req);
-    const s = db.get('SELECT attachments FROM sent_emails WHERE id = ? AND workspace_id = ?', [idParam(req), a.workspaceId]);
+    const s = db.get(`SELECT attachments FROM sent_emails WHERE id = ? AND workspace_id = ? AND ${notWarmupMailbox('sender_email_id')}`, [idParam(req), a.workspaceId, a.workspaceId]);
     if (!s) throw notFound('email');
     return sendAttachment(req, reply, s.attachments);
   });
