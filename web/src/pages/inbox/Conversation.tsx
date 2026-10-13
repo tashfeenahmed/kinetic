@@ -8,6 +8,7 @@ import { api, errorMessage } from '../../lib/api.ts';
 import { avatarColor, fmtDateTime, fullName, initials } from '../../lib/format.ts';
 import { Badge, Button, cx, Field, IconButton, Input, Loading, Menu, Modal, Select, Shimmer, useUi } from '../../components/ui.tsx';
 import { CampaignStatus, LeadStatus, REPLY_LABELS, ReplyCategory } from '../../components/status.tsx';
+import { DealPicker } from '../Pipeline.tsx';
 import { AttachmentList, AttachmentPicker, EmailBody, MarkdownEditor, parseEmails, useAttachments, type AttachmentItem } from './shared.tsx';
 
 interface Message {
@@ -189,7 +190,7 @@ export function Conversation({ replyId, onBack, onDeleted }: { replyId: number; 
     if (thread.data) { qc.invalidateQueries({ queryKey: ['unread-count'] }); qc.invalidateQueries({ queryKey: ['inbox'] }); }
   }, [thread.data?.reply.id, qc]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const refresh = () => { qc.invalidateQueries({ queryKey: ['thread', replyId] }); qc.invalidateQueries({ queryKey: ['inbox'] }); qc.invalidateQueries({ queryKey: ['unread-count'] }); };
+  const refresh = () => { qc.invalidateQueries({ queryKey: ['thread', replyId] }); qc.invalidateQueries({ queryKey: ['deals'] }); qc.invalidateQueries({ queryKey: ['inbox'] }); qc.invalidateQueries({ queryKey: ['unread-count'] }); };
   const act = useMutation({ mutationFn: (fn: () => Promise<unknown>) => fn(), onSuccess: refresh, onError: (e) => toast(errorMessage(e), 'error') });
 
   if (thread.isLoading) return <Loading />;
@@ -247,6 +248,7 @@ export function Conversation({ replyId, onBack, onDeleted }: { replyId: number; 
                 <span className="font-medium text-slate-800">{fullName(t.lead)}</span>
                 <span className="truncate text-slate-500">{[t.lead.title, t.lead.company].filter(Boolean).join(' · ')}</span>
                 <LeadStatus status={t.lead.status} />
+                <DealPicker leadId={t.lead.id} />
               </div>
             )}
             {t.campaign && (

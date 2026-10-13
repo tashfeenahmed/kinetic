@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
   ArrowRight, ArrowUp, AtSign, Globe, Building2, CheckCircle2, ChevronRight, Circle, FileText, Flame, Inbox, Mail, Radar, Rocket,
-  Table2, Users, Bookmark, MoreHorizontal, ListChecks, Ban,
+  Table2, Users, Bookmark, MoreHorizontal, ListChecks, Ban, CalendarCheck, Trophy,
 } from 'lucide-react';
 import { api, errorMessage } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
@@ -96,12 +96,14 @@ export function HomePage() {
       {/* The pipeline, left to right */}
       <h2 className="mb-3 mt-10 text-[15px] font-semibold text-slate-900">Your pipeline</h2>
       {!s ? <Loading /> : (
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
           <Stage to={tables.data?.[0] ? `/tables/${tables.data[0].id}` : '/'} icon={Table2} label="Prospects in tables" value={prospects} hint={`${tables.data?.length ?? 0} ${tables.data?.length === 1 ? 'table' : 'tables'}`} />
           <Stage to="/leads" icon={Users} label="Leads" value={s.total_leads} hint="ready for campaigns" />
           <Stage to="/campaigns" icon={Rocket} label="Contacted" value={s.leads_contacted} hint={`${fmtNumber(s.emails_sent)} sent · ${fmtPct(s.bounce_rate)} bounced`} tone={s.bounce_rate > 3 ? 'warn' : undefined} />
           <Stage to="/inbox" icon={Inbox} label="Replied" value={s.unique_replies} hint={`${fmtPct(s.reply_rate)} reply rate`} />
-          <Stage to="/inbox" icon={CheckCircle2} label="Interested" value={s.interested} hint={`${fmtPct(s.interested_rate)} of contacted`} last />
+          <Stage to="/inbox" icon={CheckCircle2} label="Interested" value={s.interested} hint={`${fmtPct(s.interested_rate)} of contacted`} />
+          <Stage to="/pipeline" icon={CalendarCheck} label="Meetings" value={s.meetings} hint={`${fmtNumber(s.open_deals)} open ${s.open_deals === 1 ? 'deal' : 'deals'}`} />
+          <Stage to="/pipeline" icon={Trophy} label="Won" value={s.won} hint={s.won_value ? `${fmtNumber(s.won_value)} in value` : 'deals closed'} last />
         </div>
       )}
 

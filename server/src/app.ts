@@ -30,6 +30,7 @@ import { knowledgeRoutes } from './knowledge/routes.ts';
 import { replyAiRoutes } from './routes/replyAi.ts';
 import { leadFilterRoutes } from './routes/leadFilters.ts';
 import { companionRoutes } from './companion/routes.ts';
+import { dealRoutes } from './routes/deals.ts';
 
 const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'web', 'dist');
 
@@ -91,6 +92,7 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
   replyAiRoutes(app, ctx);
   leadFilterRoutes(app, ctx);
   companionRoutes(app, ctx);
+  dealRoutes(app, ctx);
   docsRoutes(app, ctx);
   visitorRoutes(app, ctx);
 

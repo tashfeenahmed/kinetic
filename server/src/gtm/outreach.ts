@@ -6,6 +6,7 @@
 import type { Ctx } from '../context.ts';
 import { attachLeads, upsertLeads, type ExistingBehavior, type LeadSource } from '../routes/leads.ts';
 import { domainOf } from '../lib/dns.ts';
+import { DEAL_STATUS, type DealStage } from '../engine/deals.ts';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -34,6 +35,7 @@ export interface LeadStatus {
   clicks: number;
   replies: number;
   lastReply: { category: string; subject: string; snippet: string; at: string } | null;
+  deal: { id: number; stage: string; value: number | null; currency: string | null } | null;
 }
 
 export class OutreachBridge {
@@ -79,8 +81,11 @@ export class OutreachBridge {
     const s = db.get('SELECT COUNT(*) AS sent, COALESCE(SUM(opens),0) AS opens, COALESCE(SUM(clicks),0) AS clicks FROM sent_emails WHERE lead_id = ? AND kind = \'campaign\'', [lead.id])!;
     const replies = db.get(`SELECT COUNT(*) AS n FROM replies WHERE lead_id = ? AND automated = 0 AND folder != 'bounced'`, [lead.id])!.n;
     const r = db.get(`SELECT category, subject, body_text, received_at FROM replies WHERE lead_id = ? AND folder != 'bounced' ORDER BY received_at DESC LIMIT 1`, [lead.id]);
+    const deal = db.get('SELECT id, stage, value, currency FROM deals WHERE workspace_id = ? AND lead_id = ?', [workspaceId, lead.id]) ?? null;
     return {
-      status: overall(lead.status, campaigns.map((c) => c.status), s.sent, replies),
+      // A deal is further along than any campaign state ("meeting booked", "won", "lost").
+      status: deal ? DEAL_STATUS[deal.stage as DealStage] : overall(lead.status, campaigns.map((c) => c.status), s.sent, replies),
+      deal,
       lead,
       campaigns: campaigns as LeadStatus['campaigns'],
       sent: s.sent, opens: s.opens, clicks: s.clicks, replies,

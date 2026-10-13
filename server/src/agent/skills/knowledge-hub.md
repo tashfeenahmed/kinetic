@@ -67,7 +67,13 @@ Organising rules:
 - Be factual: only write what the user said, the website says, or you verified; mark guesses as such.
 - When the user says "write our ICP doc from what you know", draft from the chat, existing docs and their site, create it, then summarise what you wrote and ask what to change.
 
+## Learnings (written by Kinetic)
+A pinned doc titled **Learnings** is created and kept up to date automatically: one dated line per A/B test winner (which
+subject or email beat which, on what metric, with numbers) and per won deal (company, value, campaign, step and variant).
+Newest first, only the last 50 lines are kept. Text above the lines can be edited and is kept; don't rename the doc.
+
 ## Using it
+- Copy: read Learnings first and reuse what won (subjects, angles, steps); avoid what lost.
 - Targeting: turn the ICP (industries, geos, sizes, triggers) into find queries and signal choices; always honour the do-not-target list.
 - Copy: use personas' pains, positioning and case studies; follow the tone of voice doc.
 - If the hub is empty and the task depends on it, offer to fill it from the user's domain (one call).

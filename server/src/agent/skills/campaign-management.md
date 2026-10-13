@@ -17,7 +17,7 @@ A/B tests are `campaigns-ab-testing`. This skill covers everything after that.
 - Queue: `GET /api/campaigns/{id}/scheduled-emails`; across all campaigns `GET /api/scheduled-emails`
   (`status` scheduled|sending|sent|failed|cancelled, `date`, `tz`, `campaign_id`, `sender_email_id`),
   one email `GET /api/scheduled-emails/{id}`, today/upcoming totals `GET /api/scheduled-emails/summary`.
-- Workspace-wide totals: `GET /api/workspaces/v1.1/stats?days=30` and daily `GET /api/workspaces/v1.1/line-area-chart-stats?days=30`.
+- Workspace-wide totals: `GET /api/workspaces/v1.1/stats?days=30` (includes the deal funnel: `meetings`, `won`, `won_value`, `open_deals`) and daily `GET /api/workspaces/v1.1/line-area-chart-stats?days=30`.
 
 When reporting, give rates, not just counts, and compare to the campaign's own earlier period when asked "is it getting better".
 

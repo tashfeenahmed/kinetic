@@ -57,7 +57,11 @@ significant (a full tie keeps variant A) so held leads are never stuck. A backgr
 
 When decided: losing variants are switched off (`active=false`), their booked-but-unsent emails are
 re-planned with the winner, the decision is stored with stats + p-value, and the `AB_TEST_WINNER`
-webhook event fires.
+webhook event fires. A dated line ("Campaign X step 1: subject "…" beat "…" on reply rate (4.1% vs 1.9%, n=220, 97% confidence)")
+is added to the pinned **Learnings** doc in the Knowledge Hub.
+
+**Before writing new variants or a new campaign, read Learnings** (`knowledge {"doc": "Learnings"}`): build on subjects and
+angles that won, don't retest ones that lost, and test one new idea against the current best.
 
 ## 4. Read results
 `GET /api/campaigns/{id}/ab-tests` returns, per step with variants: `status` (`running` | `decided` |

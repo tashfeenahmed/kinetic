@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Users, Send, Inbox, AtSign, Flame, Clock, Puzzle, Code2, ChevronDown, Settings, HelpCircle, LogOut,
-  PanelLeftClose, PanelLeft, Check, Plus, Pencil, Trash2, ChevronsUpDown, ChevronRight, Menu as MenuIcon, X, Home as HomeIcon, Radar, Table2, Eye, MessageSquareText, BookOpen, Bot, } from 'lucide-react';
+  PanelLeftClose, PanelLeft, Check, Plus, Pencil, Trash2, ChevronsUpDown, ChevronRight, Menu as MenuIcon, X, Home as HomeIcon, Radar, Table2, Eye, MessageSquareText, BookOpen, Bot, Kanban, } from 'lucide-react';
 import { useGtmTables } from '../gtm/lib/queries';
 import { RouteErrorBoundary } from './RouteErrorBoundary.tsx';
 import { api } from '../lib/api.ts';
@@ -17,6 +17,7 @@ const OUTREACH_NAV = [
   { to: '/leads', label: 'Leads', icon: Users },
   { to: '/campaigns', label: 'Campaigns', icon: Send },
   { to: '/inbox', label: 'Master Inbox', icon: Inbox, badge: 'unread' as const },
+  { to: '/pipeline', label: 'Pipeline', icon: Kanban },
   { to: '/automations', label: 'Automations', icon: Bot },
   { to: '/visitors', label: 'Visitors', icon: Eye },
 ];
