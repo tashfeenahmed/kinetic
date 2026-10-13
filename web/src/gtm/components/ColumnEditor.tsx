@@ -358,7 +358,8 @@ export function outreachDefaults(others: string[], kind: string) {
   return {
     kind,
     email: guessCol(others, /^(work )?email$/i, /email/i),
-    firstName: guessCol(others, /^first/i),
+    // A full-name column works too: the push splits it into first and last name.
+    firstName: guessCol(others, /^first/i) || guessCol(others, /^(full )?name$/i, /full ?name/i),
     lastName: guessCol(others, /^last/i),
     company: guessCol(others, /^company( name)?$/i, /^organi[sz]ation/i),
     title: guessCol(others, /title/i),

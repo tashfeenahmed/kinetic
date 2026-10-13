@@ -60,6 +60,16 @@ describe('table → leads → campaign', () => {
   });
 });
 
+describe('names', () => {
+  it('splits a full name mapped as first name into first and last', async () => {
+    const { tableId } = await table([{ 'Full name': 'Aoife Brennan', Email: 'aoife@harbour.test' }]);
+    const col = (await env.api('POST', `/api/gtm/tables/${tableId}/columns`, { name: '→ Leads', type: 'action', config: { kind: 'outreach_update_lead', email: '{{Email}}', firstName: '{{Full name}}', lastName: '' } })).body.id;
+    await env.api('POST', `/api/gtm/tables/${tableId}/run`, { columnIds: [col] });
+    await settle(tableId);
+    expect(env.ctx.db.get("SELECT first_name, last_name FROM leads WHERE email = 'aoife@harbour.test'")).toEqual({ first_name: 'Aoife', last_name: 'Brennan' });
+  });
+});
+
 describe('rows and export', () => {
   it('adds and deletes rows, and exports chosen rows in the order given', async () => {
     const { tableId, ids } = await table([{ Name: 'A' }, { Name: 'B' }, { Name: 'C' }]);
