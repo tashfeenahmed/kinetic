@@ -68,6 +68,8 @@ function ReconnectModal({ sender, onClose, onDone }: { sender: Sender | null; on
   const [busy, setBusy] = useState(false);
   const { toast } = useUi();
   const close = () => { setPassword(''); setError(''); onClose(); };
+  // Mailboxes connected with Google/Microsoft sign-in reconnect the same way: sign in again.
+  const oauth = sender?.auth_type === 'oauth' && (sender.provider === 'microsoft' || sender.provider === 'google') ? sender.provider : null;
   const submit = async () => {
     if (!sender) return;
     setBusy(true);
@@ -79,15 +81,34 @@ function ReconnectModal({ sender, onClose, onDone }: { sender: Sender | null; on
       close();
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   };
+  const signIn = async () => {
+    if (!sender || !oauth) return;
+    setBusy(true);
+    setError('');
+    try {
+      const r = await api.post(`/api/oauth-sessions/${oauth}`, { sender_email_id: sender.id });
+      window.location.href = r.data.url;
+    } catch (e) { setError(errorMessage(e)); setBusy(false); }
+  };
+  const label = oauth === 'google' ? 'Sign in with Google' : 'Sign in with Microsoft';
   return (
     <Modal open={!!sender} onClose={close} size="sm" title="Reconnect mailbox" description={sender?.email}
-      footer={<><Button onClick={close}>Cancel</Button><Button variant="primary" loading={busy} disabled={!password} onClick={submit}>Reconnect</Button></>}>
+      footer={oauth
+        ? <><Button onClick={close}>Cancel</Button><Button variant="primary" loading={busy} onClick={signIn}>{label}</Button></>
+        : <><Button onClick={close}>Cancel</Button><Button variant="primary" loading={busy} disabled={!password} onClick={submit}>Reconnect</Button></>}>
       <div className="space-y-3">
         {sender?.last_error && <Alert tone="yellow" title="Last error">{sender.last_error}</Alert>}
         {error && <Alert tone="red">{error}</Alert>}
-        <Field label={sender?.provider === 'google' ? 'New app password' : 'Password'}>
-          <Input type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && password && submit()} />
-        </Field>
+        {oauth ? (
+          <p className="text-[13.5px] text-slate-600">
+            This mailbox is connected with {oauth === 'google' ? 'Google' : 'Microsoft'} sign-in. Sign in again as <b>{sender?.email}</b> and complete any security check (code or app approval).
+            Kinetic keeps the mailbox's settings, campaigns and warmup history.
+          </p>
+        ) : (
+          <Field label={sender?.provider === 'google' ? 'New app password' : 'Password'}>
+            <Input type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && password && submit()} />
+          </Field>
+        )}
       </div>
     </Modal>
   );

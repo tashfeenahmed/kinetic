@@ -350,37 +350,72 @@ export function Drawer({ open, onClose, title, subtitle, children, actions, widt
   );
 }
 
+/**
+ * A floating panel anchored to an element, rendered at the top of the page (portal + fixed
+ * position) so scrolling tables, cards and drawers can't clip it. Opens below the anchor,
+ * or above when there isn't room, stays inside the window, and follows the anchor on scroll.
+ */
+export function Popover({ anchor, open, onClose, align = 'left', className, children }: {
+  anchor: HTMLElement | null; open: boolean; onClose: () => void; align?: 'left' | 'right'; className?: string; children: ReactNode;
+}) {
+  const panel = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const place = useCallback(() => {
+    if (!anchor || !panel.current) return;
+    const a = anchor.getBoundingClientRect();
+    const p = panel.current.getBoundingClientRect();
+    const gap = 4, pad = 8;
+    const below = a.bottom + gap + p.height <= window.innerHeight - pad || a.top - gap - p.height < pad;
+    const top = below ? Math.min(a.bottom + gap, window.innerHeight - pad - p.height) : a.top - gap - p.height;
+    const left = align === 'right' ? a.right - p.width : a.left;
+    setPos({ top: Math.max(pad, top), left: Math.min(Math.max(pad, left), window.innerWidth - pad - p.width) });
+  }, [anchor, align]);
+  useEffect(() => {
+    if (!open) { setPos(null); return; }
+    place();
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (panel.current?.contains(t) || anchor?.contains(t)) return;
+      onClose();
+    };
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => { document.removeEventListener('mousedown', onDown); window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place); };
+  }, [open, place, anchor, onClose]);
+  useEscape(onClose, open);
+  if (!open) return null;
+  return createPortal(
+    <div ref={panel} className={cx('fixed z-[60]', className)} style={pos ?? { top: -9999, left: -9999, visibility: 'hidden' }}>
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 /** Dropdown menu anchored to its trigger. */
 export function Menu({ trigger, items, align = 'right' }: { trigger: (open: () => void) => ReactNode; items: ({ label: ReactNode; onClick: () => void; danger?: boolean; icon?: ReactNode; disabled?: boolean } | 'divider')[]; align?: 'left' | 'right' }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const h = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, [open]);
-  useEscape(() => setOpen(false), open);
+  const close = useCallback(() => setOpen(false), []);
   return (
     <div className="relative inline-block" ref={ref}>
       {trigger(() => setOpen((o) => !o))}
-      {open && (
-        <div className={cx('absolute z-30 mt-1 min-w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg', align === 'right' ? 'right-0' : 'left-0')}>
-          {items.map((it, i) =>
-            it === 'divider' ? <div key={i} className="my-1 border-t border-slate-100" /> : (
-              <button
-                key={i}
-                disabled={it.disabled}
-                onClick={() => { setOpen(false); it.onClick(); }}
-                className={cx('flex w-full items-center gap-2 px-3 py-2 text-left text-sm disabled:opacity-40', it.danger ? 'text-red-600 hover:bg-red-50' : 'text-slate-700 hover:bg-slate-50')}
-              >
-                {it.icon}
-                {it.label}
-              </button>
-            ),
-          )}
-        </div>
-      )}
+      <Popover anchor={ref.current} open={open} onClose={close} align={align} className="min-w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+        {items.map((it, i) =>
+          it === 'divider' ? <div key={i} className="my-1 border-t border-slate-100" /> : (
+            <button
+              key={i}
+              disabled={it.disabled}
+              onClick={() => { setOpen(false); it.onClick(); }}
+              className={cx('flex w-full items-center gap-2 px-3 py-2 text-left text-sm disabled:opacity-40', it.danger ? 'text-red-600 hover:bg-red-50' : 'text-slate-700 hover:bg-slate-50')}
+            >
+              {it.icon}
+              {it.label}
+            </button>
+          ),
+        )}
+      </Popover>
     </div>
   );
 }
