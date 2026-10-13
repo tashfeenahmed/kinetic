@@ -32,9 +32,9 @@ wired straight into cold email: campaigns, warmup, a master inbox and an AI agen
 
 <br/>
 
-<a href="docs/media/video/hero.mp4"><img src="docs/media/hero.gif" width="900" alt="Kinetic intro, then the agent builds a table of prospects, adds an AI research column and runs it" /></a>
+https://github.com/user-attachments/assets/9dcc8de9-3f0a-4a84-b3cc-3dc66fea389c
 
-<sub>Ask the agent for a prospect list: it builds the table, adds an AI research column and runs it. <a href="docs/media/video/hero.mp4">Watch the video</a> · all data in these clips is fictional.</sub>
+<sub>Ask the agent for a prospect list: it builds the table, adds an AI research column and runs it. All data in these clips is fictional.</sub>
 
 </div>
 
