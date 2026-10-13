@@ -140,6 +140,7 @@ export const PARAM_HINTS: Record<string, string> = {
   apollo_people: '{"titles": "Head of Sales", "domains": "ramp.com", "seniorities": "vp,director"}',
   github_people: '{"org": "vercel"}',
   jobs: '{"domains": "ramp.com, linear.app", "keywords": "sales"}',
+  hacker_news: '{"mode": "launches", "keywords": "crm", "days": 30} — mode: launches | hiring (with "months") | intent (people asking for a tool)',
   hubspot_contacts: '{}',
   hubspot_companies: '{}',
 };

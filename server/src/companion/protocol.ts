@@ -3,8 +3,8 @@
  * Pure types and constants only — no Node imports — because the extension bundles this file.
  */
 
-export type Site = 'linkedin' | 'instagram' | 'x' | 'facebook' | 'reddit' | 'github';
-export const EXTENSION_SITES: Site[] = ['linkedin', 'instagram', 'x', 'facebook'];
+export type Site = 'linkedin' | 'instagram' | 'x' | 'facebook' | 'whatsapp' | 'reddit' | 'github';
+export const EXTENSION_SITES: Site[] = ['linkedin', 'instagram', 'x', 'facebook', 'whatsapp'];
 
 /** Home URL per site; the extension opens (or reuses) a tab here before running a task. */
 export const SITE_HOME: Record<Site, string> = {
@@ -12,6 +12,7 @@ export const SITE_HOME: Record<Site, string> = {
   instagram: 'https://www.instagram.com/',
   x: 'https://x.com/home',
   facebook: 'https://www.facebook.com/',
+  whatsapp: 'https://web.whatsapp.com/',
   reddit: 'https://www.reddit.com/',
   github: 'https://github.com/',
 };

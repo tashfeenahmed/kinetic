@@ -1,6 +1,6 @@
 ---
 name: linkedin-outreach
-description: LinkedIn actions and outreach campaigns through the Kinetic Companion extension — profile visits, connection requests with personalised/AI notes, messages to connections, follows, likes, withdrawing old invites, AI comment drafts, and multi-step LinkedIn campaigns (visit → connect → message → follow-ups). Always get explicit user approval before starting anything that acts on LinkedIn.
+description: LinkedIn actions and outreach campaigns through the Kinetic Companion extension — profile visits, connection requests with personalised/AI notes, messages to connections, follows, likes, withdrawing old invites, AI comment drafts, and multi-step LinkedIn campaigns (visit → connect → message → follow-ups), plus WhatsApp messages to phone numbers from the user's own WhatsApp Web. Always get explicit user approval before starting anything that acts on LinkedIn or WhatsApp.
 ---
 # LinkedIn outreach
 
@@ -65,3 +65,16 @@ Acceptances and replies are detected by periodic connection-list and inbox check
 - LinkedIn campaigns are separate from email campaigns (`/api/campaigns`). Don't mix them.
 - Free LinkedIn accounts get few personalised notes per month; if the note can't be added the invite fails rather than sending without it.
 - Safety stops (captcha/challenge/restriction) pause LinkedIn for that browser for up to 24h. Tell the user; never suggest bypassing them.
+
+## WhatsApp messages (same Companion, user's own WhatsApp Web)
+Phantom `whatsapp.message_sender` (limit bucket `whatsapp.message`, default 20/day, 80/week; same pacing, working hours and approval rules as above). The paired Chrome must have WhatsApp Web linked (QR code) — otherwise the task safety-stops as `logged_out`.
+```
+POST /api/automations/jobs
+{"phantom": "whatsapp.message_sender", "name": "Shops follow-up",
+ "params": {"targets": {"table_id": 12, "column": "Phone", "row_ids": [101, 102]}, "country_code": "49",
+            "message": "Hi {first_name}, saw {Shop} on Maps… Reply STOP and I won't message again."}}
+```
+- Targets: numbers one per line, or a table column (`row_ids` = only the selected rows); other columns are template variables. Numbers become E.164; without a leading +/00 they need `country_code`.
+- Skipped up front (shown in the results table): invalid numbers, duplicates, and opt-outs — email/domain on the blacklist, unsubscribed leads, or phone/email/domain on any exclusion list. Numbers not on WhatsApp finish as skipped with error `not_on_whatsapp`.
+- **STOP**: always include an opt-out line. When someone replies STOP (or asks not to be contacted), add their number to a "Do not contact" exclusion list (`POST /api/exclusions/{id}/entries {"text": "+49 151 2345678"}`) so no future run messages them.
+- Only message people who expect it (customers, people who gave their number for this). Cold bulk WhatsApp gets accounts banned; keep the default limit. Not part of LinkedIn campaigns — run it as an automation job.

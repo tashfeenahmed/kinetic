@@ -20,7 +20,7 @@ Applied automatically in: `POST /api/gtm/find`, `POST /api/gtm/tables/{id}/impor
 - `PATCH /api/exclusions/{id}` `{ "name": "…" }`; `DELETE /api/exclusions/{id}` (confirm first — those entries stop being excluded).
 
 ## Adding entries
-- Paste: `POST /api/exclusions/{id}/entries` `{ "text": "one value per line", "kind": "auto" }` or `{ "values": [...] }`. `kind` forces a type (`domain`, `email`, `company`, `linkedin`, `place`); `auto` detects each value.
+- Paste: `POST /api/exclusions/{id}/entries` `{ "text": "one value per line", "kind": "auto" }` or `{ "values": [...] }`. `kind` forces a type (`domain`, `email`, `company`, `linkedin`, `place`, `phone`); `auto` detects each value (phones need a country code, e.g. +49…).
 - CSV: `POST /api/exclusions/{id}/upload` `{ "csv": "<file text>", "column": "Website" }`. Without `column`, every domain/website, email, company/name, LinkedIn and place-id column is used; a header-less file is read as a one-column list.
 - From a table: `POST /api/exclusions/{id}/from-table` `{ "table_id": 12 }` (optionally `"kinds": ["domain"]`).
 - From outreach: `POST /api/exclusions/{id}/from-outreach` `{ "scope": "campaigns" | "leads", "include_domains": true, "include_companies": false }` — everyone already in a campaign (or all leads), plus their work-email domains.

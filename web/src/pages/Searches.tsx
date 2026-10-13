@@ -133,7 +133,7 @@ function RunHistory({ search, onClose }: { search: Saved | null; onClose: () => 
 
 // ---------- exclusions ----------
 interface ExList { id: number; name: string; total: number; counts: Record<string, number>; updated_at: string }
-const KIND_LABELS: Record<string, string> = { domain: 'Domains', email: 'Emails', company: 'Companies', linkedin: 'LinkedIn', place: 'Places' };
+const KIND_LABELS: Record<string, string> = { domain: 'Domains', email: 'Emails', company: 'Companies', linkedin: 'LinkedIn', place: 'Places', phone: 'Phones' };
 
 function Exclusions() {
   const q = useQuery({ queryKey: ['exclusions'], queryFn: () => api.get<ExList[]>('/api/exclusions') });

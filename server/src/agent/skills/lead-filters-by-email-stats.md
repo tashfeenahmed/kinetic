@@ -1,6 +1,6 @@
 ---
 name: lead-filters-by-email-stats
-description: Find leads by email activity - opens, clicks, replies, bounces, unsubscribes, reply category, last contacted/opened/clicked, campaign membership, sender mailbox or email provider (Google/Microsoft via MX) - then save the view, export CSV, tag, add to a campaign or open in a table.
+description: Find leads by email activity - opens, clicks, replies, bounces, unsubscribes, reply category, last contacted/opened/clicked, campaign membership, finished sequences (revive cold leads), sender mailbox or email provider (Google/Microsoft via MX) - then save the view, export CSV, tag, add to a campaign or open in a table.
 ---
 # Filter leads by email stats
 
@@ -13,7 +13,8 @@ The same parameters work on `GET /api/leads/ids`, `GET /api/leads/export` and in
 | Replied / bounced / unsubscribed | `replied=true|false`, `bounced=true|false`, `unsubscribed=true|false` |
 | Reply category | `reply_category=interested,meeting_request` (labels from the inbox-triage skill) |
 | Dates | `last_contacted_before` / `_after`, `last_opened_before` / `_after`, `last_clicked_before` / `_after`, `last_replied_before` / `_after`: an ISO date (`2026-10-01`) or an age (`14d`, `12h`, `2w`, `3m`). `last_contacted_before=14d` = last emailed more than 14 days ago (never-contacted leads are excluded). |
-| Campaigns | `in_campaign_ids=3,4`, `not_in_campaign_ids=3`, `without_campaign=true`, `campaign_id=3` |
+| Campaigns | `in_campaign_ids=3,4`, `not_in_campaign_ids=3`, `without_campaign=true`, `campaign_id=3`, `sequence_finished=true|false` (completed every step of a campaign), `in_active_campaign=true|false` (still queued or mid-sequence in a draft/active/paused campaign) |
+| Blacklist | `blacklisted=true|false` (email or domain on the blacklist, which also holds unsubscribes) |
 | Mailbox | `sender_email_ids=7` (emailed by / assigned to that mailbox) |
 | Email provider | `email_provider=google,microsoft` (also yahoo, zoho, icloud, proofpoint, mimecast, barracuda, other, none, unknown = not looked up yet) |
 | Other | `search`, `status`, `lead_list_id`, `tag_id`, `sort=opens|clicks|replies|emails_sent|last_contacted|last_opened|last_replied|oldest` |
@@ -24,6 +25,8 @@ Each lead row has `overall_stats` and `email_stats` (`last_sent_at`, `last_opene
 - Presets: `GET /api/leads/filter-presets` (Opened 3+ times no reply = `opens_min=3&replied=false`; Clicked no reply =
   `clicks_min=1&replied=false`; Never opened = `sent_min=1&opens_max=0`; Bounced = `bounced=true`; Interested =
   `reply_category=interested,meeting_request`).
+- Revive cold leads (preset `revive_quiet`, "Revive: went quiet 60–90 days ago"): `sequence_finished=true&last_contacted_before=60d&last_contacted_after=90d&replied=false&bounced=false&unsubscribed=false&blacklisted=false&in_active_campaign=false`.
+  Change the two ages for another window, then `bulk-by-filter` with `add_to_campaign` into a fresh campaign (new angle, not the same copy).
 - Count only: `GET /api/leads?...&per_page=1` and read `meta.total`.
 - Email provider counts: `GET /api/leads/email-providers`. Providers are looked up in the background; to resolve now:
   `POST /api/leads/email-providers/refresh` `{"limit": 100}` (DNS lookups, free).

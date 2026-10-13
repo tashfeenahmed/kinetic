@@ -7,6 +7,7 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const KIND_LABELS: Record<string, string> = {
   'linkedin.visit': 'Visiting a profile', 'linkedin.connect': 'Sending an invitation', 'linkedin.message': 'Sending a message',
   'linkedin.check_connections': 'Checking new connections', 'linkedin.check_inbox': 'Checking the LinkedIn inbox', 'linkedin.comment': 'Posting an approved comment',
+  'whatsapp.message_sender': 'Sending a WhatsApp message',
 };
 const label = (kind: string) => KIND_LABELS[kind] ?? kind.replace(/^[a-z_]+\./, '').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
@@ -39,7 +40,7 @@ async function render() {
   if (s.lastTask?.error && s.lastTask.status !== 'done') notices.push(s.lastTask.error);
   $('notice').textContent = notices.join(' ');
 
-  const rows = (hb?.limits ?? []).filter((l) => l.used_today > 0 || /linkedin\.(connect|message|visit|scrape)/.test(l.action));
+  const rows = (hb?.limits ?? []).filter((l) => l.used_today > 0 || /linkedin\.(connect|message|visit|scrape)|whatsapp\.message/.test(l.action));
   $('limits').innerHTML = rows.length ? rows.map((l) => {
     const pct = l.daily ? Math.min(100, Math.round((l.used_today / l.daily) * 100)) : 0;
     const week = l.weekly ? ` · ${l.used_week}/${l.weekly} wk` : '';

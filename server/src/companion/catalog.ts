@@ -5,7 +5,7 @@
  */
 import type { Site } from './protocol.ts';
 
-export type Network = 'linkedin' | 'sales_navigator' | 'instagram' | 'x' | 'facebook' | 'reddit' | 'github';
+export type Network = 'linkedin' | 'sales_navigator' | 'instagram' | 'x' | 'facebook' | 'whatsapp' | 'reddit' | 'github';
 export type Category = 'data' | 'action' | 'monitor';
 export type FieldType = 'text' | 'textarea' | 'url' | 'number' | 'select' | 'boolean' | 'targets' | 'template';
 
@@ -59,6 +59,8 @@ export const DEFAULT_LIMITS: Record<string, { label: string; daily: number; week
   'instagram.scrape': { label: 'Instagram profiles scraped', daily: 800 },
   'x.scrape': { label: 'X profiles/posts scraped', daily: 1000 },
   'facebook.scrape': { label: 'Facebook profiles scraped', daily: 500 },
+  // WhatsApp bans accounts that message strangers in bulk: keep this low.
+  'whatsapp.message': { label: 'WhatsApp messages', daily: 20, weekly: 80 },
 };
 
 // ---- shared field and output sets -------------------------------------------------
@@ -262,6 +264,14 @@ export const PHANTOMS: Phantom[] = [
     fields: [targets('Pages or profiles', 'https://www.facebook.com/…')],
     outputs: [{ key: 'name', label: 'Name' }, { key: 'profileUrl', label: 'Facebook URL' }, { key: 'category', label: 'Category' }, { key: 'likes', label: 'Likes' }, { key: 'followers', label: 'Followers' }, { key: 'website', label: 'Website' }, { key: 'email', label: 'Email' }, { key: 'phone', label: 'Phone' }, { key: 'address', label: 'Address' }, { key: 'bio', label: 'About' }] },
 
+  // WhatsApp (WhatsApp Web in the paired browser)
+  { id: 'whatsapp.message_sender', network: 'whatsapp', site: 'whatsapp', runner: 'extension', category: 'action', label: 'WhatsApp Message Sender', description: 'Send a personalised WhatsApp message to phone numbers from your own WhatsApp Web, one at a time at a human pace. Numbers on your blacklist or exclusion lists are skipped.', action: 'whatsapp.message', perTarget: true, dedupeKey: 'phone', watchable: false, sends: true,
+    fields: [targets('Phone numbers', '+49 151 2345678', 'One number per line (with country code), or pick a table column that holds them. Other columns of the row can be used in the message.'),
+      { key: 'message', label: 'Message', type: 'template', required: true, max: 4000, placeholder: 'Hi {first_name}, …', help: 'Variables (any column as {Column name}), spintax and {ai_message}. Say how to opt out, e.g. "Reply STOP and I won\'t message again."' },
+      { key: 'country_code', label: 'Country code for numbers without one', type: 'text', placeholder: '49', help: 'Used for numbers written like 0151 2345678. Leave empty if every number starts with + and a country code.' },
+      aiInstructions],
+    outputs: [{ key: 'phone', label: 'Phone' }, { key: 'name', label: 'Name' }, { key: 'status', label: 'Status' }, { key: 'detail', label: 'Detail' }, { key: 'sentText', label: 'Sent text' }, { key: 'at', label: 'At' }] },
+
   // Reddit (server-side, public JSON — no extension needed)
   { id: 'reddit.subreddit_posts', network: 'reddit', site: 'reddit', runner: 'server', category: 'data', label: 'Reddit Subreddit Posts', description: 'Posts from a subreddit (new, hot or top).', action: null, perTarget: false, dedupeKey: 'postUrl', watchable: true,
     fields: [{ key: 'subreddit', label: 'Subreddit', type: 'text', required: true, placeholder: 'sales' },
@@ -287,5 +297,5 @@ export function phantom(id: string): Phantom | undefined {
 }
 
 export const NETWORK_LABELS: Record<Network, string> = {
-  linkedin: 'LinkedIn', sales_navigator: 'Sales Navigator', instagram: 'Instagram', x: 'X / Twitter', facebook: 'Facebook', reddit: 'Reddit', github: 'GitHub',
+  linkedin: 'LinkedIn', sales_navigator: 'Sales Navigator', instagram: 'Instagram', x: 'X / Twitter', facebook: 'Facebook', whatsapp: 'WhatsApp', reddit: 'Reddit', github: 'GitHub',
 };

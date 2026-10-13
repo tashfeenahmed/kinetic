@@ -1,6 +1,6 @@
 /**
  * Lead filters by email activity (sent, opens, clicks, replies, bounces, reply category,
- * last contacted/opened/clicked, campaign, mailbox, email provider), saved views,
+ * last contacted/opened/clicked, campaign, finished sequence, mailbox, email provider), saved views,
  * CSV export and bulk actions on a filtered set. Stats come from `lead_stats`, which
  * SQLite triggers keep current (see migration 008), so filters are plain indexed lookups.
  */
@@ -41,6 +41,9 @@ export const leadStatFilters = z.object({
   replied: bool.optional().describe('true = has a human reply, false = never replied'),
   bounced: bool.optional(),
   unsubscribed: bool.optional(),
+  sequence_finished: bool.optional().describe('true = finished every step of at least one campaign, false = never finished one'),
+  in_active_campaign: bool.optional().describe('true = still queued or mid-sequence in a draft/active/paused campaign'),
+  blacklisted: bool.optional().describe('Email or domain is on the blacklist (unsubscribes land there too)'),
   reply_category: csvList.describe('Any reply with one of these labels, e.g. interested,meeting_request'),
   last_contacted_before: when, last_contacted_after: when,
   last_opened_before: when, last_opened_after: when,
@@ -114,6 +117,15 @@ export function leadWhere(ctx: Ctx, workspaceId: number, q: Partial<LeadFilters>
     where.push(q.bounced ? b : `NOT ${b}`);
   }
   if (q.unsubscribed != null) where.push(q.unsubscribed ? `l.status = 'unsubscribed'` : `l.status != 'unsubscribed'`);
+  if (q.sequence_finished != null) where.push(`${q.sequence_finished ? '' : 'NOT '}EXISTS (SELECT 1 FROM campaign_leads cf WHERE cf.lead_id = l.id AND cf.status = 'completed')`);
+  if (q.in_active_campaign != null) {
+    where.push(`${q.in_active_campaign ? '' : 'NOT '}EXISTS (SELECT 1 FROM campaign_leads ca JOIN campaigns c ON c.id = ca.campaign_id
+      WHERE ca.lead_id = l.id AND ca.status IN ('pending','in_sequence','paused') AND c.status IN ('draft','active','paused'))`);
+  }
+  if (q.blacklisted != null) {
+    where.push(`${q.blacklisted ? '' : 'NOT '}EXISTS (SELECT 1 FROM blacklisted_emails be WHERE be.workspace_id = l.workspace_id AND be.email = l.email
+      UNION ALL SELECT 1 FROM blacklisted_domains bd WHERE bd.workspace_id = l.workspace_id AND bd.domain = lower(substr(l.email, instr(l.email, '@') + 1)))`);
+  }
   if (q.reply_category?.length) {
     const ph = q.reply_category.map(() => '?').join(',');
     where.push(`l.id IN (SELECT r.lead_id FROM replies r WHERE r.workspace_id = ? AND r.lead_id IS NOT NULL AND COALESCE(r.label, r.category) IN (${ph}))`);
@@ -159,6 +171,8 @@ export const LEAD_FILTER_PRESETS = [
   { id: 'never_opened', name: 'Never opened', filters: { sent_min: 1, opens_max: 0 } },
   { id: 'bounced', name: 'Bounced', filters: { bounced: true } },
   { id: 'interested', name: 'Interested', filters: { reply_category: ['interested', 'meeting_request'] } },
+  // Finished a sequence 60–90 days ago without replying: ready for a fresh campaign. Edit the two ages to change the window.
+  { id: 'revive_quiet', name: 'Revive: went quiet 60–90 days ago', filters: { sequence_finished: true, last_contacted_before: '60d', last_contacted_after: '90d', replied: false, bounced: false, unsubscribed: false, blacklisted: false, in_active_campaign: false } },
 ];
 
 const MAX_IDS = 50_000;

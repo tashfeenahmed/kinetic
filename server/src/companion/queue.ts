@@ -13,6 +13,7 @@ import {
 import { loadTask, ingestJobRecords, refreshRun, loadJob, type TaskRow } from './jobs.ts';
 import { onCampaignTaskComplete, onConnections, onInbox, loadCampaign } from './campaigns.ts';
 import { runServerTask } from './sources.ts';
+import { sendUrl } from './whatsapp.ts';
 import { parse } from './parsers/index.ts';
 import { PARSER_IDS, SITE_HOME, type CompleteBody, type PollResponse, type Rec, type ResultsBatch, type ResultsResponse, type SafetyBody, type Site, type TaskPayload, type ParserId } from './protocol.ts';
 
@@ -45,6 +46,7 @@ function budgetFor(ctx: Ctx, t: TaskRow, s: CompanionSettings, now: Date): numbe
 }
 
 function openUrlFor(t: TaskRow): string {
+  if (t.site === 'whatsapp') return sendUrl(String(t.target.phone ?? t.target.url ?? ''));
   const u = t.target.url ?? t.target.profileUrl ?? t.target.postUrl ?? t.params.search_url ?? t.params.group_url ?? t.params.event_url;
   if (typeof u === 'string' && /^https?:\/\//.test(u)) return u;
   if (t.kind === 'linkedin.connections_export' || t.kind === 'linkedin.check_connections') return 'https://www.linkedin.com/mynetwork/invite-connect/connections/';

@@ -219,6 +219,50 @@ describe('lead filters by email stats', () => {
     // ~130ms alone; the margin covers the rest of the suite running in parallel. A missing index is seconds.
     expect(slowest).toBeLessThan(4000);
   }, 120_000);
+
+  it('revive preset: finished 60–90 days ago, no reply, not bounced/unsubscribed/blacklisted, not queued elsewhere', async () => {
+    const mk = async (email: string) => (await env.api('POST', '/api/leads', { email })).body.data.id as number;
+    const old = (await env.api('POST', '/api/campaigns', { name: 'Old' })).body.data.id;
+    const live = (await env.api('POST', '/api/campaigns', { name: 'Live' })).body.data.id;
+    env.ctx.db.run(`UPDATE campaigns SET status = 'completed' WHERE id = ?`, [old]);
+    env.ctx.db.run(`UPDATE campaigns SET status = 'active' WHERE id = ?`, [live]);
+    const finished = async (email: string, at: number, extra?: (id: number) => void | Promise<void>) => {
+      const id = await mk(email);
+      env.ctx.db.insert('campaign_leads', { campaign_id: old, lead_id: id, status: 'completed', current_step: 3 });
+      sent(id, { at: days(at + 10), campaignId: old });
+      sent(id, { at: days(at), campaignId: old });
+      await extra?.(id);
+      return id;
+    };
+    await finished('quiet@a.test', 75);
+    await finished('edge@a.test', 61);
+    await finished('recent@a.test', 30);                 // too recent
+    await finished('ancient@a.test', 120);               // too old
+    await finished('talked@a.test', 70, (id) => { replied(id, 'not_interested'); });
+    await finished('bounce@a.test', 70, (id) => { env.ctx.db.run(`UPDATE leads SET status = 'bounced' WHERE id = ?`, [id]); });
+    await finished('unsub@a.test', 70, (id) => { env.ctx.db.run(`UPDATE leads SET status = 'unsubscribed' WHERE id = ?`, [id]); });
+    await finished('blocked@a.test', 70, async () => { await env.api('POST', '/api/blacklisted-emails', { email: 'blocked@a.test' }); });
+    await finished('x@blockeddomain.test', 70, async () => { await env.api('POST', '/api/blacklisted-domains', { domain: 'blockeddomain.test' }); });
+    await finished('busy@a.test', 70, (id) => { env.ctx.db.insert('campaign_leads', { campaign_id: live, lead_id: id, status: 'in_sequence' }); });
+    const stopped = await mk('stopped@a.test');           // never finished (stopped mid-way)
+    env.ctx.db.insert('campaign_leads', { campaign_id: old, lead_id: stopped, status: 'stopped' });
+    sent(stopped, { at: days(70), campaignId: old });
+
+    const presets = (await env.api('GET', '/api/leads/filter-presets')).body.data;
+    const revive = presets.find((x: any) => x.id === 'revive_quiet');
+    expect(revive.name).toMatch(/60–90 days/);
+    expect(await emails(revive.filters)).toEqual(['edge@a.test', 'quiet@a.test']);
+    // The window is just two ages: widen it to 120 days.
+    expect(await emails({ ...revive.filters, last_contacted_after: '130d' })).toEqual(['ancient@a.test', 'edge@a.test', 'quiet@a.test']);
+    expect(await emails({ blacklisted: true })).toEqual(['blocked@a.test', 'x@blockeddomain.test']);
+    expect(await emails({ in_active_campaign: true })).toEqual(['busy@a.test']);
+    expect(await emails({ sequence_finished: false })).toEqual(['stopped@a.test']);
+
+    // One click from there: add every match to a fresh campaign.
+    const fresh = (await env.api('POST', '/api/campaigns', { name: 'Revive' })).body.data.id;
+    const r = await env.api('POST', '/api/leads/bulk-by-filter', { filters: revive.filters, action: 'add_to_campaign', campaign_id: fresh });
+    expect(r.body.data).toEqual({ matched: 2, attached: 2 });
+  });
 });
 
 async function tokenHeader() {

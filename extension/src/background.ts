@@ -19,6 +19,7 @@ const SITE_HOSTS: Record<string, string[]> = {
   instagram: ['www.instagram.com', 'instagram.com'],
   x: ['x.com', 'twitter.com', 'mobile.x.com'],
   facebook: ['www.facebook.com', 'facebook.com', 'web.facebook.com'],
+  whatsapp: ['web.whatsapp.com'],
 };
 
 // ---- lifecycle --------------------------------------------------------------------
@@ -112,10 +113,15 @@ async function pollAndRun() {
 async function dispatch(task: TaskPayload) {
   let tabId: number;
   try {
+    // WhatsApp opens the chat with the message prefilled (?text=), so it is rendered before the page.
+    if (task.site === 'whatsapp' && typeof task.params.text !== 'string') {
+      const r = await kinetic<{ text: string }>(`/api/companion/tasks/${task.id}/render`, { profile: { fullName: task.target.name ?? '' } });
+      task.params = { ...task.params, text: r.text ?? '' };
+    }
     tabId = await ensureTab(task);
     await ensureContentScript(tabId, task.site);
   } catch (e) {
-    await kinetic(`/api/companion/tasks/${task.id}/complete`, { status: 'failed', error: `Could not open ${task.site}: ${(e as Error).message}` }).catch(() => {});
+    await kinetic(`/api/companion/tasks/${task.id}/complete`, { status: 'failed', error: `Could not start on ${task.site}: ${(e as Error).message}` }).catch(() => {});
     return;
   }
   await setCurrent({ id: task.id, kind: task.kind, site: task.site, tabId, startedAt: Date.now(), label: task.kind });

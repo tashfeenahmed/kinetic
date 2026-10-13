@@ -90,7 +90,7 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
   );
 }
 
-const SITES = ['linkedin', 'instagram', 'x', 'facebook'];
+const SITES = ['linkedin', 'instagram', 'x', 'facebook', 'whatsapp'];
 
 function DeviceCard({ d, onChange }: { d: Device; onChange: () => void }) {
   const { toast, confirm } = useUi();
