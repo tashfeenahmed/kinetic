@@ -334,7 +334,8 @@ export function followUpDue(campaign: Row, sentAt: string, waitDays: number): st
 
 export function isAuthError(err: any): boolean {
   const s = `${err?.code ?? ''} ${err?.responseCode ?? ''} ${err?.message ?? ''} ${err?.responseText ?? ''}`;
-  return /EAUTH|\b535\b|\b534\b|AUTHENTICATIONFAILED|Invalid credentials|authentication failed|invalid_grant|Username and Password not accepted/i.test(s);
+  // Outlook's IMAP answers a refused XOAUTH2 login with a bare "Login failed."
+  return !!err?.authenticationFailed || /EAUTH|\b535\b|\b534\b|AUTHENTICATIONFAILED|Invalid credentials|authentication failed|invalid_grant|Username and Password not accepted|Login failed/i.test(s);
 }
 
 export function markDisconnected(ctx: Ctx, sender: Row, error: string) {
