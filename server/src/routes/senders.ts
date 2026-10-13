@@ -13,7 +13,7 @@ import { getOAuthApp } from '../settings.ts';
 import { newMessageId } from '../engine/compose.ts';
 import { warmupStats } from '../engine/warmup.ts';
 import { syncSender } from '../engine/inbox.ts';
-import { tagsFor } from './tags.ts';
+import { notWarmupMailbox, tagsFor } from './tags.ts';
 
 const SECRET_COLUMNS = ['secret_enc', 'oauth_access_token_enc'];
 
@@ -265,7 +265,7 @@ export function senderRoutes(app: FastifyInstance, ctx: Ctx) {
   r.get('/api/sender-emails/:id/replies', 'Replies received by this email account', (req) => {
     const a = auth(req);
     const s = getSender(a.workspaceId, idParam(req));
-    return { data: db.all('SELECT * FROM replies WHERE sender_email_id = ? ORDER BY received_at DESC LIMIT 200', [s.id]) };
+    return { data: db.all(`SELECT * FROM replies WHERE sender_email_id = ? AND ${notWarmupMailbox('sender_email_id')} ORDER BY received_at DESC LIMIT 200`, [s.id, a.workspaceId]) };
   });
 
   r.post('/api/sender-emails/:id/check-mx-records', 'Check DNS records (MX, SPF, DKIM, DMARC)', async (req) => {

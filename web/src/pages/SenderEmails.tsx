@@ -399,7 +399,7 @@ function BulkModal({ kind, ids, tags, onClose, onDone }: { kind: BulkKind | null
     </Field>
   );
   else field = (
-    <Field label="Tag" hint={kind === 'tag-add' ? 'Pick an existing tag or type a new name.' : undefined}>
+    <Field label="Tag" hint={kind === 'tag-add' ? 'Pick an existing tag or type a new name. Tag a mailbox "Warmup" to keep its mail out of the master inbox.' : undefined}>
       {kind === 'tag-add' ? (
         <>
           <Input list="eb-tag-list" autoFocus value={tags.find((t) => String(t.id) === value)?.name ?? value} onChange={(e) => { const t = tags.find((x) => x.name === e.target.value); setValue(t ? String(t.id) : e.target.value); }} placeholder="e.g. Batch 3" />

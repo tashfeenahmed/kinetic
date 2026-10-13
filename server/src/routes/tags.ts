@@ -9,6 +9,18 @@ export type Taggable = 'lead' | 'campaign' | 'sender_email';
 const TABLE: Record<Taggable, string> = { lead: 'leads', campaign: 'campaigns', sender_email: 'sender_emails' };
 const TYPE_NAME: Record<Taggable, string> = { lead: 'Lead', campaign: 'Campaign', sender_email: 'SenderEmail' };
 
+/** Mailboxes tagged with one of these names are warmup-only: their mail stays out of the master inbox and the sent folder. */
+export const WARMUP_TAG_NAMES = ['warmup', 'warm-up', 'warm up'];
+
+/**
+ * SQL condition that is true when `col` (a sender_email_id column) is not a warmup-tagged mailbox.
+ * Bind the workspace id once for it. NULL (no mailbox) counts as visible.
+ */
+export function notWarmupMailbox(col: string) {
+  return `(${col} IS NULL OR ${col} NOT IN (SELECT x.taggable_id FROM taggables x JOIN tags t ON t.id = x.tag_id
+    WHERE x.taggable_type = 'sender_email' AND t.workspace_id = ? AND lower(trim(t.name)) IN (${WARMUP_TAG_NAMES.map((n) => `'${n}'`).join(', ')})))`;
+}
+
 export function tagsFor(ctx: Ctx, type: Taggable, id: number) {
   return ctx.db.all(`SELECT t.id, t.name, t.is_default AS "default" FROM tags t JOIN taggables x ON x.tag_id = t.id WHERE x.taggable_type = ? AND x.taggable_id = ? ORDER BY t.name`, [type, id])
     .map((t) => ({ ...t, default: !!t.default }));

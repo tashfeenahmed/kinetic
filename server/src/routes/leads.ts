@@ -7,7 +7,7 @@ import { auth, badRequest, canWrite, defineRoutes, idList, idParam, notFound, pa
 import { suppress, unsubscribeLead } from '../engine/inbox.ts';
 import { cancelScheduled } from '../engine/sequencer.ts';
 import { domainOf } from '../lib/dns.ts';
-import { tagsFor } from './tags.ts';
+import { notWarmupMailbox, tagsFor } from './tags.ts';
 import { leadEmailStats, leadFilters, leadWhere } from './leadFilters.ts';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -292,13 +292,13 @@ export function leadRoutes(app: FastifyInstance, ctx: Ctx) {
   r.get('/api/leads/:id/replies', 'Replies from lead', (req) => {
     const a = auth(req);
     const lead = getLead(a.workspaceId, idParam(req));
-    return { data: db.all('SELECT * FROM replies WHERE lead_id = ? ORDER BY received_at DESC', [lead.id]) };
+    return { data: db.all(`SELECT * FROM replies WHERE lead_id = ? AND ${notWarmupMailbox('sender_email_id')} ORDER BY received_at DESC`, [lead.id, a.workspaceId]) };
   });
 
   r.get('/api/leads/:id/sent-emails', 'Emails sent to lead', (req) => {
     const a = auth(req);
     const lead = getLead(a.workspaceId, idParam(req));
-    return { data: db.all(`SELECT s.*, c.name AS campaign_name FROM sent_emails s LEFT JOIN campaigns c ON c.id = s.campaign_id WHERE s.lead_id = ? ORDER BY s.sent_at DESC`, [lead.id]) };
+    return { data: db.all(`SELECT s.*, c.name AS campaign_name FROM sent_emails s LEFT JOIN campaigns c ON c.id = s.campaign_id WHERE s.lead_id = ? AND ${notWarmupMailbox('s.sender_email_id')} ORDER BY s.sent_at DESC`, [lead.id, a.workspaceId]) };
   });
 
   r.get('/api/leads/:id/scheduled-emails', 'Scheduled emails for lead', (req) => {
