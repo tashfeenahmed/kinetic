@@ -13,6 +13,7 @@ import { runDueSearches } from '../sourcing/savedSearches.ts';
 import { classifyPending } from './replyAi.ts';
 import { refreshEmailProviders } from './emailProviders.ts';
 import { companionTick } from '../companion/worker.ts';
+import { ukStreamJob } from '../sourcing/funding/uk.ts';
 
 interface Job {
   name: string;
@@ -49,6 +50,7 @@ export function jobs(ctx: Ctx): Job[] {
     { name: 'reply-ai', everyMs: 15_000 * k, run: (c) => classifyPending(c) },
     { name: 'email-providers', everyMs: 5 * 60_000 * k, run: (c) => refreshEmailProviders(c) },
     { name: 'companion', everyMs: 30_000 * k, run: companionTick },
+    { name: 'funding-uk-stream', everyMs: 10 * 60_000 * k, run: ukStreamJob },
   ];
 }
 

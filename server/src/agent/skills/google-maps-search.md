@@ -15,6 +15,7 @@ and no ratings. Check which one is active: `GET /api/sources` → `google_maps.p
 ```
 Area options (pick one):
 - `"location": "<city or address>"` alone → the city's own bounds (a street address → 5 km around it).
+- To check where a place name resolves before searching: `POST /api/sources/geocode` `{ "q": "Ranelagh, Dublin" }` → lat/lng and bounds.
 - `"location"` or `"center": {"lat": 52.52, "lng": 13.40}` + `"radius_km": 1–200` → circle (results outside are dropped).
 - `"bbox": {"south": 52.45, "west": 13.30, "north": 52.56, "east": 13.48}` → rectangle.
 

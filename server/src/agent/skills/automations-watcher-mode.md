@@ -37,7 +37,7 @@ Or schedule an existing job: `PATCH /api/automations/jobs/:id {"schedule": {"eve
 Daily limits reset at midnight in the working-hours timezone; weekly limits are a rolling 7 days. Only raise limits when the user explicitly asks, and warn that higher LinkedIn volumes risk account restrictions.
 
 ## Pause / stop
-- One job: `POST /api/automations/jobs/:id/pause|resume|cancel`.
+- One job: `POST /api/automations/jobs/:id/pause`, `POST /api/automations/jobs/:id/resume` (ask the user first if it is an action job that acts on LinkedIn/social), or `POST /api/automations/jobs/:id/cancel` (stops it and drops its queued tasks).
 - Everything (jobs and LinkedIn campaigns): `POST /api/companion/pause-all {"paused": true}`.
 - One browser: `PATCH /api/companion/devices/:id {"paused": true}`; clear a safety stop after the user solved a challenge: `{"clear_site_pause": "linkedin"}`.
 

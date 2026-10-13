@@ -11,9 +11,11 @@ import { tableRows } from './exclusions.ts';
 import { mapsSearch, type MapsQuery } from './maps.ts';
 import { companyLookalikes, peopleLookalikes, type PersonSeed } from './lookalikes.ts';
 import { dedupeKey, rowIds, type SourceShape } from './normalize.ts';
+import { fundingRounds } from './funding/index.ts';
 
 export const SOURCES = {
   google_maps: { label: 'Local businesses (Google Maps / OpenStreetMap)', shape: 'place' },
+  funding_rounds: { label: 'Recently funded companies (official filings: US, UK, FR, ES, CH, NO)', shape: 'company' },
   company_lookalikes: { label: 'Lookalike companies', shape: 'company' },
   people_lookalikes: { label: 'Lookalike people', shape: 'person' },
   find_companies: { label: 'Companies (YC directory, then AI web search)', shape: 'company' },
@@ -60,6 +62,11 @@ export async function runSource(app: AppCtx, workspaceId: number, source: Source
     case 'google_maps': {
       const r = await mapsSearch({ ...(params as MapsQuery), radiusKm: params.radiusKm ?? params.radius_km, maxTiles: params.maxTiles ?? params.max_tiles, limit }, { settings, log: ctx.log });
       return { records: r.rows, label: r.provider === 'google' ? 'Google Maps' : 'OpenStreetMap', meta: { provider: r.provider, area: r.area, tiles: r.tiles, requests: r.requests, capped: r.capped } };
+    }
+    case 'funding_rounds': {
+      const r = await fundingRounds({ ...ctx, db: app.db }, params, limit);
+      const countries = Object.entries(r.perCountry).map(([c, n]) => `${c.toUpperCase()} ${n}`).join(', ');
+      return { records: r.rows, label: `official filings (${countries})`, meta: { perCountry: r.perCountry, warnings: r.warnings } };
     }
     case 'company_lookalikes': {
       const fromTable = seedsFromTable(app, workspaceId, params).map((row) => (params.column ? headline(row[params.column]) : rowIds(row).domain ?? '')).filter(Boolean);

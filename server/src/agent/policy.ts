@@ -20,8 +20,14 @@ const DENY: [RegExp, RegExp, string][] = [
   [/.*/, /^\/api\/workspaces\/switch-workspace$/, 'The agent works in the chat’s workspace and cannot switch.'],
   [/^(PUT|POST|PATCH|DELETE)$/, /^\/api\/gtm\/keys$/, 'API keys are managed on the Integrations page by the user.'],
   [/.*/, /^\/api\/agent\/sessions(\/|$)/, 'The agent cannot drive its own chat sessions.'],
-  [/.*/, /\/events$/, 'Streaming endpoints cannot be called by the agent.'],
+  // Live streams (…/:id/events). GET /api/events is the activity log and stays allowed.
+  [/.*/, /^\/api\/.+\/events$/, 'Streaming endpoints cannot be called by the agent.'],
   [/.*/, /^\/api\/sender-emails\/[^/]+\/reconnect$/, 'Mailbox credentials are managed by the user only.'],
+  [/^POST$/, /^\/api\/sender-emails\/(imap-smtp|bulk)$/, 'Adding mailboxes needs their passwords — the user adds them on the Sender Emails page.'],
+  [/^POST$/, /^\/api\/seed-accounts$/, 'Seed inboxes need their passwords — the user adds them in the app.'],
+  [/^(PUT|POST|PATCH)$/, /^\/api\/settings\/integrations$/, 'OAuth app secrets are entered by the user on Settings.'],
+  // The browser extension's own device protocol (pairing, polling, task results). Status/pause routes stay allowed.
+  [/.*/, /^\/api\/companion\/(me|pair|pairing-code|heartbeat|poll|unpair|tasks)(\/|$)/, 'That route is the Companion extension\'s own protocol; pairing is done by the user in Chrome.'],
 ];
 
 const RISKY: [RegExp, RegExp, string][] = [
@@ -33,6 +39,8 @@ const RISKY: [RegExp, RegExp, string][] = [
   [/^POST$/, /^\/api\/replies\/[^/]+\/followup-campaign\/push$/, 'This queues follow-up emails.'],
   [/^POST$/, /test-email$|send-test$/, 'This sends a test email.'],
   [/^POST$/, /^\/api\/gtm\/keys\/test\/slack$/, 'This posts a Slack message.'],
+  [/^POST$/, /^\/api\/webhook-events\/test-event$/, 'This sends data to an outside URL.'],
+  [/^POST$/, /^\/api\/webhook-deliveries\/[^/]+\/retry$/, 'This sends data to an outside URL.'],
   [/^POST$/, /^\/api\/sender-emails\/move-to-another-workspace-bulk$/, 'This moves mailboxes out of the workspace.'],
   [/^POST$/, /^\/api\/domains\/apply$/, 'This changes live DNS records.'],
   [/^DELETE$/, /.*/, 'This deletes data.'],

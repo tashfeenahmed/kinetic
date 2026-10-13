@@ -28,6 +28,7 @@ const SERIES = [
 
 const EXAMPLES = [
   '50 Irish POS companies and their CEOs',
+  'Tech companies that raised money this week (US, UK, France)',
   'Dental clinics in Manchester with a website',
   'UK SaaS companies hiring SDRs',
   'Companies like linear.app',

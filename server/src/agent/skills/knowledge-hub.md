@@ -54,6 +54,7 @@ Before creating, check the list: if a doc with that topic exists, update it inst
 - Create: `POST /api/knowledge/folders` `{ "name": "Competitors", "parent_id": null }` (`parent_id` of another folder nests it; any depth). New folders go to the top of their parent.
 - Rename: `PATCH /api/knowledge/folders/{id}` `{ "name": "Competitor research" }`.
 - Move and reorder (docs and folders, one call): `POST /api/knowledge/move` `{ "items": [{ "type": "doc", "id": 12 }, { "type": "doc", "id": 13 }], "folder_id": 4 }` — `folder_id: null` is the top level. Items go to the end unless you pass `"index": 0`, or `"before"` / `"after"`: `{ "type": "folder", "id": 7 }` (a sibling in the target folder). A folder can't go inside itself or its own subfolders (400). Moving one doc also works with `PATCH /api/knowledge/docs/{id}` `{ "folder_id": 4 }`.
+- Reorder docs inside their folders only: `POST /api/knowledge/docs/reorder` `{ "ids": [13, 12, 15] }` (ids in the new order).
 - Delete: `DELETE /api/knowledge/folders/{id}?contents=move_up` (default — its docs and subfolders move up a level) or `?contents=delete` (deletes every doc inside too). Needs the user's approval; say which mode and how many docs are inside (`doc_count`, plus subfolders) first.
 
 Organising rules:

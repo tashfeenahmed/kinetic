@@ -192,6 +192,19 @@ describe('approval gating', () => {
     expect(classifyRoute('PATCH', '/api/campaigns/3/resume')).toMatchObject({ kind: 'approve' });
     expect(classifyRoute('POST', '/api/linkedin/connect')).toMatchObject({ kind: 'approve' });
     expect(classifyRoute('POST', '/api/gtm/tables')).toEqual({ kind: 'allow' });
+    // Webhook tests/retries send data out.
+    expect(classifyRoute('POST', '/api/webhook-events/test-event')).toMatchObject({ kind: 'approve' });
+    expect(classifyRoute('POST', '/api/webhook-deliveries/4/retry')).toMatchObject({ kind: 'approve' });
+  });
+
+  it('keeps credentials and device protocols away from the agent, but allows the activity log', () => {
+    for (const [m, p] of [['POST', '/api/sender-emails/imap-smtp'], ['POST', '/api/sender-emails/bulk'], ['POST', '/api/seed-accounts'], ['PUT', '/api/settings/integrations'],
+      ['POST', '/api/companion/pair'], ['POST', '/api/companion/poll'], ['POST', '/api/companion/tasks/3/results'], ['GET', '/api/gtm/tables/3/events'], ['GET', '/api/agent/sessions/1/events']]) {
+      expect(classifyRoute(m, p).kind, `${m} ${p}`).toBe('deny');
+    }
+    for (const [m, p] of [['GET', '/api/events'], ['GET', '/api/companion/status'], ['POST', '/api/companion/pause-all'], ['GET', '/api/settings/integrations'], ['GET', '/api/seed-accounts'], ['PATCH', '/api/sender-emails/daily-limits/bulk']]) {
+      expect(classifyRoute(m, p).kind, `${m} ${p}`).toBe('allow');
+    }
   });
 
   it('paid enrichment over 100 rows and outbound action columns need approval', async () => {
