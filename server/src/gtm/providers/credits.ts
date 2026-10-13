@@ -70,16 +70,21 @@ function planBlocks(db: Db): PlanBlocks {
   try { return JSON.parse(getSetting(db, 'credit_plan_blocks') || '{}'); } catch { return {}; }
 }
 
-/** True when an error means "your plan doesn't include this", not a transient failure. */
+/**
+ * True when an error means "your plan (or account) doesn't allow this" rather than a passing
+ * failure: Apollo's free plan refusing people endpoints, or Hunter restricting a new account.
+ */
 export function isPlanError(e: any): boolean {
-  if (![402, 403].includes(e?.status)) return false;
+  if (![402, 403, 429].includes(e?.status)) return false;
   const body = JSON.stringify(e?.body ?? e?.message ?? '');
+  if (e.status === 429) return /restricted_account|account was restricted/i.test(body);
   return /API_INACCESSIBLE|not included in your|upgrade your plan|plan does not|not available on (the|your) (free )?plan/i.test(body);
 }
 
 export function notePlanBlock(settings: Settings, step: string, provider: CreditProvider, e: any) {
   const all = planBlocks(settings.db);
-  const reason = String(e?.body?.error ?? e?.message ?? 'not on this plan').replace(/\s+/g, ' ').slice(0, 200);
+  const body = e?.body;
+  const reason = String(body?.errors?.[0]?.details ?? body?.error ?? e?.message ?? 'not on this plan').replace(/\s+/g, ' ').slice(0, 200);
   all[step] = { provider, reason, key: keyTag(settings.get(PROVIDER_INFO[provider].key)), at: new Date().toISOString() };
   setSetting(settings.db, 'credit_plan_blocks', JSON.stringify(all));
 }
@@ -87,14 +92,15 @@ export function notePlanBlock(settings: Settings, step: string, provider: Credit
 /** Why this waterfall step can't run on the vendor plan, or null. */
 export function planBlock(settings: Settings, step: string, provider: CreditProvider): string | null {
   const b = planBlocks(settings.db)[step];
-  if (!b || b.key !== keyTag(settings.get(PROVIDER_INFO[provider].key)) || Date.now() - Date.parse(b.at) > PLAN_BLOCK_TTL) return null;
-  return 'not on your plan';
+  // A restricted account is often lifted once the user logs in, so check again after a few hours.
+  const ttl = /restricted/i.test(b?.reason ?? '') ? 6 * 3_600_000 : PLAN_BLOCK_TTL;
+  if (!b || b.key !== keyTag(settings.get(PROVIDER_INFO[provider].key)) || Date.now() - Date.parse(b.at) > ttl) return null;
+  return /restricted/i.test(b.reason) ? 'account restricted' : 'not on your plan';
 }
 
-function planBlockedSteps(settings: Settings, provider: CreditProvider): string[] {
-  return Object.entries(planBlocks(settings.db))
-    .filter(([step, b]) => b.provider === provider && planBlock(settings, step, provider))
-    .map(([step]) => step.split(':')[0]!);
+function planBlockedSteps(settings: Settings, provider: CreditProvider): { steps: string[]; reason: string | null } {
+  const active = Object.entries(planBlocks(settings.db)).filter(([step, b]) => b.provider === provider && planBlock(settings, step, provider));
+  return { steps: active.map(([step]) => step.split(':')[0]!), reason: active[0]?.[1].reason ?? null };
 }
 
 const fmt = (n: number) => String(Math.round(n * 10) / 10);
@@ -137,7 +143,7 @@ export async function creditsOverview(settings: Settings) {
       month: month(), used: Math.round(used.credits * 10) / 10, calls: used.calls, last_at: used.last_at,
       budget: b[p], free_monthly: info.freeMonthly,
       blocked: connected ? budgetBlock(db, p) : null,
-      plan_blocked: connected ? planBlockedSteps(settings, p) : [],
+      ...(() => { const b = connected ? planBlockedSteps(settings, p) : { steps: [], reason: null }; return { plan_blocked: b.steps, plan_reason: b.reason }; })(),
       live: connected ? await live(settings, p) : null,
     };
   }));
