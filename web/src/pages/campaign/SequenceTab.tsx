@@ -50,14 +50,16 @@ function VariablePicker({ onPick }: { onPick: (key: string) => void }) {
   );
 }
 
+type Issue = { code: string; message: string; excerpt?: string };
+
 function Preview({ campaign, step, stepIndex, variant, previousSubject }: { campaign: Campaign; step: Step; stepIndex: number; variant: Variant; previousSubject: string }) {
-  const [data, setData] = useState<{ subject: string; text: string; html: string | null; missing_variables: string[]; lead: { email: string } } | null>(null);
+  const [data, setData] = useState<{ subject: string; text: string; html: string | null; missing_variables: string[]; errors?: Issue[]; warnings?: Issue[]; lead: { email: string } } | null>(null);
   const [error, setError] = useState('');
   const threaded = stepIndex > 0 && step.thread_reply;
   useEffect(() => {
     const t = setTimeout(async () => {
       try {
-        const r = await api.post(`/api/campaigns/${campaign.id}/preview`, { email_subject: threaded ? previousSubject : variant.email_subject, email_body: variant.email_body });
+        const r = await api.post(`/api/campaigns/${campaign.id}/preview`, { email_subject: threaded ? previousSubject : variant.email_subject, email_body: variant.email_body, thread_reply: !!threaded, step_order: stepIndex + 1 });
         setData(r.data);
         setError('');
       } catch (e) {
@@ -65,7 +67,7 @@ function Preview({ campaign, step, stepIndex, variant, previousSubject }: { camp
       }
     }, 450);
     return () => clearTimeout(t);
-  }, [campaign.id, variant.email_subject, variant.email_body, threaded, previousSubject]);
+  }, [campaign.id, variant.email_subject, variant.email_body, threaded, previousSubject, stepIndex]);
 
   return (
     <Card title={<span className="flex items-center gap-2"><Eye className="size-4 text-slate-400" />Preview</span>} description={data ? `As ${data.lead.email} would see it` : 'Rendered with a real lead from this campaign'}>
@@ -73,7 +75,13 @@ function Preview({ campaign, step, stepIndex, variant, previousSubject }: { camp
         <div className="space-y-3">
           {data.missing_variables.length > 0 && (
             <Alert tone="yellow" title="Unknown variables">
-              {data.missing_variables.map((v) => `{${v}}`).join(', ')} won't be replaced. Add a fallback like {'{'}{data.missing_variables[0]}|there{'}'} or check the spelling.
+              {data.missing_variables.map((v) => `{${v}}`).join(', ')} won't be replaced, so emails to leads without them are held back. Add a fallback like {'{'}{data.missing_variables[0]}|there{'}'} or check the spelling.
+            </Alert>
+          )}
+          {!!data.errors?.length && <Alert tone="red" title="This email won't be sent">{data.errors.map((e) => e.message).join(' ')}</Alert>}
+          {!!data.warnings?.length && (
+            <Alert tone="yellow" title="Pre-send check">
+              <ul className="list-disc pl-4">{data.warnings.map((w, i) => <li key={i}>{w.message}</li>)}</ul>
             </Alert>
           )}
           <div>
