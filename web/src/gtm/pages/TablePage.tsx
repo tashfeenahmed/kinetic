@@ -11,6 +11,7 @@ import type { GridApi } from '../components/Grid';
 import { Icon } from '../components/Icon';
 import { SaveAsFunctionDialog } from '../components/SaveAsFunctionDialog';
 import { useEventStream } from '../../lib/useEventStream';
+import { Popover } from '../../components/ui';
 
 type Panel =
   | { kind: 'picker' }
@@ -29,6 +30,8 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
   const [sel, setSel] = useState<{ rowIds: number[]; whole: boolean }>({ rowIds: [], whole: false });
   const [visible, setVisible] = useState<number | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const exportRef = useRef<HTMLSpanElement>(null);
+  const closeExport = useCallback(() => setExportOpen(false), []);
   const grid = useRef<GridApi | null>(null);
   const [queue, setQueue] = useState({ pending: 0, running: 0 });
   const [toast, setToast] = useState('');
@@ -139,19 +142,16 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
         <button className="ghost sm" onClick={() => setDialog('schedule')} title="Re-run columns on a schedule">
           <Icon name="clock" size={14} />{view.table.schedule?.enabled ? `Every ${fmtEvery(view.table.schedule.everyMinutes)}` : 'Schedule'}
         </button>
-        <span style={{ position: 'relative' }}>
+        <span ref={exportRef} style={{ position: 'relative' }}>
           <button className="ghost sm" onClick={() => setExportOpen((o) => !o)} disabled={!total} title="Download as CSV"><Icon name="download" size={14} />Export CSV</button>
-          {exportOpen && (
-            <>
-              <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onMouseDown={() => setExportOpen(false)} />
-              <div className="menu-pop" style={{ position: 'absolute', top: 30, left: 0, zIndex: 50, minWidth: 230, background: 'var(--bg, #fff)', border: '1px solid var(--border, #e4e4e7)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.08)', padding: 4 }}>
-                <button className="ghost sm" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={() => exportRows(null)}>All {plural(total)}</button>
-                {filtered && <button className="ghost sm" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={() => exportRows(visibleIds())}>Filtered rows ({plural(visible!)})</button>}
-                {picked.length > 0 && <button className="ghost sm" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={() => exportRows(picked)}>Selected rows ({plural(picked.length)})</button>}
-                {!filtered && <button className="ghost sm" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={() => exportRows(visibleIds())} title="In the order shown, after sorting">As sorted on screen</button>}
-              </div>
-            </>
-          )}
+          <Popover anchor={exportRef.current} open={exportOpen} onClose={closeExport}>
+            <div className="menu-pop" style={{ minWidth: 230, background: 'var(--bg, #fff)', border: '1px solid var(--border, #e4e4e7)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.08)', padding: 4 }}>
+              <button className="ghost sm" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={() => exportRows(null)}>All {plural(total)}</button>
+              {filtered && <button className="ghost sm" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={() => exportRows(visibleIds())}>Filtered rows ({plural(visible!)})</button>}
+              {picked.length > 0 && <button className="ghost sm" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={() => exportRows(picked)}>Selected rows ({plural(picked.length)})</button>}
+              {!filtered && <button className="ghost sm" style={{ width: '100%', justifyContent: 'flex-start' }} onClick={() => exportRows(visibleIds())} title="In the order shown, after sorting">As sorted on screen</button>}
+            </div>
+          </Popover>
         </span>
         <Link className="btn ghost sm" style={{ border: 'none', boxShadow: 'none', color: 'var(--text-2)', background: 'transparent' }} to="/settings/functions" title="Reusable enrichment recipes — add one as a column, or save columns as one from Column actions"><Icon name="fn" size={14} />Functions</Link>
         {runnable.length > 0 && <span className="sep" />}

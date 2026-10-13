@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bookmark, Plus, X } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api.ts';
-import { Button, cx, Field, Input, Menu, Modal, Select, useUi } from '../../components/ui.tsx';
+import { Button, cx, Field, Input, Menu, Modal, Popover, Select, useUi } from '../../components/ui.tsx';
 import { REPLY_LABELS } from '../../components/status.tsx';
 
 /**
@@ -130,12 +130,7 @@ function AddFilter({ look, onAdd, current }: { look: ReturnType<typeof useLookup
   const ref = useRef<HTMLDivElement>(null);
   const f = FIELDS.find((x) => x.id === fieldId)!;
 
-  useEffect(() => {
-    if (!open) return;
-    const h = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, [open]);
+  const closeMenu = useCallback(() => setOpen(false), []);
   useEffect(() => {
     setOp(f.kind === 'count' ? 'min' : f.kind === 'bool' ? 'true' : f.kind === 'age' ? 'before' : '');
     setVal(f.kind === 'age' ? '14' : f.kind === 'count' ? '1' : '');
@@ -166,8 +161,7 @@ function AddFilter({ look, onAdd, current }: { look: ReturnType<typeof useLookup
       <button onClick={() => setOpen((o) => !o)} className="inline-flex h-7 items-center gap-1 rounded-[7px] px-2 text-[12.5px] text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900">
         <Plus className="size-3.5" /> Filter
       </button>
-      {open && (
-        <div className="absolute left-0 z-30 mt-1 w-72 space-y-2 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
+      <Popover anchor={ref.current} open={open} onClose={closeMenu} className="w-72 space-y-2 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
           <Select value={fieldId} onChange={(e) => setFieldId(e.target.value)} aria-label="Field">
             {FIELDS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
           </Select>
@@ -205,8 +199,7 @@ function AddFilter({ look, onAdd, current }: { look: ReturnType<typeof useLookup
             <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
             <Button size="sm" variant="primary" onClick={apply}>Add filter</Button>
           </div>
-        </div>
-      )}
+      </Popover>
     </div>
   );
 }

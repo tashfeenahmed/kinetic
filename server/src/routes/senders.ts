@@ -326,19 +326,21 @@ export function senderRoutes(app: FastifyInstance, ctx: Ctx) {
 
   // ---- OAuth (Google / Microsoft) ----
   const o = defineRoutes(app, 'OAuth Sessions');
-  const pending = new Map<string, { workspaceId: number; provider: OAuthProvider; expires: number }>();
+  const pending = new Map<string, { workspaceId: number; provider: OAuthProvider; expires: number; senderId?: number }>();
   const redirectUri = () => `${ctx.config.publicUrl}/oauth/callback`;
 
   for (const provider of ['google', 'microsoft'] as const) {
-    const body = z.object({ admin_consent_prompt: bool.default(false) });
-    o.post(`/api/oauth-sessions/${provider}`, `Start ${provider === 'google' ? 'Google' : 'Microsoft'} OAuth connection`, (req) => {
+    const body = z.object({ admin_consent_prompt: bool.default(false), sender_email_id: z.coerce.number().int().positive().optional() });
+    o.post(`/api/oauth-sessions/${provider}`, `Start ${provider === 'google' ? 'Google' : 'Microsoft'} OAuth connection (sender_email_id: reconnect that mailbox)`, (req) => {
       const a = canWrite(req);
       const b = parse(body, req.body);
       const cfg = getOAuthApp(db, provider);
       if (!cfg) throw new HttpError(422, { error: 'not_configured', message: `Add your ${provider === 'google' ? 'Google' : 'Microsoft'} OAuth client ID and secret in Settings → Integrations first.` });
+      const target = b.sender_email_id ? db.get('SELECT id, email FROM sender_emails WHERE id = ? AND workspace_id = ?', [b.sender_email_id, a.workspaceId]) : null;
+      if (b.sender_email_id && !target) throw notFound('sender email');
       const state = randomToken(24);
-      pending.set(state, { workspaceId: a.workspaceId, provider, expires: Date.now() + 15 * 60_000 });
-      return { data: { url: authorizeUrl(provider, cfg, redirectUri(), state, { adminConsent: b.admin_consent_prompt }), redirect_uri: redirectUri() } };
+      pending.set(state, { workspaceId: a.workspaceId, provider, expires: Date.now() + 15 * 60_000, senderId: target?.id });
+      return { data: { url: authorizeUrl(provider, cfg, redirectUri(), state, { adminConsent: b.admin_consent_prompt, loginHint: target?.email }), redirect_uri: redirectUri() } };
     }, { body });
   }
 
@@ -354,12 +356,23 @@ export function senderRoutes(app: FastifyInstance, ctx: Ctx) {
       const tokens = await exchangeCode(session.provider, cfg, q.code ?? '', redirectUri());
       if (!tokens.refresh_token) return done('No refresh token returned. Remove the app from your account permissions and connect again.', false);
       const claims = idTokenClaims(tokens.id_token);
-      const email = String(claims.email ?? claims.preferred_username ?? '').toLowerCase();
+      let email = String(claims.email ?? claims.preferred_username ?? '').toLowerCase();
       if (!email) return done('Could not read the mailbox address from the provider.', false);
       const preset = PRESETS[session.provider];
-      const existing = db.get('SELECT id FROM sender_emails WHERE workspace_id = ? AND email = ?', [session.workspaceId, email]);
+      let existing = db.get('SELECT id, email, username FROM sender_emails WHERE workspace_id = ? AND email = ?', [session.workspaceId, email]);
+      if (session.senderId) {
+        // Reconnecting a specific mailbox: the account signed in must be that mailbox (by its address
+        // or its sign-in name, e.g. an alias like you@company.com on you@tenant.onmicrosoft.com).
+        const target = db.get('SELECT id, email, username FROM sender_emails WHERE id = ?', [session.senderId]);
+        const names = [claims.email, claims.preferred_username].filter(Boolean).map((x) => String(x).toLowerCase());
+        if (!target || !names.some((n) => [target.email, target.username].filter(Boolean).map((x: string) => x.toLowerCase()).includes(n))) {
+          return done(`You signed in as ${names[0] ?? 'another account'}, but this mailbox is ${target?.email}. Sign in with that mailbox's account.`, false);
+        }
+        existing = target;
+        email = target.email;
+      }
       const fields = {
-        provider: session.provider, auth_type: 'oauth', username: email, secret_enc: encrypt(tokens.refresh_token),
+        provider: session.provider, auth_type: 'oauth', username: existing?.username || email, secret_enc: encrypt(tokens.refresh_token),
         oauth_access_token_enc: encrypt(tokens.access_token), oauth_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
         ...preset, status: 'Connected', last_error: null,
       };
@@ -371,7 +384,7 @@ export function senderRoutes(app: FastifyInstance, ctx: Ctx) {
         if (tagId) db.run('INSERT OR IGNORE INTO taggables (tag_id, taggable_type, taggable_id) VALUES (?, ?, ?)', [tagId, 'sender_email', id]);
         emit(ctx, session.workspaceId, 'EMAIL_ACCOUNT_ADDED', { sender_email_id: id, email }, { sender_email_id: id });
       }
-      return done(`${email} connected`, true);
+      return done(`${email} ${session.senderId ? 'reconnected' : 'connected'}`, true);
     } catch (e: any) {
       return done(e.message, false);
     }

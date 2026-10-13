@@ -43,13 +43,15 @@ function ep(provider: OAuthProvider, cfg: OAuthAppConfig) {
   return provider === 'google' ? endpoints.google : endpoints.microsoft(cfg.tenant);
 }
 
-export function authorizeUrl(provider: OAuthProvider, cfg: OAuthAppConfig, redirectUri: string, state: string, opts: { adminConsent?: boolean } = {}): string {
+export function authorizeUrl(provider: OAuthProvider, cfg: OAuthAppConfig, redirectUri: string, state: string, opts: { adminConsent?: boolean; loginHint?: string } = {}): string {
   const u = new URL(ep(provider, cfg).auth);
   u.searchParams.set('client_id', cfg.clientId);
   u.searchParams.set('redirect_uri', redirectUri);
   u.searchParams.set('response_type', 'code');
   u.searchParams.set('state', state);
   u.searchParams.set('scope', (provider === 'google' ? GOOGLE_SCOPES : MS_SCOPES).join(' '));
+  // Reconnecting: pre-fill the account so the right mailbox signs in.
+  if (opts.loginHint) u.searchParams.set('login_hint', opts.loginHint);
   if (provider === 'google') {
     u.searchParams.set('access_type', 'offline');
     u.searchParams.set('prompt', 'consent');

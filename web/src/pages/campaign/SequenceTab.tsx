@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Braces, ChevronDown, Clock, CornerDownRight, Eye, Plus, Save, Send, Trash2, Trophy, X } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api.ts';
 import { useAuth } from '../../lib/auth.tsx';
-import { Alert, Badge, Button, Card, Field, Input, Loading, Modal, Select, Textarea, Toggle, cx, useUi } from '../../components/ui.tsx';
+import { Alert, Badge, Button, Card, Field, Input, Loading, Modal, Popover, Select, Textarea, Toggle, cx, useUi } from '../../components/ui.tsx';
 import { AB_DEFAULTS, type Action, type Campaign, type Step, type Variant, variantLetter } from './types.ts';
 import { RuleSummary, StepRulesEditor } from './StepRules.tsx';
 import { AbTestPanel } from './AbTestPanel.tsx';
@@ -25,19 +25,13 @@ function VariablePicker({ onPick }: { onPick: (key: string) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const vars = useQuery({ queryKey: ['custom-variables'], queryFn: () => api.get('/api/custom-variables').then((r) => r.data as { id: number; name: string }[]) });
-  useEffect(() => {
-    if (!open) return;
-    const h = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, [open]);
+  const closeMenu = useCallback(() => setOpen(false), []);
   return (
     <div className="relative" ref={ref}>
       <Button size="sm" icon={<Braces className="size-3.5" />} onMouseDown={(e) => e.preventDefault()} onClick={() => setOpen((o) => !o)}>
         Insert variable <ChevronDown className="size-3.5" />
       </Button>
-      {open && (
-        <div className="absolute right-0 z-30 mt-1 max-h-80 w-60 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg scroll-thin">
+      <Popover anchor={ref.current} open={open} onClose={closeMenu} align="right" className="max-h-80 w-60 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg scroll-thin">
           <div className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Lead & sender</div>
           {BUILTINS.map(([k, label]) => (
             <button key={k} onMouseDown={(e) => e.preventDefault()} onClick={() => { onPick(k); setOpen(false); }} className="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm hover:bg-slate-50">
@@ -50,8 +44,7 @@ function VariablePicker({ onPick }: { onPick: (key: string) => void }) {
               <span className="truncate text-slate-700">{v.name}</span><code className="ml-2 text-[11px] text-slate-400">{`{${varKey(v.name)}}`}</code>
             </button>
           ))}
-        </div>
-      )}
+      </Popover>
     </div>
   );
 }
