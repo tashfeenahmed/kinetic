@@ -130,6 +130,7 @@ export function SaveSearchModal({ open, onClose, draft, sources, editParams }: {
 
 export const PARAM_HINTS: Record<string, string> = {
   google_maps: '{"query": "dentist", "location": "Berlin", "radius_km": 10} or {"query": "cafe", "bbox": {"south":…, "west":…, "north":…, "east":…}}',
+  funding_rounds: '{"countries": "us,uk,fr,es,ch,no", "sector": "tech", "days": 3} — sector: tech | health | fintech | energy | consumer; or "keywords": "robots, drones"',
   company_lookalikes: '{"seeds": ["stripe.com", "adyen.com"]} or {"table_id": 12}',
   people_lookalikes: '{"seeds": ["VP Sales", "Head of Revenue"], "companies": ["ramp.com"]}',
   find_companies: '{"query": "restaurant POS"}',

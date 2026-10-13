@@ -40,7 +40,7 @@ const searchBody = z.object({
 });
 
 /** Modes /api/gtm/find hands to this module. */
-export const SOURCING_FIND_MODES = ['google_maps', 'company_lookalikes', 'people_lookalikes'] as const;
+export const SOURCING_FIND_MODES = ['google_maps', 'company_lookalikes', 'people_lookalikes', 'funding_rounds'] as const;
 export const isSourcingMode = (m: string): m is (typeof SOURCING_FIND_MODES)[number] => (SOURCING_FIND_MODES as readonly string[]).includes(m);
 
 /** Find prospects for the sourcing modes: search, drop exclusions, open a new table. */
@@ -51,6 +51,7 @@ export async function sourcingFind(ctx: Ctx, workspaceId: number, b: { mode: (ty
     const message = f.excluded
       ? `All ${f.excluded} results for "${b.query}" are on your exclusion lists.`
       : b.mode === 'google_maps' ? `No businesses matched "${b.query}" in that area (${r.label}). Try a broader category, a bigger area, or a different wording.`
+        : b.mode === 'funding_rounds' ? `No recently funded companies matched "${b.query}"${(r.meta?.warnings as string[] | undefined)?.length ? ` (${(r.meta!.warnings as string[]).join('; ')})` : ''}. Try more days, another sector, or more countries.`
         : b.mode === 'company_lookalikes' ? `No lookalikes found for ${b.query}. Add more seed companies, or an Apollo/PDL or OpenRouter key on the Integrations page for wider search.`
           : `No similar people found for "${b.query}". Add target companies, or a search key (Serper/Brave) on the Integrations page.`;
     return reply.code(404).send({ error: 'no_results', message, excluded: f.excluded });
@@ -60,10 +61,10 @@ export async function sourcingFind(ctx: Ctx, workspaceId: number, b: { mode: (ty
     const { ids, duplicates } = appendNewRows(ctx, tableId, f.kept, SOURCES[b.mode].shape);
     return { id: tableId, rows: ids.length, duplicates, appended: true, source: r.label, excluded: f.excluded };
   }
-  const label = b.mode === 'google_maps' ? 'Local' : b.mode === 'company_lookalikes' ? 'Lookalikes' : 'People like';
+  const label = b.mode === 'google_maps' ? 'Local' : b.mode === 'funding_rounds' ? 'Funded' : b.mode === 'company_lookalikes' ? 'Lookalikes' : 'People like';
   const tableId = ctx.gtm!.store.createTable(workspaceId, b.table_name ?? `${label} · ${b.query}`.slice(0, 60));
   const ids = insertRows(ctx, tableId, f.kept);
-  return { id: tableId, rows: ids.length, source: r.label, excluded: f.excluded };
+  return { id: tableId, rows: ids.length, source: r.label, excluded: f.excluded, ...(r.meta?.warnings ? { warnings: r.meta.warnings } : {}) };
 }
 
 export function sourcingRoutes(app: FastifyInstance, ctx: Ctx) {

@@ -56,6 +56,7 @@ POST /api/linkedin/campaigns
 2. Add leads: `POST /api/linkedin/campaigns/:id/leads {"profiles": [{"profile_url": "https://www.linkedin.com/in/jane/", "full_name": "Jane Doe", "title": "CEO"}]}` or `POST /api/linkedin/campaigns/:id/leads/import-table {"table_id": 12, "columns": {"profile_url": "LinkedIn URL"}}`.
 3. Review gate: `POST /api/linkedin/campaigns/:id/review {"filters": {...}}` → `{included, excluded}`; list with `GET /api/linkedin/campaigns/:id/leads?excluded=false`; toggle one with `PATCH /api/linkedin/campaigns/:id/leads/:leadId {"excluded": true}`.
 4. Show the user the plan (lead count, templates rendered for 2 leads, caps). **Only after approval:** `POST /api/linkedin/campaigns/:id/start {"confirm": true}`.
+   Pause a running campaign with `POST /api/linkedin/campaigns/:id/pause`; `POST /api/linkedin/campaigns/:id/resume` restarts it (approval).
 5. Monitor: `GET /api/linkedin/campaigns/:id` → `stats {invited, accepted, messaged, followups, replied, failed, not_accepted, acceptance_rate (0–1), reply_rate (0–1)}`; `GET /api/linkedin/campaigns/:id/activity`. Pause/resume: `POST .../pause`, `POST .../resume`.
 
 Acceptances and replies are detected by periodic connection-list and inbox checks the extension runs (every ~3 hours while a campaign has open leads). They emit webhooks `LINKEDIN_CONNECTION_ACCEPTED` and `LINKEDIN_REPLY_RECEIVED`.

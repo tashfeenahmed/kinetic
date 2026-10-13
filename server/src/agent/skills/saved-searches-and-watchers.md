@@ -1,6 +1,6 @@
 ---
 name: saved-searches-and-watchers
-description: Save any prospect search (Google Maps, YC, Apollo, GitHub, job boards, lookalikes, AI company search) and re-run it on demand or hourly/daily/weekly so only NEW rows land in a table, with optional Slack/webhook alerts. Use for "watch", "monitor for new", "alert me when new … appear".
+description: Save any prospect search (Google Maps, recently funded companies, YC, Apollo, GitHub, job boards, lookalikes, AI company search) and re-run it on demand or hourly/daily/weekly so only NEW rows land in a table, with optional Slack/webhook alerts. Use for "watch", "monitor for new", "alert me when new … appear".
 ---
 # Saved searches (watchers)
 
@@ -13,6 +13,7 @@ or a name+city hash depending on the source) and appends only the new ones. Each
 | source | params example |
 |---|---|
 | `google_maps` | `{"query": "dentist", "location": "Berlin", "radius_km": 10}` or `{"query": "cafe", "bbox": {...}}` |
+| `funding_rounds` | `{"countries": "us,uk,fr", "sector": "tech", "days": 2}` — companies that just raised money (see `funding-rounds`); run daily with `days: 2` |
 | `company_lookalikes` | `{"seeds": ["stripe.com", "adyen.com"]}` or `{"table_id": 12}` |
 | `people_lookalikes` | `{"seeds": ["VP Sales"], "companies": ["ramp.com"]}` |
 | `find_companies` | `{"query": "restaurant POS"}` (YC, then AI web search) |
