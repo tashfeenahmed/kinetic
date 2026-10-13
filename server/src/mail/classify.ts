@@ -49,13 +49,30 @@ export async function parseInbound(source: Buffer | string): Promise<InboundMess
     html,
     date: m.date ?? new Date(),
     headers: m.headers,
-    attachments: m.attachments
+    attachments: realFiles(m.attachments
       .filter((a) => a.contentType !== 'message/delivery-status' && a.contentType !== 'text/rfc822-headers' && a.contentType !== 'message/rfc822')
-      .map((a) => ({ filename: a.filename ?? 'attachment', size: a.size, contentType: a.contentType, content: a.content, inline: !!a.related || (a.contentDisposition === 'inline' && !!a.cid && a.contentType.startsWith('image/')) })),
+      .map((a) => ({ filename: a.filename ?? 'attachment', size: a.size, contentType: a.contentType, content: a.content, inline: !!a.related || (a.contentDisposition === 'inline' && !!a.cid && a.contentType.startsWith('image/')) }))),
     bounce: null,
   };
   msg.bounce = detectBounce(m, msg);
   return msg;
+}
+
+// Other versions of the message body that mail parsers list as attachments: Gmail's AMP email and emoji reactions.
+const BODY_VARIANTS = new Set(['text/x-amp-html', 'text/vnd.google.email-reaction+json']);
+
+/**
+ * Drops message parts that aren't files the sender attached: AMP and reaction bodies, and the
+ * unnamed calendar part of an invite that also carries invite.ics. A lone unnamed calendar
+ * part (the only copy of the invite) is kept and named invite.ics. Works on stored rows too.
+ */
+export function realFiles<T extends { filename: string; contentType?: string; content_type?: string }>(list: T[]): T[] {
+  const type = (a: T) => String(a.contentType ?? a.content_type ?? '').toLowerCase();
+  const unnamedCal = (a: T) => type(a) === 'text/calendar' && (!a.filename || a.filename === 'attachment');
+  const hasIcs = list.some((a) => !unnamedCal(a) && (/calendar|ics/.test(type(a)) || /\.ics$/i.test(a.filename)));
+  return list
+    .filter((a) => !BODY_VARIANTS.has(type(a)) && !(unnamedCal(a) && hasIcs))
+    .map((a) => (unnamedCal(a) ? { ...a, filename: 'invite.ics' } : a));
 }
 
 function detectBounce(m: ParsedMail, msg: InboundMessage) {

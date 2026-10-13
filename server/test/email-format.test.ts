@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 import { FakeMail, makeEnv, type TestEnv } from './helpers.ts';
-import { parseInbound } from '../src/mail/classify.ts';
+import { parseInbound, realFiles } from '../src/mail/classify.ts';
 import { processInbound } from '../src/engine/inbox.ts';
 import { markdownToHtml } from '../src/lib/markdown.ts';
 import { htmlToText } from '../src/lib/html.ts';
@@ -107,5 +107,12 @@ describe('Attachments', () => {
     const fwd = await env.api('POST', `/api/replies/${id}/forward`, { to_emails: ['team@acme.test'], message: 'FYI' });
     expect(fwd.status, JSON.stringify(fwd.body)).toBe(200);
     expect(mail.sent.at(-1)!.msg.attachments!.map((a) => a.filename)).toEqual(['Proposal.pdf', 'Prix – été.csv']);
+  });
+
+  it('leaves out body variants and duplicate calendar parts', () => {
+    const f = (filename: string, contentType: string) => ({ filename, contentType });
+    expect(realFiles([f('attachment', 'text/calendar'), f('invite.ics', 'application/ics'), f('attachment', 'text/x-amp-html'), f('a.pdf', 'application/pdf')]).map((a) => a.filename))
+      .toEqual(['invite.ics', 'a.pdf']);
+    expect(realFiles([f('attachment', 'text/calendar')])).toEqual([f('invite.ics', 'text/calendar')]);
   });
 });
