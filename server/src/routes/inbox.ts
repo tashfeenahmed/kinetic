@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync } from 'node:fs';
 import { z } from 'zod';
 import type { Ctx } from '../context.ts';
 import type { Row } from '../db/db.ts';
@@ -7,11 +7,12 @@ import { auth, bool, canWrite, defineRoutes, HttpError, idParam, notFound, pageQ
 import { emit } from '../events.ts';
 import { newMessageId, referenceChain } from '../engine/compose.ts';
 import { ensureThread } from '../engine/threads.ts';
-import { isSyncing, unsubscribeLead } from '../engine/inbox.ts';
+import { isSyncing, storeAttachments, unsubscribeLead } from '../engine/inbox.ts';
 import { lastSyncedAt, syncWorkspace } from '../engine/syncAll.ts';
 import { cancelScheduled } from '../engine/sequencer.ts';
 import { escapeHtml, htmlToText, looksLikeHtml, stripQuoted, textToHtml } from '../lib/html.ts';
 import { attachLeads } from './leads.ts';
+import { markdownToHtml } from '../lib/markdown.ts';
 
 const attachmentInput = z.object({ filename: z.string().min(1), content_base64: z.string(), content_type: z.string().optional() });
 const sendFields = {
@@ -31,6 +32,28 @@ function decodeAttachments(list: z.infer<typeof attachmentInput>[]) {
   return out;
 }
 
+/** Attachments JSON from a row -> what the API returns (no file paths). */
+function attachmentLinks(json: string, base: string) {
+  return (JSON.parse(json || '[]') as Row[]).map((a, i) => ({ filename: a.filename, size: a.size, content_type: a.content_type, inline: !!a.inline, url: `${base}/${i}` }));
+}
+
+// Types a browser shows safely in a tab: viewed with ?inline=1, everything else always downloads.
+const VIEWABLE = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'image/bmp', 'application/pdf', 'text/plain']);
+
+function sendAttachment(req: any, reply: any, json: string) {
+  const att = JSON.parse(json || '[]')[Number(req.params.index)];
+  if (!att || !existsSync(att.path)) throw notFound('attachment');
+  const type = String(att.content_type || 'application/octet-stream').toLowerCase().split(';')[0]!.trim();
+  const view = req.query?.inline === '1' && VIEWABLE.has(type);
+  const name = String(att.filename || 'attachment').replace(/[\r\n"\\]/g, '');
+  reply.header('content-type', view && type === 'text/plain' ? 'text/plain; charset=utf-8' : view ? type : 'application/octet-stream');
+  reply.header('content-disposition', `${view ? 'inline' : 'attachment'}; filename="${name.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`);
+  reply.header('x-content-type-options', 'nosniff');
+  if (type !== 'application/pdf') reply.header('content-security-policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox");
+  reply.header('cache-control', 'private, max-age=3600');
+  return reply.send(createReadStream(att.path));
+}
+
 export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
   const r = defineRoutes(app, 'Replies');
   const { db } = ctx;
@@ -41,6 +64,8 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
     return row;
   };
 
+  const sentJson = (row: Row): Row => ({ ...row, attachments: attachmentLinks(row.attachments, `/api/sent-emails/${row.id}/attachments`) });
+
   const replyJson = (row: Row): Row => ({
     ...row,
     interested: !!row.interested,
@@ -48,7 +73,7 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
     read: !!row.read,
     label: row.label ?? row.category,
     ai_details: row.ai_details ? JSON.parse(row.ai_details) : null,
-    attachments: JSON.parse(row.attachments || '[]').map((a: any, i: number) => ({ filename: a.filename, size: a.size, content_type: a.content_type, url: `/api/replies/${row.id}/attachments/${i}` })),
+    attachments: attachmentLinks(row.attachments, `/api/replies/${row.id}/attachments`),
   });
 
   const listQ = pageQuery.extend({
@@ -112,7 +137,7 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
     const reply = getReply(a.workspaceId, idParam(req));
     const sent = db.all(`SELECT s.*, 'sent' AS direction, se.name AS from_name, se.email AS from_email FROM sent_emails s LEFT JOIN sender_emails se ON se.id = s.sender_email_id WHERE s.thread_id = ?`, [reply.thread_id]);
     const received = db.all(`SELECT r.*, 'received' AS direction FROM replies r WHERE r.thread_id = ?`, [reply.thread_id]).map(replyJson);
-    const messages = [...sent.map((s) => ({ ...s, at: s.sent_at })), ...received.map((m) => ({ ...m, at: m.received_at }))]
+    const messages = [...sent.map((s) => ({ ...s, attachments: attachmentLinks(s.attachments, `/api/sent-emails/${s.id}/attachments`), at: s.sent_at })), ...received.map((m) => ({ ...m, at: m.received_at }))]
       .sort((x, y) => Date.parse(x.at) - Date.parse(y.at));
     const lead = reply.lead_id ? db.get('SELECT id, email, first_name, last_name, company, title, status FROM leads WHERE id = ?', [reply.lead_id]) : null;
     const campaign = reply.campaign_id ? db.get('SELECT id, name, status FROM campaigns WHERE id = ?', [reply.campaign_id]) : null;
@@ -121,13 +146,9 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
     return { data: { reply: replyJson(reply), messages, lead, campaign, sender_email: sender } };
   });
 
-  r.get('/api/replies/:id/attachments/:index', 'Download an attachment', (req, reply) => {
+  r.get('/api/replies/:id/attachments/:index', 'Download an attachment (?inline=1 opens images, PDFs and text in the browser)', (req, reply) => {
     const row = getReply(auth(req).workspaceId, idParam(req));
-    const att = JSON.parse(row.attachments || '[]')[Number((req.params as any).index)];
-    if (!att || !existsSync(att.path)) throw notFound('attachment');
-    reply.header('content-type', att.content_type || 'application/octet-stream');
-    reply.header('content-disposition', `attachment; filename="${String(att.filename).replace(/"/g, '')}"`);
-    return reply.send(createReadStream(att.path));
+    return sendAttachment(req, reply, row.attachments);
   });
 
   /** Sends a message from a mailbox, records it, and returns the sent row id. */
@@ -149,6 +170,7 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
         workspace_id: o.workspaceId, kind: o.kind, campaign_id: o.campaignId ?? null, lead_id: o.leadId ?? null, sender_email_id: o.sender.id,
         thread_id: threadId, message_id: messageId, in_reply_to: o.inReplyTo ?? null, to_email: o.to.join(', '), cc: o.cc.join(', '), bcc: o.bcc.join(', '),
         subject: o.subject, body_html: o.bodyHtml, body_text: o.bodyText, sent_at: ctx.now().toISOString(),
+        attachments: JSON.stringify(storeAttachments(ctx, messageId, o.attachments)),
       });
       emit(ctx, o.workspaceId, 'MANUAL_EMAIL_SENT', { sent_email_id: id, sender_email_id: o.sender.id, to: o.to, subject: o.subject, lead_id: o.leadId ?? null }, { sender_email_id: o.sender.id, lead_id: o.leadId ?? null, sent_email_id: id });
       return id;
@@ -156,8 +178,8 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
   }
 
   const bodyOf = (message: string, contentType: string, signature: string) => {
-    const html = contentType === 'html' || looksLikeHtml(message) ? message : textToHtml(message);
-    const withSig = signature ? `${html}\n${textToHtml(signature)}` : html;
+    const html = contentType === 'html' || looksLikeHtml(message) ? message : markdownToHtml(message);
+    const withSig = signature ? `${html}\n${markdownToHtml(signature)}` : html;
     return { html: withSig, text: htmlToText(withSig) };
   };
 
@@ -196,7 +218,7 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
       leadId: original.lead_id, campaignId: original.campaign_id, kind: 'reply', attachments: decodeAttachments(b.attachments),
     });
     db.run('UPDATE replies SET read = 1 WHERE thread_id = ?', [original.thread_id]);
-    return { data: db.get('SELECT * FROM sent_emails WHERE id = ?', [id]) };
+    return { data: sentJson(db.get('SELECT * FROM sent_emails WHERE id = ?', [id])!) };
   }, { body: replyBody });
 
   const forwardBody = z.object({ ...sendFields, to_emails: z.array(z.email()).min(1) });
@@ -209,14 +231,19 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
     const { html, text } = bodyOf(b.message, b.content_type, sender.email_signature ?? '');
     const header = `---------- Forwarded message ---------\nFrom: ${original.from_name} <${original.from_email}>\nDate: ${new Date(original.received_at).toUTCString()}\nSubject: ${original.subject}\nTo: ${original.to_email}`;
     const prev = original.body_text || htmlToText(original.body_html);
+    // The original's files go along, as in a normal mail client (inline images are already in its HTML).
+    const originalFiles = (JSON.parse(original.attachments || '[]') as Row[]).filter((f) => !f.inline && existsSync(f.path))
+      .map((f) => ({ filename: f.filename as string, content: readFileSync(f.path), contentType: f.content_type as string }));
+    const files = [...originalFiles, ...decodeAttachments(b.attachments)];
+    if (files.reduce((n, f) => n + f.content.length, 0) > 25 * 1024 * 1024) throw new HttpError(422, { error: 'validation_error', message: 'The attachments are over 25 MB together, too big to forward.' });
     const id = await sendFromInbox({
       workspaceId: a.workspaceId, sender, to: b.to_emails, cc: b.cc_emails, bcc: b.bcc_emails,
       subject: /^fwd?:/i.test(original.subject) ? original.subject : `Fwd: ${original.subject}`,
       bodyHtml: `${html}<br><br>${textToHtml(header)}<br>${original.body_html || textToHtml(prev)}`,
       bodyText: `${text}\n\n${header}\n\n${prev}`,
-      threadId: null, leadId: original.lead_id, campaignId: original.campaign_id, kind: 'manual', attachments: decodeAttachments(b.attachments),
+      threadId: null, leadId: original.lead_id, campaignId: original.campaign_id, kind: 'manual', attachments: files,
     });
-    return { data: db.get('SELECT * FROM sent_emails WHERE id = ?', [id]) };
+    return { data: sentJson(db.get('SELECT * FROM sent_emails WHERE id = ?', [id])!) };
   }, { body: forwardBody });
 
   const composeBody = z.object({ ...sendFields, subject: z.string().min(1), sender_email_id: z.coerce.number().int(), to_emails: z.array(z.email()).min(1) });
@@ -231,7 +258,7 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
       workspaceId: a.workspaceId, sender, to: b.to_emails, cc: b.cc_emails, bcc: b.bcc_emails, subject: b.subject,
       bodyHtml: html, bodyText: text, leadId: lead?.id ?? null, kind: 'manual', attachments: decodeAttachments(b.attachments),
     });
-    return { data: db.get('SELECT * FROM sent_emails WHERE id = ?', [id]) };
+    return { data: sentJson(db.get('SELECT * FROM sent_emails WHERE id = ?', [id])!) };
   }, { body: composeBody });
 
   // ---- labels ----
@@ -337,6 +364,12 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
     const a = auth(req);
     const s = db.get(`SELECT s.*, se.email AS sender_email, se.name AS sender_name FROM sent_emails s LEFT JOIN sender_emails se ON se.id = s.sender_email_id WHERE s.id = ? AND s.workspace_id = ?`, [idParam(req), a.workspaceId]);
     if (!s) throw notFound('email');
-    return { data: s };
+    return { data: sentJson(s) };
+  });
+  sent.get('/api/sent-emails/:id/attachments/:index', 'Download a sent attachment (?inline=1 opens images, PDFs and text in the browser)', (req, reply) => {
+    const a = auth(req);
+    const s = db.get('SELECT attachments FROM sent_emails WHERE id = ? AND workspace_id = ?', [idParam(req), a.workspaceId]);
+    if (!s) throw notFound('email');
+    return sendAttachment(req, reply, s.attachments);
   });
 }

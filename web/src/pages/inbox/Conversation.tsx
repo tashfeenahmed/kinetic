@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, ChevronDown, Download, Forward, Mail, MailOpen, MoreHorizontal, Reply, ReplyAll, Send, Star, PenLine, ThumbsDown, Trash2, UserX, Workflow,
+  ArrowLeft, ChevronDown, Forward, Mail, MailOpen, MoreHorizontal, Reply, ReplyAll, Send, Star, PenLine, ThumbsDown, Trash2, UserX, Workflow,
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api.ts';
 import { avatarColor, fmtDateTime, fullName, initials } from '../../lib/format.ts';
-import { Badge, Button, cx, Field, IconButton, Input, Loading, Menu, Modal, Select, Shimmer, Textarea, useUi } from '../../components/ui.tsx';
+import { Badge, Button, cx, Field, IconButton, Input, Loading, Menu, Modal, Select, Shimmer, useUi } from '../../components/ui.tsx';
 import { CampaignStatus, LeadStatus, REPLY_LABELS, ReplyCategory } from '../../components/status.tsx';
-import { AttachmentPicker, EmailText, parseEmails, useAttachments } from './shared.tsx';
+import { AttachmentList, AttachmentPicker, EmailBody, MarkdownEditor, parseEmails, useAttachments, type AttachmentItem } from './shared.tsx';
 
 interface Message {
   id: number;
@@ -21,7 +21,7 @@ interface Message {
   subject: string;
   body_text?: string;
   body_html?: string;
-  attachments?: { filename: string; size: number; url: string }[];
+  attachments?: AttachmentItem[];
   category?: string;
   label?: string;
   kind?: string;
@@ -59,16 +59,8 @@ function MessageCard({ m }: { m: Message }) {
           {mine && !!m.opens && <div className="mt-0.5 inline-flex items-center gap-1"><MailOpen className="size-3" />{m.opens}</div>}
         </div>
       </header>
-      <div className="pl-11"><EmailText text={m.body_text} html={m.body_html} /></div>
-      {!!m.attachments?.length && (
-        <div className="mt-3 flex flex-wrap gap-2 pl-11">
-          {m.attachments.map((a) => (
-            <a key={a.url} href={a.url} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50">
-              <Download className="size-3.5" /> {a.filename} <span className="text-slate-400">{Math.ceil(a.size / 1024)} KB</span>
-            </a>
-          ))}
-        </div>
-      )}
+      <div className="pl-11"><EmailBody text={m.body_text} html={m.body_html} /></div>
+      <AttachmentList items={m.attachments} hideInline={!!m.body_html?.trim()} className="mt-3 pl-11" />
     </article>
   );
 }
@@ -122,7 +114,7 @@ function Composer({ thread, replyId, onSent }: { thread: Thread; replyId: number
         )}
       </div>
       {showCc && <Input className="mb-2" placeholder="Cc: name@company.com" value={cc} onChange={(e) => setCc(e.target.value)} />}
-      <Textarea rows={3} className="resize-none border-slate-200 shadow-none" placeholder={`Reply to ${thread.reply.from_name || to}…`} value={body} onChange={(e) => setBody(e.target.value)}
+      <MarkdownEditor rows={3} className="resize-none border-slate-200 shadow-none" placeholder={`Reply to ${thread.reply.from_name || to}…`} value={body} onChange={setBody}
         onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && body.trim()) send.mutate(); }} />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <AttachmentPicker att={att} className="flex-1" />
@@ -148,7 +140,7 @@ function ForwardModal({ open, onClose, replyId }: { open: boolean; onClose: () =
       footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" loading={go.isPending} disabled={!parseEmails(to).length} onClick={() => go.mutate()}>Forward</Button></>}>
       <div className="space-y-3">
         <Field label="To"><Input autoFocus value={to} onChange={(e) => setTo(e.target.value)} placeholder="teammate@company.com" /></Field>
-        <Field label="Note"><Textarea rows={4} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note (optional)" /></Field>
+        <Field label="Note" hint="Attachments on the original email are forwarded too."><MarkdownEditor rows={4} value={note} onChange={setNote} placeholder="Add a note (optional)" /></Field>
       </div>
     </Modal>
   );

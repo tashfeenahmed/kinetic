@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { Db } from '../src/db/db.ts';
 import { setEncryptionKey } from '../src/lib/crypto.ts';
 import { buildApp } from '../src/app.ts';
@@ -35,6 +35,8 @@ export interface TestEnv {
   dir: string;
   clock: { now: Date };
   api: (method: string, url: string, body?: unknown) => Promise<{ status: number; body: any }>;
+  /** Authenticated request returning the raw response (headers, bytes). */
+  raw: (method: string, url: string) => Promise<LightMyRequestResponse>;
   close: () => Promise<void>;
 }
 
@@ -70,6 +72,7 @@ export async function makeEnv(opts: { mail?: MailGateway | ((db: Db) => MailGate
 
   return {
     ctx, app, dir, clock, api,
+    raw: (method: string, url: string) => app.inject({ method: method as any, url, headers: { authorization: `Bearer ${token}` } }),
     close: async () => {
       await app.close();
       db.close();

@@ -2,6 +2,7 @@ import type { Ctx } from '../context.ts';
 import type { Row } from '../db/db.ts';
 import type { OutgoingMessage } from '../mail/gateway.ts';
 import { buildVariables, hashSeed, render } from '../lib/template.ts';
+import { markdownToHtml } from '../lib/markdown.ts';
 import { escapeHtml, htmlToText, looksLikeHtml, textToHtml } from '../lib/html.ts';
 import { hmacSha256, randomToken } from '../lib/crypto.ts';
 import { domainOf } from '../lib/dns.ts';
@@ -69,7 +70,7 @@ export function composeCampaignEmail(ctx: Ctx, input: ComposeInput): Composed {
   const isHtml = looksLikeHtml(body) || looksLikeHtml(signature);
 
   if (!usedSignatureVar && signature) {
-    body = isHtml ? `${textToHtml(body)}\n${textToHtml(signature)}` : `${body}\n\n${signature}`;
+    body = isHtml ? `${markdownToHtml(body)}\n${markdownToHtml(signature)}` : `${body}\n\n${signature}`;
   }
 
   // Quote the previous message in thread replies, like a normal mail client does.
@@ -85,10 +86,12 @@ export function composeCampaignEmail(ctx: Ctx, input: ComposeInput): Composed {
     quotedHtml = `<br><div class="gmail_quote"><div>On ${escapeHtml(when)}, ${escapeHtml(qName)} &lt;${escapeHtml(qEmail)}&gt; wrote:</div><blockquote style="margin:0 0 0 .8ex;border-left:1px #ccc solid;padding-left:1ex">${previous!.body_html || textToHtml(prevText)}</blockquote></div>`;
   }
 
-  const text = (isHtml ? htmlToText(body) : body) + quotedText;
+  // The body is Markdown (or HTML from the API); the plain-text part is the same message without markup.
+  const bodyHtml = markdownToHtml(body);
+  const text = htmlToText(bodyHtml) + quotedText;
   let html: string | undefined;
   if (!campaign.plain_text) {
-    html = textToHtml(body) + quotedHtml;
+    html = bodyHtml + quotedHtml;
     if (campaign.click_tracking) html = trackLinks(ctx, html, base, token);
     if (campaign.open_tracking) html += `<img src="${base}/t/o/${token}" width="1" height="1" alt="" style="display:none">`;
   }

@@ -7,6 +7,7 @@ import { Alert, Badge, Button, Card, Field, Input, Loading, Modal, Popover, Sele
 import { AB_DEFAULTS, type Action, type Campaign, type Step, type Variant, variantLetter } from './types.ts';
 import { RuleSummary, StepRulesEditor } from './StepRules.tsx';
 import { AbTestPanel } from './AbTestPanel.tsx';
+import { EmailHtml } from '../inbox/shared.tsx';
 
 const BUILTINS = [
   ['FIRST_NAME', 'First name'], ['LAST_NAME', 'Last name'], ['EMAIL', 'Email'], ['COMPANY', 'Company'], ['TITLE', 'Title'],
@@ -50,7 +51,7 @@ function VariablePicker({ onPick }: { onPick: (key: string) => void }) {
 }
 
 function Preview({ campaign, step, stepIndex, variant, previousSubject }: { campaign: Campaign; step: Step; stepIndex: number; variant: Variant; previousSubject: string }) {
-  const [data, setData] = useState<{ subject: string; text: string; missing_variables: string[]; lead: { email: string } } | null>(null);
+  const [data, setData] = useState<{ subject: string; text: string; html: string | null; missing_variables: string[]; lead: { email: string } } | null>(null);
   const [error, setError] = useState('');
   const threaded = stepIndex > 0 && step.thread_reply;
   useEffect(() => {
@@ -80,7 +81,8 @@ function Preview({ campaign, step, stepIndex, variant, previousSubject }: { camp
             <div className="mt-1 text-sm font-medium text-slate-900">{threaded ? `Re: ${data.subject || previousSubject}` : data.subject || <span className="text-slate-400">No subject</span>}</div>
           </div>
           <div className="border-t border-slate-100 pt-3">
-            <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{data.text || <span className="text-slate-400">Start writing to see a preview.</span>}</div>
+            {data.html && data.text.trim() ? <EmailHtml html={data.html} collapseQuotes={false} />
+              : <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{data.text || <span className="text-slate-400">Start writing to see a preview.</span>}</div>}
             {threaded && <div className="mt-3 border-l-2 border-slate-200 pl-3 text-xs text-slate-400">Previous email quoted below, as in a normal reply.</div>}
           </div>
         </div>
@@ -346,6 +348,8 @@ export function SequenceTab({ campaign }: { campaign: Campaign }) {
                 <span>
                   <code className="rounded bg-slate-100 px-1">{'{FIRST_NAME}'}</code> inserts lead data, <code className="rounded bg-slate-100 px-1">{'{FIRST_NAME|there}'}</code> adds a fallback,
                   {' '}<code className="rounded bg-slate-100 px-1">{'{Hi|Hello|Hey}'}</code> picks one option per lead. Your mailbox signature is added automatically unless you place <code className="rounded bg-slate-100 px-1">{'{SIGNATURE}'}</code>.
+                  {' '}Format with Markdown: <code className="rounded bg-slate-100 px-1">**bold**</code>, <code className="rounded bg-slate-100 px-1">_italic_</code>, <code className="rounded bg-slate-100 px-1">[link](https://…)</code>, <code className="rounded bg-slate-100 px-1">- list</code>
+                  {campaign.plain_text ? ' (this campaign sends plain text, so the formatting is left out; turn off "Send as plain text" in Settings to keep it).' : '.'}
                 </span>
               </p>
             </div>

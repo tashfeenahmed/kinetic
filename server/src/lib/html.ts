@@ -23,7 +23,9 @@ export function htmlToText(html: string): string {
   if (!looksLikeHtml(html)) return html;
   return html
     .replace(/<\s*br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n\n')
+    .replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_m, items: string) => { let n = 0; return `${items.replace(/<li[^>]*>/gi, () => `${++n}. `)}\n`; })
+    .replace(/<\/li>\s*/gi, '\n')
+    .replace(/<\/(p|div|tr|h[1-6]|ul|ol|blockquote)>/gi, '\n\n')
     .replace(/<li[^>]*>/gi, '- ')
     .replace(/<a [^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/gi, (_m, href: string, label: string) => (label.trim() === href ? href : `${label} (${href})`))
     .replace(/<[^>]+>/g, '')
