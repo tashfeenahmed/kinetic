@@ -541,13 +541,14 @@ async function outreachStatus(input: SignalInput, ctx: Ctx): Promise<Hit | null>
       leadId: s.lead.id, leadStatus: s.lead.status, sent: s.sent, opens: s.opens, clicks: s.clicks, replies: s.replies,
       lastReply: s.lastReply?.snippet ?? null, lastReplyCategory: s.lastReply?.category ?? null, lastReplyAt: s.lastReply?.at ?? null,
       campaign: s.campaigns[0]?.name ?? null, campaigns: s.campaigns,
+      dealStage: s.deal?.stage ?? null, dealValue: s.deal?.value ?? null,
     },
   };
 }
 
 // ---------- Registry ----------
 export const SIGNAL_KINDS: SignalKind[] = [
-  { id: 'outreach_status', label: 'Outreach status', description: 'Live campaign state for the row\'s email: queued, contacted, replied, interested, bounced, unsubscribed. Refreshes instantly on sends, opens and replies — pair with a Slack alert on "interested".', inputs: ['email'], requires: [], run: outreachStatus },
+  { id: 'outreach_status', label: 'Outreach status', description: 'Live campaign state for the row\'s email: queued, contacted, replied, interested, meeting booked, proposal sent, won, lost, bounced, unsubscribed. Refreshes instantly on sends, opens and replies — pair with a Slack alert on "interested".', inputs: ['email'], requires: [], run: outreachStatus },
   { id: 'hiring', label: 'Hiring (open roles)', description: 'Open jobs from public Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Recruitee and Personio boards. Value = matching role count.', inputs: ['domain', 'companyName', 'target', 'keywords'], requires: [], run: hiring },
   { id: 'news', label: 'News (Google News)', description: 'Google News RSS for the company (optionally + keywords such as "raises, acquires, launches"). Value = newest headline, so a new story counts as a change.', inputs: ['companyName', 'domain', 'keywords', 'days'], requires: [], run: news },
   { id: 'gdelt', label: 'Global news (GDELT)', description: 'Worldwide, multilingual news from GDELT. Free but best-effort: strict rate limits, so it is slow on big tables. Value = newest headline.', inputs: ['companyName', 'domain', 'keywords', 'days'], requires: [], run: gdelt },

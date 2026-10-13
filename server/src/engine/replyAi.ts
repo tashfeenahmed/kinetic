@@ -22,6 +22,7 @@ import {
 } from '../mail/replyLabels.ts';
 import { cancelScheduled } from './sequencer.ts';
 import { unsubscribeLead } from './inbox.ts';
+import { dealFromReply, undoDealFromReply } from './deals.ts';
 
 // ---------------------------------------------------------------------------
 // Settings
@@ -125,12 +126,15 @@ export function afterReplyStored(ctx: Ctx, replyId: number) {
   const label = ruleLabel(reply.category, reply.subject ?? '', body);
   if (aiSortingActive(ctx, ws) && wantsAi(reply, label)) {
     db.update('replies', reply.id, { label: reply.category, ai_status: 'pending' });
+    dealFromReply(ctx, { ...reply, label: reply.category });
     return;
   }
   db.update('replies', reply.id, { label: reply.category });
   if (label !== reply.category) {
     const ret = label === 'out_of_office' ? parseReturnDate(`${reply.subject}\n${body}`, ctx.now()) : null;
     applyLabel(ctx, reply.id, label, { source: 'rules', details: { return_date: ret } });
+  } else {
+    dealFromReply(ctx, { ...reply, label: reply.category });
   }
 }
 
@@ -193,6 +197,10 @@ export function applyLabel(ctx: Ctx, replyId: number, label: ReplyLabel, o: Appl
     const cl = reply.lead_id && reply.campaign_id ? db.get('SELECT * FROM campaign_leads WHERE lead_id = ? AND campaign_id = ?', [reply.lead_id, reply.campaign_id]) : null;
 
     // Interested flag changes: stop/continue the campaign lead and tell webhooks.
+    // Deals: interested replies open one, meeting requests advance it; a reversed label drops an untouched one.
+    if (interested) dealFromReply(ctx, { ...reply, label, interested: 1 });
+    else if (reply.interested) undoDealFromReply(ctx, reply);
+
     if (interested && !reply.interested) {
       if (cl && ['pending', 'in_sequence', 'replied', 'completed'].includes(cl.status)) {
         db.update('campaign_leads', cl.id, { status: 'interested', next_due_at: null });

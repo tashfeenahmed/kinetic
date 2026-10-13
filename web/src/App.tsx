@@ -32,6 +32,7 @@ const GtmSignalsPage = page(() => import('./gtm/index.tsx'), 'GtmSignalsPage');
 const GtmActivityPage = page(() => import('./gtm/index.tsx'), 'GtmActivityPage');
 const GtmFunctionsPage = page(() => import('./gtm/index.tsx'), 'GtmFunctionsPage');
 const VisitorsPage = page(() => import('./pages/Visitors.tsx'), 'VisitorsPage');
+const PipelinePage = page(() => import('./pages/Pipeline.tsx'), 'PipelinePage');
 const SearchesPage = page(() => import('./pages/Searches.tsx'), 'SearchesPage');
 const AgentPage = page(() => import('./pages/Agent.tsx'), 'AgentPage');
 const KnowledgePage = page(() => import('./pages/Knowledge.tsx'), 'KnowledgePage');
@@ -88,6 +89,7 @@ function Gate() {
         <Route path="settings/:section?" element={<SettingsPage />} />
         <Route path="help" element={<HelpPage />} />
         <Route path="visitors" element={<VisitorsPage />} />
+        <Route path="pipeline" element={<PipelinePage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

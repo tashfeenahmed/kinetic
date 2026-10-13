@@ -5,6 +5,7 @@ import type { Ctx } from '../context.ts';
 import type { Row } from '../db/db.ts';
 import { auth, bool, canWrite, defineRoutes, HttpError, idParam, notFound, pageQuery, paginate, parse } from '../http.ts';
 import { emit } from '../events.ts';
+import { dealFromReply, undoDealFromReply } from '../engine/deals.ts';
 import { newMessageId, referenceChain } from '../engine/compose.ts';
 import { ensureThread } from '../engine/threads.ts';
 import { isSyncing, storeAttachments, unsubscribeLead } from '../engine/inbox.ts';
@@ -276,6 +277,8 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
           [interested ? 'interested' : 'replied', reply.lead_id, reply.campaign_id]);
         if (interested) cancelScheduled(ctx, { campaignId: reply.campaign_id, leadId: reply.lead_id }, 'marked interested');
       }
+      if (interested) dealFromReply(ctx, { ...reply, label: 'interested', interested: 1 });
+      else if (reply.interested) undoDealFromReply(ctx, reply);
     });
     if (interested && reply.lead_id) {
       emit(ctx, a.workspaceId, 'LEAD_INTERESTED', { reply_id: reply.id, lead_id: reply.lead_id, campaign_id: reply.campaign_id, from_email: reply.from_email, manual: true }, { reply_id: reply.id, lead_id: reply.lead_id, campaign_id: reply.campaign_id }, { skipWebhooks: b.skip_webhooks });

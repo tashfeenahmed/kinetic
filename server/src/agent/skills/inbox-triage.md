@@ -40,6 +40,16 @@ Summarise for the user by label: meetings first, then questions/objections (with
 2. Show the draft to the user and get explicit approval.
 3. Only then send: `POST /api/replies/:id/reply` `{"message": "<approved text>"}` (sends a real email from the mailbox).
 
+## Deals (pipeline after the reply)
+Each lead can have one deal with a `stage`: `interested` → `meeting` → `proposal` → `won` | `lost`. Replies drive it:
+an interested reply opens a deal at `interested`, a meeting request opens or moves it to `meeting`. Replies only move deals
+forward and never touch won/lost ones; proposal, won, lost and the value are set by hand. Every change fires `DEAL_STAGE_CHANGED`,
+and the table "Outreach status" shows the stage ("meeting booked", "won"…). A won deal adds a line to the Knowledge Hub's Learnings doc.
+- List: `GET /api/deals?stage=meeting,proposal` (also `campaign_id`, `lead_id`, `search`) → deals with `lead`, `campaign_name`, `value`.
+- One: `GET /api/deals/:id`. Open by hand: `POST /api/deals` `{"lead_id": 12, "stage": "meeting", "value": 5000, "currency": "EUR"}` (409 if the lead has one).
+- Move / edit: `PATCH /api/deals/:id` `{"stage": "lost", "lost_reason": "Went with a competitor"}` (also `value`, `currency`, `notes`). Confirm won/lost with the user.
+- Delete: `DELETE /api/deals/:id` (needs approval).
+
 ## Settings
 `GET/PATCH /api/workspaces/v1.1/master-inbox-settings`: `ai_reply_sorting` (on), `ai_reply_model` (null = default Haiku),
 `ai_auto_unsubscribe` (on: unsubscribe intent unsubscribes the lead), `ai_pause_on_ooo` (on: pause until the return date).
