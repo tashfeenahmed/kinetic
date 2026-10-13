@@ -32,7 +32,7 @@ export function CellPanel({ rowId, column, version, onClose, onRun, onAddExtract
       </header>
       <div className="drawer-body">
         {cell.error && <p className="err">{cell.error}</p>}
-        <div className="headline">{display(v) || <span className="muted">—</span>}</div>
+        <div className="headline"><LinkOrText text={display(v)} /></div>
         {v?.confidence && <p className="hint">Confidence: {v.confidence}</p>}
         {v?.provider && <p className="hint">Found by: <b>{v.provider}</b></p>}
         {cell.changed_at && <p className="hint">Last changed {new Date(cell.changed_at).toLocaleString()}{cell.prev_value != null && <> · was <code>{display(cell.prev_value).slice(0, 80)}</code></>}</p>}
@@ -72,7 +72,7 @@ export function CellPanel({ rowId, column, version, onClose, onRun, onAddExtract
         )}
         {Array.isArray(meta.functionSteps) && (
           <section>
-            <h4>Function steps · <Link to={`/functions/${meta.functionId}`}>{meta.provider}</Link></h4>
+            <h4>Function steps · <Link to={`/settings/functions/${meta.functionId}`}>{meta.provider}</Link></h4>
             <table className="kv">
               <tbody>{meta.functionSteps.map((s: any, i: number) => (
                 <tr key={i}>
@@ -108,8 +108,29 @@ export function CellPanel({ rowId, column, version, onClose, onRun, onAddExtract
   );
 }
 
+/** Where a cell value should open: web addresses, bare domains/LinkedIn paths and email addresses. */
+export function hrefFor(text: string): string | null {
+  const t = text.trim();
+  if (!t || /\s/.test(t)) return null;
+  if (/^https?:\/\//i.test(t)) return t;
+  if (/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(t)) return `mailto:${t}`;
+  if (/^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}(\/\S*)?$/i.test(t)) return `https://${t}`;
+  return null;
+}
+
+function LinkOrText({ text }: { text: string }) {
+  if (!text) return <span className="muted">—</span>;
+  const href = hrefFor(text);
+  if (!href) return <>{text}</>;
+  return (
+    <a href={href} target={href.startsWith('mailto:') ? undefined : '_blank'} rel="noreferrer" className="cell-link">
+      {text}<Icon name="external" size={13} />
+    </a>
+  );
+}
+
 function Val({ v }: { v: unknown }) {
-  if (typeof v === 'string' && /^https?:\/\//.test(v)) return <a href={v} target="_blank" rel="noreferrer">{v}</a>;
+  if (typeof v === 'string' && hrefFor(v)) return <LinkOrText text={v} />;
   if (Array.isArray(v)) {
     if (v.every((x) => typeof x !== 'object')) return <>{v.join(', ')}</>;
     return <details><summary>{v.length} items</summary><pre>{JSON.stringify(v, null, 2)}</pre></details>;

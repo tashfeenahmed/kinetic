@@ -15,7 +15,7 @@ export function SearchesPage() {
   const tab = params.get('tab') === 'exclusions' ? 'exclusions' : 'saved';
   return (
     <Page>
-      <PageHeader title="Searches" subtitle="Saved searches re-run on a schedule and add only new prospects. Exclusions keep customers, competitors and existing leads out of every search." />
+      <PageHeader crumbs={[{ label: 'Settings', to: '/settings' }]} title="Saved searches" subtitle="Saved searches re-run on a schedule and add only new prospects. Exclusions keep customers, competitors and existing leads out of every search." />
       <Tabs className="mb-5" value={tab} onChange={(t) => setParams(t === 'saved' ? {} : { tab: t })}
         items={[{ id: 'saved', label: 'Saved searches', icon: <Bookmark className="size-4" /> }, { id: 'exclusions', label: 'Exclusions', icon: <Ban className="size-4" /> }]} />
       {tab === 'saved' ? <SavedSearches /> : <Exclusions />}
@@ -33,7 +33,9 @@ interface Saved {
 function SavedSearches() {
   const q = useQuery({ queryKey: ['saved-searches'], queryFn: () => api.get<Saved[]>('/api/saved-searches'), refetchInterval: 30_000 });
   const sources = useQuery({ queryKey: ['sources'], queryFn: () => api.get('/api/sources') });
-  const [creating, setCreating] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const [creating, setCreatingState] = useState(() => params.get('new') === '1');
+  const setCreating = (v: boolean) => { setCreatingState(v); if (!v && params.has('new')) setParams({}, { replace: true }); };
   const [history, setHistory] = useState<Saved | null>(null);
   const [running, setRunning] = useState<number | null>(null);
   const qc = useQueryClient();
@@ -64,7 +66,7 @@ function SavedSearches() {
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-        <div className="text-[13.5px] text-slate-500">Save a search from <Link to="/#find" className="font-medium text-slate-800 hover:underline">Find prospects</Link>, or create one here.</div>
+        <div className="text-[13.5px] text-slate-500">Save a search from the ⋯ menu in <Link to="/" className="font-medium text-slate-800 hover:underline">Find new prospects</Link>, or create one here.</div>
         <Button size="sm" variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>New saved search</Button>
       </div>
       {q.isLoading ? <Loading /> : !q.data?.length ? (

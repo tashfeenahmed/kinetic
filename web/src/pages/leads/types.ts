@@ -17,6 +17,11 @@ export interface Lead {
   overall_stats: { emails_sent: number; opens: number; clicks: number; replies: number };
   email_stats?: { last_sent_at: string | null; last_opened_at: string | null; last_clicked_at: string | null; last_replied_at: string | null; bounced: number } | null;
   created_at: string;
+  /** Where the email came from (enrichment provider + page/method, table, import…). */
+  source?: string;
+  source_detail?: Record<string, any>;
+  /** On the permanent do-not-email list. */
+  suppressed?: { reason: string; source: string; created_at: string } | null;
   campaigns?: { id: number; name: string; campaign_status: string; status: string; current_step: number; last_sent_at: string | null; next_due_at: string | null }[];
 }
 

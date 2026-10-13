@@ -23,6 +23,13 @@ const SECTIONS = [
   { id: 'dns', label: 'Domain checker' },
 ];
 
+/** Full pages that live under Settings (their own routes). */
+export const SETTINGS_PAGES = [
+  { to: '/settings/searches', label: 'Saved searches' },
+  { to: '/settings/functions', label: 'Functions' },
+  { to: '/settings/activity', label: 'Activity log' },
+];
+
 export function SettingsPage() {
   const { section = 'profile' } = useParams();
   // Provider keys moved to the Integrations page.
@@ -35,6 +42,13 @@ export function SettingsPage() {
         <nav className="flex shrink-0 gap-1 overflow-x-auto lg:w-52 lg:flex-col scroll-thin">
           {SECTIONS.map((s) => (
             <NavLink key={s.id} to={`/settings/${s.id}`} className={() => cx('whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium', current.id === s.id ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
+              {s.label}
+            </NavLink>
+          ))}
+          <div className="mx-3 my-2 hidden border-t border-slate-200 lg:block" />
+          <span className="hidden px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400 lg:block">Prospecting</span>
+          {SETTINGS_PAGES.map((s) => (
+            <NavLink key={s.to} to={s.to} className="whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900">
               {s.label}
             </NavLink>
           ))}
@@ -253,10 +267,14 @@ function Blacklist() {
     },
     onError: (e) => toast(errorMessage(e), 'error'),
   });
-  const remove = async (id: number) => { await api.del(`/api/blacklisted-${kind}/${id}`); qc.invalidateQueries({ queryKey: ['blacklist'] }); };
+  const { confirm } = useUi();
+  const remove = async (r: any) => {
+    if (r.reason === 'unsubscribed' && !(await confirm({ title: `Remove ${r.email}?`, message: 'This person unsubscribed. Removing them lets campaigns email them again — only do this if they asked to hear from you.', confirmLabel: 'Remove anyway', danger: true }))) return;
+    await api.del(`/api/blacklisted-${kind}/${r.id}`); qc.invalidateQueries({ queryKey: ['blacklist'] });
+  };
   const field = kind === 'emails' ? 'email' : 'domain';
   return (
-    <Card title="Blacklist" description="Never email these addresses or domains. Anything already scheduled is cancelled." padded={false}
+    <Card title="Blacklist" description="Never email these addresses or domains. Everyone who unsubscribes is added here automatically and stays here permanently — even if their lead is deleted or imported again. Anything already scheduled is cancelled." padded={false}
       actions={<Button size="sm" icon={<Plus className="size-4" />} onClick={() => setOpen(true)}>Add {kind}</Button>}>
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-3">
         <div className="inline-flex rounded-lg bg-slate-100 p-1">
@@ -269,10 +287,10 @@ function Blacklist() {
       {list.data?.data.length === 0 ? <EmptyState title={`No blacklisted ${kind}`} description="Add competitors, existing customers or anyone who asked not to be contacted." /> : (
         <>
           <Table>
-            <thead><tr><Th>{kind === 'emails' ? 'Email' : 'Domain'}</Th><Th>Added</Th><Th /></tr></thead>
+            <thead><tr><Th>{kind === 'emails' ? 'Email' : 'Domain'}</Th>{kind === 'emails' && <Th>Reason</Th>}<Th>Added</Th><Th /></tr></thead>
             <tbody>
               {list.data?.data.map((r: any) => (
-                <tr key={r.id}><Td className="font-medium text-slate-900">{r[field]}</Td><Td>{fmtDate(r.created_at)}</Td><Td className="text-right"><Button size="sm" variant="ghost" icon={<Trash2 className="size-4" />} onClick={() => remove(r.id)}>Remove</Button></Td></tr>
+                <tr key={r.id}><Td className="font-medium text-slate-900">{r[field]}</Td>{kind === 'emails' && <Td>{r.reason === 'unsubscribed' ? <Badge tone="red">Unsubscribed{r.source ? ` · ${r.source}` : ''}</Badge> : r.reason === 'blacklisted' ? <Badge>Blacklisted{r.source ? ` · ${r.source}` : ''}</Badge> : <span className="text-slate-500">Added by hand</span>}</Td>}<Td>{fmtDate(r.created_at)}</Td><Td className="text-right"><Button size="sm" variant="ghost" icon={<Trash2 className="size-4" />} onClick={() => remove(r)}>Remove</Button></Td></tr>
               ))}
             </tbody>
           </Table>

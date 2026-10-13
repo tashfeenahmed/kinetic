@@ -9,6 +9,7 @@ import * as open from './openData.ts';
 import { smtpVerifyStep } from './freeVerify.ts';
 import * as v from './vendors.ts';
 import { lookalikeStep } from '../../sourcing/lookalikeStep.ts';
+import { aiReadContacts, apolloContacts, hunterContacts, pdlContacts, prospeoContacts } from './people.ts';
 import type { EnrichKind, ProviderStep } from './types.ts';
 
 const step = (s: ProviderStep) => s;
@@ -17,21 +18,36 @@ export const ENRICH_KINDS: EnrichKind[] = [
   {
     id: 'work_email',
     label: 'Find work email',
-    description: 'Waterfall across email finders; stops at the first hit.',
+    description: 'Free first (company website + GitHub patterns with an SMTP check, then emails published on the web); paid vendors only when those find nothing — Apollo, Hunter, Prospeo, People Data Labs. Stops at the first hit.',
     inputs: ['firstName', 'lastName', 'fullName', 'domain', 'companyName', 'linkedinUrl'],
     needs: [['fullName', 'domain'], ['firstName', 'domain'], ['fullName', 'companyName'], ['linkedinUrl']],
     steps: [
       step({ id: 'free_finder', label: 'Free finder (website + GitHub patterns, SMTP check)', requires: [], cost: 'free', run: freeEmailFinder }),
       step({ id: 'web_search', label: 'Web search (emails on public pages)', requires: [], cost: 'free with SearXNG', run: webSearchEmailFinder }),
+      // Paid fallback, in this order; each stops once its monthly credit budget is used up.
+      step({ id: 'apollo', label: 'Apollo', requires: ['APOLLO_API_KEY'], cost: '1 credit', run: v.apolloEmail }),
+      step({ id: 'hunter', label: 'Hunter', requires: ['HUNTER_API_KEY'], cost: '1 credit', run: v.hunterEmail }),
+      step({ id: 'prospeo', label: 'Prospeo', requires: ['PROSPEO_API_KEY'], cost: '1 credit', run: v.prospeoEmail }),
+      step({ id: 'pdl', label: 'People Data Labs', requires: ['PDL_API_KEY'], cost: '1 person credit', run: v.pdlEmail }),
       step({ id: 'pattern_verified', label: 'Pattern + MillionVerifier', requires: ['MILLIONVERIFIER_API_KEY'], cost: '~$0.0012', run: (i, c) => v.patternVerified(i, c, free.patternGuess) }),
       step({ id: 'icypeas', label: 'Icypeas', requires: ['ICYPEAS_API_KEY'], cost: '~$0.01 when found', run: v.icypeasEmail }),
       step({ id: 'findymail', label: 'Findymail', requires: ['FINDYMAIL_API_KEY'], cost: '1 credit (verified only)', run: v.findymailEmail }),
-      step({ id: 'prospeo', label: 'Prospeo', requires: ['PROSPEO_API_KEY'], cost: '1 credit', run: v.prospeoEmail }),
       step({ id: 'leadmagic', label: 'LeadMagic', requires: ['LEADMAGIC_API_KEY'], cost: '1 credit', run: v.leadmagicEmail }),
-      step({ id: 'hunter', label: 'Hunter', requires: ['HUNTER_API_KEY'], cost: '1 search', run: v.hunterEmail }),
-      step({ id: 'apollo', label: 'Apollo', requires: ['APOLLO_API_KEY'], cost: '1 credit', run: v.apolloEmail }),
-      step({ id: 'pdl', label: 'People Data Labs', requires: ['PDL_API_KEY'], cost: '1 person credit', run: v.pdlEmail }),
       step({ id: 'pattern', label: 'Pattern guess (free, unverified)', requires: [], cost: 'free', run: (i) => free.patternGuess(i) }),
+    ],
+  },
+  {
+    id: 'decision_makers',
+    label: 'Find decision makers + emails',
+    description: 'Who to email at a company, with their email. First reads the company website (team, about, leadership, contact pages) and web search results with AI and finds each person\'s email for free (published, or pattern + SMTP check). Only if that finds nobody: Apollo, Hunter, Prospeo, People Data Labs. Title = roles to look for, e.g. "CEO, founder" (optional).',
+    inputs: ['domain', 'companyName', 'title'],
+    needs: [['domain']],
+    steps: [
+      step({ id: 'ai_read', label: 'Read website + web with AI (free)', requires: [], cost: 'free (AI tokens)', run: aiReadContacts }),
+      step({ id: 'apollo', label: 'Apollo (search free, email 1 credit)', requires: ['APOLLO_API_KEY'], cost: '1 credit', run: apolloContacts }),
+      step({ id: 'hunter', label: 'Hunter domain search', requires: ['HUNTER_API_KEY'], cost: '1 credit', run: hunterContacts }),
+      step({ id: 'prospeo', label: 'Prospeo search + email', requires: ['PROSPEO_API_KEY'], cost: '1–2 credits', run: prospeoContacts }),
+      step({ id: 'pdl', label: 'People Data Labs search', requires: ['PDL_API_KEY'], cost: '1 credit per person', run: pdlContacts }),
     ],
   },
   {

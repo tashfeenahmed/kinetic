@@ -46,4 +46,4 @@ Preview any source without saving: `POST /api/sources/preview` `{ "source": "yc_
 ## Pitfalls
 - Confirm with the user before scheduling searches that cost credits (Google Maps with a key, Apollo, PDL, AI search) — hourly runs multiply cost.
 - The first run delivers everything (baseline); later runs only new rows. A failed run is recorded with `status: "error"` and the schedule moves on.
-- The UI lives at /searches (Saved searches tab).
+- The UI lives at /settings/searches (Settings → Saved searches; also the ⋯ menu on Find new prospects). Functions are at /settings/functions and the activity log at /settings/activity.

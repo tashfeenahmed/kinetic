@@ -245,6 +245,9 @@
   .waterfall .grow { flex: 1; font-size: 13px; }
   .waterfall small { display: block; color: var(--muted); font-size: 11.5px; }
   .cellpanel .headline { font-size: 15px; font-weight: 600; margin: 16px 0 4px; word-break: break-word; }
+  .cellpanel .cell-link { color: var(--accent, #2563eb); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; max-width: 100%; }
+  .cellpanel .cell-link:hover { text-decoration: underline; }
+  .cellpanel .cell-link svg { flex-shrink: 0; opacity: .7; }
   .status { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 999px; background: var(--bg-muted); color: var(--text-2); }
   .status.st-done { background: var(--ok-soft); color: var(--ok); }
   .status.st-error { background: var(--err-soft); color: var(--err); }

@@ -6,6 +6,7 @@ import {
   Plus, Search, ShieldAlert, Square, Table2, Trash2, Wrench,
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api.ts';
+import { useEventStream } from '../../lib/useEventStream.ts';
 import { fmtRelative } from '../../lib/format.ts';
 import { Button, Shimmer, cx, useUi } from '../../components/ui.tsx';
 import { stepLabel } from './labels.ts';
@@ -183,29 +184,23 @@ function Composer({ onSend, onStop, busy, running, model, setModel, config, auto
 
 function useSessionStream(sessionId: number) {
   const qc = useQueryClient();
-  useEffect(() => {
-    const es = new EventSource(`/api/agent/sessions/${sessionId}/events`);
-    es.onmessage = (ev) => {
-      const e = JSON.parse(ev.data);
-      qc.setQueryData<AgentSession>(['agent-session', sessionId], (old) => {
-        if (!old) return old;
-        if (e.type === 'session') return { ...old, ...e.data, messages: old.messages };
-        if (e.type === 'message') {
-          const msgs = old.messages ?? [];
-          const i = msgs.findIndex((m) => m.id === e.data.id);
-          return { ...old, messages: i >= 0 ? msgs.map((m) => (m.id === e.data.id ? e.data : m)) : [...msgs, e.data].sort((a, b) => a.id - b.id) };
-        }
-        return old;
-      });
-      if (e.type === 'session') {
-        void qc.invalidateQueries({ queryKey: ['agent-sessions'] });
-        if (e.data.status !== 'running') void qc.invalidateQueries({ queryKey: ['gtm-tables'] }); // new tables show in the sidebar
+  // Connected only while the tab is visible (see useEventStream); coming back refetches the chat.
+  useEventStream(`/api/agent/sessions/${sessionId}/events`, (e) => {
+    qc.setQueryData<AgentSession>(['agent-session', sessionId], (old) => {
+      if (!old) return old;
+      if (e.type === 'session') return { ...old, ...e.data, messages: old.messages };
+      if (e.type === 'message') {
+        const msgs = old.messages ?? [];
+        const i = msgs.findIndex((m) => m.id === e.data.id);
+        return { ...old, messages: i >= 0 ? msgs.map((m) => (m.id === e.data.id ? e.data : m)) : [...msgs, e.data].sort((a, b) => a.id - b.id) };
       }
-    };
-    // EventSource reconnects by itself; refetch to catch anything missed meanwhile.
-    es.onerror = () => { void qc.invalidateQueries({ queryKey: ['agent-session', sessionId] }); };
-    return () => es.close();
-  }, [sessionId, qc]);
+      return old;
+    });
+    if (e.type === 'session') {
+      void qc.invalidateQueries({ queryKey: ['agent-sessions'] });
+      if (e.data.status !== 'running') void qc.invalidateQueries({ queryKey: ['gtm-tables'] }); // new tables show in the sidebar
+    }
+  }, () => { void qc.invalidateQueries({ queryKey: ['agent-session', sessionId] }); });
 }
 
 function Conversation({ sessionId, historyOpen, toggleHistory }: { sessionId: number; historyOpen: boolean; toggleHistory: () => void }) {

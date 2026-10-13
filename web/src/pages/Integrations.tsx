@@ -7,8 +7,10 @@ import { GtmKeysSection } from '../gtm/index.tsx';
 import { OAuthApps } from './integrations/OAuthApps.tsx';
 import { IpRoutes } from './integrations/IpRoutes.tsx';
 import { SeedAccounts } from './integrations/SeedAccounts.tsx';
+import { CreditsPanel } from './integrations/Credits.tsx';
 
 const SECTIONS = [
+  { id: 'credits', label: 'Credits' },
   { id: 'providers', label: 'Data, AI & CRM' },
   { id: 'domains', label: 'Sending domains' },
   { id: 'mailboxes', label: 'Mailbox sign-in' },
@@ -47,6 +49,10 @@ export function IntegrationsPage() {
       </nav>
 
       <div className="space-y-10">
+        <Section id="credits" title="Credits" description="How many paid lookups each email/people vendor has used this month, and the monthly limit Kinetic keeps to.">
+          <CreditsPanel />
+        </Section>
+
         <Section id="providers" title="Data, AI & CRM providers" description="Power your tables: AI research, web search, email finding and verification, company data, signals, Slack, HubSpot and Salesforce. Every key is optional and stored encrypted.">
           <GtmKeysSection />
         </Section>
