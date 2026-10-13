@@ -8,6 +8,8 @@ export interface Me {
   email: string;
   current_workspace_id: number;
   role: 'admin' | 'editor' | 'viewer';
+  /** Added by an admin (or password reset): choose a password before using the app. */
+  must_change_password: boolean;
   team: { id: number; name: string; role: string } | null;
 }
 

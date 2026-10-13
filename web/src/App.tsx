@@ -4,7 +4,7 @@ import { AuthProvider, useAuth } from './lib/auth.tsx';
 import { UiProvider, Loading } from './components/ui.tsx';
 import { AppLayout } from './components/Layout.tsx';
 import { isStaleBuildError, reloadForNewBuild } from './components/RouteErrorBoundary.tsx';
-import { LoginPage, SetupPage } from './pages/Auth.tsx';
+import { ChoosePasswordPage, LoginPage, SetupPage } from './pages/Auth.tsx';
 
 // Pages load on demand so the first paint stays small.
 // A failed chunk load means this tab is on an older build: reload once to get the new one.
@@ -53,6 +53,7 @@ function Gate() {
   if (loading) return <Loading />;
   if (needsSetup) return <Routes><Route path="*" element={<SetupPage />} /></Routes>;
   if (!me) return <Routes><Route path="*" element={<LoginPage />} /></Routes>;
+  if (me.must_change_password) return <ChoosePasswordPage />;
   return (
     <Suspense fallback={<Loading />}>
     <Routes>

@@ -248,6 +248,7 @@ function GetStarted({ counts }: { counts: { lists: number; domains: number; send
     { done: counts.campaigns > 0, title: 'Create a campaign', text: 'Write the sequence; send table rows to it.', to: '/campaigns', icon: FileText },
     { done: counts.active > 0, title: 'Launch', text: 'Review the checklist and start sending.', to: '/campaigns', icon: Rocket },
   ];
+  const { me } = useAuth();
   const done = steps.filter((s) => s.done).length;
   if (done === steps.length) return null;
   return (
@@ -268,6 +269,11 @@ function GetStarted({ counts }: { counts: { lists: number; domains: number; send
           return s.to.startsWith('#') ? <a key={s.title} href={s.to} className={cls}>{inner}</a> : <Link key={s.title} to={s.to} className={cls}>{inner}</Link>;
         })}
       </div>
+      {me?.role === 'admin' && (
+        <p className="-mt-1 pb-5 text-[13px] text-slate-500">
+          Working with others? <Link to="/settings/workspace" className="font-medium text-brand-600 hover:underline">Add teammates</Link> as admins, editors or viewers.
+        </p>
+      )}
     </Card>
   );
 }

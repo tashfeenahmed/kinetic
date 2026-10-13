@@ -20,7 +20,8 @@
     "typecheck:extension": "tsc --noEmit -p extension",
     "mail:up": "node scripts/mail.mjs up",
     "mail:down": "node scripts/mail.mjs down",
-    "demo": "npm run demo -w server"
+    "demo": "npm run demo -w server",
+    "reset-password": "npm run reset-password -w server --"
   },
   "engines": {
     "node": ">=24"

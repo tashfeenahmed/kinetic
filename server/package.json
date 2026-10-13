@@ -8,7 +8,8 @@
     "test": "vitest run --exclude 'test/mail/**'",
     "test:mail": "vitest run test/mail",
     "typecheck": "tsc --noEmit",
-    "demo": "node scripts/demo.ts"
+    "demo": "node scripts/demo.ts",
+    "reset-password": "node scripts/reset-password.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.3",

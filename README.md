@@ -73,6 +73,8 @@ npm start            # UI + API on http://localhost:4200
 
 Open **http://localhost:4200** and create your admin account. Everything lives in `./data` (SQLite database, attachments, encryption key) — back that folder up.
 
+**Team.** The first account you create is the admin. Add teammates under **Settings → Workspace & team** as admins, editors (run campaigns and the inbox) or viewers (read only): Kinetic gives you a temporary password to send them, and they choose their own at first sign-in. Admins can reset a teammate's password from the same list. Locked out as the only admin? On the server, run `npm run reset-password -- you@company.com` for a temporary password.
+
 <details>
 <summary><b>Try it with demo data</b></summary>
 
