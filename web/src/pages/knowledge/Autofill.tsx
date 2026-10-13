@@ -65,7 +65,7 @@ export function AutofillModal({ open, folders, onClose, onCreated }: { open: boo
     if (r.status !== 'done' || !r.result) return;
     const res = r.result;
     setResult(res);
-    setPicked(new Set(res.drafts.filter((d) => !d.exists).map((d) => d.key)));
+    setPicked(new Set(res.drafts.map((d) => d.key)));
     setOpenKey(res.drafts[0]?.key ?? null);
     const name = res.folder_name || res.host || 'Company';
     // Re-running for the same site files into its existing folder.
@@ -127,7 +127,6 @@ export function AutofillModal({ open, folders, onClose, onCreated }: { open: boo
                       <span className="truncate text-[13.5px] font-medium text-zinc-900">{d.title}</span>
                       <span className="shrink-0 text-[12px] text-zinc-400">{d.content.length.toLocaleString()} chars</span>
                     </button>
-                    {d.exists && <span className="shrink-0 text-[12px] text-amber-600">You already have a doc with this title</span>}
                   </div>
                   {expanded && (
                     <div className="px-10 pb-4 pt-1">

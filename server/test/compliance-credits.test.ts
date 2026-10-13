@@ -6,6 +6,7 @@ import { emailProvenance } from '../src/gtm/engine/runner.ts';
 
 let env: TestEnv;
 let calls: string[];
+let apolloFree = false;
 
 /** Fake Hunter and Apollo. */
 function vendors(url: string, init: any) {
@@ -19,6 +20,9 @@ function vendors(url: string, init: any) {
     ] } });
   }
   if (u.host === 'api.hunter.io' && u.pathname === '/v2/account') return Response.json({ data: { plan_name: 'Free', reset_date: '2026-11-01', requests: { credits: { used: 3, available: 50 } } } });
+  if (u.host === 'api.apollo.io' && apolloFree && u.pathname !== '/api/v1/organizations/enrich') {
+    return Response.json({ error: `The ${u.pathname.slice(1)} API is not included in your Free plan and is not accessible, even with a master key.`, error_code: 'API_INACCESSIBLE' }, { status: 403 });
+  }
   if (u.host === 'api.apollo.io' && u.pathname === '/api/v1/mixed_people/api_search') {
     expect(JSON.parse(init.body).q_organization_domains_list).toEqual(['acme.test']);
     return Response.json({ people: [{ id: 'p1', first_name: 'Lee', title: 'Head of Sales', has_email: true }, { id: 'p2', first_name: 'Ann', title: 'Founder & CEO', has_email: true }] });
@@ -32,6 +36,7 @@ function vendors(url: string, init: any) {
 
 beforeEach(async () => {
   calls = [];
+  apolloFree = false;
   env = await makeEnv({ fetch: (async (url: any, init: any) => vendors(String(url), init)) as typeof fetch });
 });
 afterEach(() => env.close());
@@ -78,6 +83,26 @@ describe('paid credits', () => {
     const hunter = credits.find((c: any) => c.id === 'hunter');
     expect(hunter).toMatchObject({ connected: true, used: 1, budget: 1, blocked: 'monthly budget reached (1/1)', live: { remaining: 47, plan: 'Free' } });
     expect(credits.find((c: any) => c.id === 'apollo')).toMatchObject({ connected: false, used: 0, budget: 100 });
+  });
+
+  it('remembers endpoints the vendor plan refuses (Apollo free) and skips them until the key changes', async () => {
+    apolloFree = true;
+    await env.api('PUT', '/api/gtm/keys', { APOLLO_API_KEY: 'free-key', HUNTER_API_KEY: 'hk' });
+    const { tableId, ids } = await tableWith([{ 'Full name': 'Jane Doe', Domain: 'acme.test' }, { 'Full name': 'John Roe', Domain: 'acme.test' }]);
+    const col = (await env.api('POST', `/api/gtm/tables/${tableId}/columns`, { name: 'Work email', type: 'enrich', config: { kind: 'work_email', providers: ['apollo', 'hunter'], inputs: { fullName: '{{Full name}}', domain: '{{Domain}}' } } })).body.id;
+    await env.api('POST', `/api/gtm/tables/${tableId}/run`, { columnIds: [col], rowIds: [ids[0]] });
+    await settle(tableId);
+    expect((await cell(tableId, ids[0], 'Work email')).value.provider).toBe('hunter');
+    await env.api('POST', `/api/gtm/tables/${tableId}/run`, { columnIds: [col], rowIds: [ids[1]] });
+    await settle(tableId);
+    expect((await cell(tableId, ids[1], 'Work email')).meta.attempts[0]).toEqual({ provider: 'apollo', result: 'skipped: not on your plan', ms: 0 });
+    expect(calls.filter((u) => u.includes('people/match'))).toHaveLength(1);
+    const apollo = (await env.api('GET', '/api/gtm/credits')).body.data.find((c: any) => c.id === 'apollo');
+    expect(apollo).toMatchObject({ plan_blocked: ['work_email'], used: 0 });
+
+    // A new key (e.g. after upgrading) is tried again.
+    await env.api('PUT', '/api/gtm/keys', { APOLLO_API_KEY: 'paid-key-2' });
+    expect((await env.api('GET', '/api/gtm/credits')).body.data.find((c: any) => c.id === 'apollo').plan_blocked).toEqual([]);
   });
 
   it('budget helpers', () => {
