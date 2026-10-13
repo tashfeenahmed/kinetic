@@ -1,13 +1,17 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Papa from 'papaparse';
-import { FileUp, List, Search, UserPlus } from 'lucide-react';
+import { FileUp, List, Search, Table2, UserPlus } from 'lucide-react';
 import { api, errorMessage, type Paginated } from '../../lib/api.ts';
 import { fmtNumber, fullName } from '../../lib/format.ts';
 import { Alert, Button, Checkbox, Field, Input, Loading, Modal, Select, Toggle, cx, useUi } from '../../components/ui.tsx';
 import type { Campaign } from './types.ts';
+import { outreachDefaults } from '../../gtm/components/ColumnEditor';
+import { pushRows } from '../../gtm/lib/push';
+import { api as gtmApi, type Column } from '../../gtm/lib/api';
+import { useGtmTables } from '../../gtm/lib/queries';
 
-type Mode = 'existing' | 'list' | 'csv';
+type Mode = 'existing' | 'list' | 'table' | 'csv';
 
 const STANDARD_FIELDS = [
   ['email', 'Email'], ['first_name', 'First name'], ['last_name', 'Last name'], ['company', 'Company'], ['title', 'Title'], ['notes', 'Notes'],
@@ -112,6 +116,51 @@ function LeadListPicker({ campaign, onAdded }: { campaign: Campaign; onAdded: (n
         </Select>
       </Field>
       <div className="flex justify-end"><Button variant="primary" disabled={!listId} loading={busy} onClick={add}>Add list</Button></div>
+    </div>
+  );
+}
+
+/** Rows of a research table join the campaign (as leads) through the table's push column. */
+function TablePicker({ campaign, onQueued }: { campaign: Campaign; onQueued: (n: number, table: string) => void }) {
+  const [tableId, setTableId] = useState('');
+  const [onlyValid, setOnlyValid] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const { toast } = useUi();
+  const tables = useGtmTables();
+  const view = useQuery({ queryKey: ['gtm-table-columns', tableId], enabled: !!tableId, queryFn: () => gtmApi<{ columns: Column[]; table: { name: string } }>(`/api/gtm/tables/${tableId}`) });
+  const cols = view.data?.columns ?? [];
+  const mapping = useMemo(() => outreachDefaults(cols.map((c) => c.name), 'outreach_campaign'), [cols]);
+  const verify = cols.find((c) => c.type === 'enrich' && c.config?.kind === 'verify_email');
+  const add = async () => {
+    setBusy(true);
+    try {
+      const r = await pushRows(Number(tableId), cols, {
+        dest: 'campaign', config: { ...mapping, campaignId: campaign.id }, targetName: campaign.name,
+        onlyValidColumn: onlyValid && verify ? verify.name : null, withStatus: true,
+      });
+      onQueued(r.queued, view.data!.table.name);
+    } catch (e) {
+      toast(errorMessage(e), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (tables.isLoading) return <Loading />;
+  if (!tables.data?.length) return <div className="py-8 text-center text-sm text-slate-500">You don't have any tables yet. Find prospects from Home to create one.</div>;
+  const emailCol = mapping.email.replace(/^\{\{|\}\}$/g, '');
+  return (
+    <div className="space-y-4">
+      <Field label="Table" hint="Each row becomes a lead (matched by email, never duplicated) and joins at step 1. Unsubscribed, bounced and blacklisted addresses are skipped.">
+        <Select value={tableId} onChange={(e) => setTableId(e.target.value)}>
+          <option value="">Choose a table…</option>
+          {tables.data.map((t) => <option key={t.id} value={t.id}>{t.name} ({fmtNumber(t.row_count)} rows)</option>)}
+        </Select>
+      </Field>
+      {tableId && view.data && (emailCol
+        ? <p className="text-[13px] text-slate-600">Email from column <b>{emailCol}</b>{mapping.firstName && <>, name from <b>{mapping.firstName.replace(/[{}]/g, '')}</b></>}. To map more fields or personalisation variables, use <b>Send to campaign</b> in the table.</p>
+        : <Alert tone="yellow">This table has no email column. Add a Work email enrichment in the table first.</Alert>)}
+      {verify && <Toggle checked={onlyValid} onChange={setOnlyValid} label={`Only rows where “${verify.name}” is valid`} />}
+      <div className="flex justify-end"><Button variant="primary" disabled={!tableId || !emailCol} loading={busy} onClick={add}>Add table rows</Button></div>
     </div>
   );
 }
@@ -243,11 +292,12 @@ export function AddLeadsModal({ campaign, onClose, onDone }: { campaign: Campaig
   const options: { id: Mode; label: string; desc: string; icon: React.ReactNode }[] = [
     { id: 'existing', label: 'Existing leads', desc: 'Pick from your workspace', icon: <UserPlus className="size-4" /> },
     { id: 'list', label: 'Lead list', desc: 'Add a whole list', icon: <List className="size-4" /> },
+    { id: 'table', label: 'Table', desc: 'Rows from a research table', icon: <Table2 className="size-4" /> },
     { id: 'csv', label: 'Import CSV', desc: 'Upload a spreadsheet', icon: <FileUp className="size-4" /> },
   ];
   return (
     <Modal open onClose={onClose} title="Add leads" description={`Leads join "${campaign.name}" at step 1.`} size="lg">
-      <div className="mb-5 grid grid-cols-3 gap-2">
+      <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {options.map((o) => (
           <button key={o.id} onClick={() => setMode(o.id)} className={cx('rounded-lg border p-3 text-left transition-colors', mode === o.id ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-slate-200 hover:bg-slate-50')}>
             <div className="flex items-center gap-2 text-sm font-medium text-slate-900">{o.icon}{o.label}</div>
@@ -257,6 +307,7 @@ export function AddLeadsModal({ campaign, onClose, onDone }: { campaign: Campaig
       </div>
       {mode === 'existing' && <ExistingLeads campaign={campaign} onAdded={(n) => finished(n)} />}
       {mode === 'list' && <LeadListPicker campaign={campaign} onAdded={(n) => finished(n)} />}
+      {mode === 'table' && <TablePicker campaign={campaign} onQueued={(n, t) => { toast(n ? `Adding ${fmtNumber(n)} row${n === 1 ? '' : 's'} from “${t}” — they appear in a few seconds` : `No new rows in “${t}” to add`); onDone(); onClose(); }} />}
       {mode === 'csv' && <CsvImport campaign={campaign} onAdded={finished} />}
     </Modal>
   );

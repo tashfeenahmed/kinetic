@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { OutreachForm, outreachDefaults } from './ColumnEditor';
+import { pushRows } from '../lib/push';
 import { Icon } from './Icon';
 import { api, type Catalog, type Column } from '../lib/api';
 
@@ -197,10 +198,25 @@ export function SignalPackDialog({ tableId, columns, catalog, onClose, onDone }:
   );
 }
 
-/** Table → Outreach in one step: push column (+ status column), then run it. */
-export function SendToCampaignDialog({ tableId, columns, onClose, onDone }: { tableId: number; columns: Column[]; onClose: () => void; onDone: (msg: string) => void }) {
+/**
+ * Table → Leads → Campaign in one step. Rows become leads (optionally in a lead list) or
+ * go straight into a campaign; a push column records the result on every row.
+ */
+export function SendRowsDialog({ tableId, tableName, columns, scopes, initialDest = 'campaign', onClose, onDone }: {
+  tableId: number; tableName: string; columns: Column[];
+  /** Row sets the user can choose from: all rows, rows left after filters, selected rows. */
+  scopes: { id: string; label: string; rowIds?: number[] }[];
+  initialDest?: 'campaign' | 'leads';
+  onClose: () => void; onDone: (msg: string) => void;
+}) {
   const names = columns.map((c) => c.name);
+  const [dest, setDest] = useState<'campaign' | 'leads'>(initialDest);
   const [config, setConfig] = useState<any>(() => outreachDefaults(names, 'outreach_campaign'));
+  const [scope, setScope] = useState(scopes[scopes.length - 1]!.id);
+  const [campaigns, setCampaigns] = useState<{ id: number; name: string }[]>([]);
+  const [lists, setLists] = useState<{ id: number; name: string }[]>([]);
+  const [list, setList] = useState<string>('new');
+  const [listName, setListName] = useState(tableName);
   const verify = columns.find((c) => c.type === 'enrich' && c.config?.kind === 'verify_email');
   const [onlyValid, setOnlyValid] = useState(!!verify);
   const [auto, setAuto] = useState(false);
@@ -208,22 +224,35 @@ export function SendToCampaignDialog({ tableId, columns, onClose, onDone }: { ta
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const set = (p: any) => setConfig((c: any) => ({ ...c, ...p }));
+  useEffect(() => {
+    api('/api/campaigns?per_page=200').then((r: any) => setCampaigns(r.data ?? [])).catch(() => {});
+    api('/api/lead-lists').then((r: any) => setLists(r.data ?? [])).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setList(dest === 'leads' ? 'new' : ''); }, [dest]);
+  const chosen = scopes.find((s) => s.id === scope)!;
 
   async function go() {
-    if (!config.campaignId) return setErr('Choose a campaign');
+    if (dest === 'campaign' && !config.campaignId) return setErr('Choose a campaign');
     if (!config.email) return setErr('Map the email column');
+    if (list === 'new' && !listName.trim()) return setErr('Name the new lead list');
     setBusy(true);
     setErr('');
     try {
-      const col = await api(`/api/gtm/tables/${tableId}/columns`, { body: {
-        name: 'Push to campaign', type: 'action', config, auto_run: auto,
-        run_if: onlyValid && verify ? `row[${JSON.stringify(verify.name)}] === "valid"` : null,
-      } });
-      if (withStatus) {
-        await api(`/api/gtm/tables/${tableId}/columns`, { body: { name: 'Outreach status', type: 'signal', auto_run: true, config: { kind: 'outreach_status', inputs: { email: config.email } } } });
+      let listId: number | null = Number(list) || null;
+      let listLabel = lists.find((l) => l.id === listId)?.name;
+      if (list === 'new') {
+        const made = await api('/api/lead-lists', { body: { name: listName.trim() } });
+        listId = made.data.id;
+        listLabel = listName.trim();
       }
-      const r = await api(`/api/gtm/tables/${tableId}/run`, { body: { columnIds: [col.id] } });
-      onDone(`Pushing ${r.queued} row${r.queued === 1 ? '' : 's'} to the campaign`);
+      const campaign = campaigns.find((c) => c.id === Number(config.campaignId));
+      const r = await pushRows(tableId, columns, {
+        dest, config: { ...config, listId }, rowIds: chosen.rowIds,
+        onlyValidColumn: onlyValid && verify ? verify.name : null, auto, withStatus,
+        targetName: dest === 'campaign' ? campaign?.name : listLabel,
+      });
+      const what = dest === 'campaign' ? `to ${campaign?.name ?? 'the campaign'}` : listLabel ? `to Leads (list “${listLabel}”)` : 'to Leads';
+      onDone(r.queued ? `Sending ${r.queued} row${r.queued === 1 ? '' : 's'} ${what}` : `Nothing to send ${what}`);
       onClose();
     } catch (e: any) {
       setErr(e.message);
@@ -233,15 +262,50 @@ export function SendToCampaignDialog({ tableId, columns, onClose, onDone }: { ta
   }
 
   return (
-    <Modal title="Send rows to a campaign" onClose={onClose} footer={<><span className="err">{err}</span><span style={{ flex: 1 }} /><button onClick={onClose}>Cancel</button><button className="primary" disabled={busy} onClick={go}>{busy ? 'Sending…' : 'Send to campaign'}</button></>}>
-      <p className="hint">Creates or updates a lead for every row and attaches it to the campaign. Blacklisted, bounced and unsubscribed leads are skipped automatically.</p>
-      <OutreachForm config={config} set={set} others={names} />
+    <Modal title="Send rows" onClose={onClose} footer={<><span className="err">{err}</span><span style={{ flex: 1 }} /><button onClick={onClose}>Cancel</button><button className="primary" disabled={busy} onClick={go}>{busy ? 'Sending…' : dest === 'campaign' ? 'Send to campaign' : 'Add to leads'}</button></>}>
+      <div className="seg" role="tablist" style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+        <button className={dest === 'leads' ? 'primary' : ''} onClick={() => setDest('leads')}>Leads (no campaign yet)</button>
+        <button className={dest === 'campaign' ? 'primary' : ''} onClick={() => setDest('campaign')}>Straight to a campaign</button>
+      </div>
+      <p className="hint">
+        {dest === 'leads'
+          ? 'Each row becomes a lead, grouped in a lead list, so you can review them in Leads and add the list to a campaign later.'
+          : 'Each row becomes a lead and joins the campaign at step 1.'}
+        {' '}Leads are matched by email, so nobody is duplicated; unsubscribed, bounced and blacklisted addresses are never emailed.
+      </p>
+      {scopes.length > 1 && (
+        <label>Rows
+          <select value={scope} onChange={(e) => setScope(e.target.value)}>
+            {scopes.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+        </label>
+      )}
+      {dest === 'campaign' && (
+        <label>Campaign
+          <select value={config.campaignId ?? ''} onChange={(e) => set({ campaignId: Number(e.target.value) || null })}>
+            <option value="">Choose a campaign…</option>
+            {campaigns.map((c: any) => <option key={c.id} value={c.id}>{c.name} ({c.status})</option>)}
+          </select>
+        </label>
+      )}
+      {dest === 'campaign' && campaigns.length === 0 && <p className="hint">No campaigns yet: send the rows to Leads now, then create a campaign and add the list.</p>}
+      <label>{dest === 'leads' ? 'Lead list' : 'Also add to a lead list (optional)'}
+        <select value={list} onChange={(e) => setList(e.target.value)}>
+          <option value="new">New list…</option>
+          {lists.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+          <option value="">No list</option>
+        </select>
+      </label>
+      {list === 'new' && <label>New list name<input value={listName} onChange={(e) => setListName(e.target.value)} /></label>}
+      {/* Campaign and list are chosen above; the form only maps the lead fields. */}
+      <OutreachForm config={{ ...config, kind: 'outreach_update_lead' }} set={set} others={names} hideList />
       <fieldset>
         <legend>Options</legend>
         {verify
           ? <label className="check"><input type="checkbox" checked={onlyValid} onChange={(e) => setOnlyValid(e.target.checked)} /> Only rows where “{verify.name}” is <b>valid</b></label>
           : <p className="hint">Tip: add a <b>Verify email</b> enrichment first so only deliverable addresses are sent.</p>}
-        <label className="check"><input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Keep pushing new rows automatically (inbound webhooks, imports, enrichment updates)</label>
+        {dest === 'campaign' && <label className="check"><input type="checkbox" checked={!!config.allowParallel} onChange={(e) => set({ allowParallel: e.target.checked })} /> Allow leads that are already in another active campaign</label>}
+        <label className="check"><input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Keep sending new rows automatically (imports, webhooks, enrichment updates)</label>
         <label className="check"><input type="checkbox" checked={withStatus} onChange={(e) => setWithStatus(e.target.checked)} /> Add an <b>Outreach status</b> column (sent, opened, replied, interested — updates live)</label>
       </fieldset>
     </Modal>

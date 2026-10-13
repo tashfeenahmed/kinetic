@@ -367,7 +367,7 @@ export function outreachDefaults(others: string[], kind: string) {
   };
 }
 
-export function OutreachForm({ config, set, others }: { config: any; set: (p: any) => void; others: string[] }) {
+export function OutreachForm({ config, set, others, hideList }: { config: any; set: (p: any) => void; others: string[]; hideList?: boolean }) {
   const [campaigns, setCampaigns] = useState<{ id: number; name: string; status: string }[]>([]);
   const [lists, setLists] = useState<{ id: number; name: string }[]>([]);
   useEffect(() => {
@@ -394,12 +394,12 @@ export function OutreachForm({ config, set, others }: { config: any; set: (p: an
         </label>
       )}
       {config.kind === 'outreach_campaign' && campaigns.length === 0 && <p className="hint">No campaigns yet — <Link to="/campaigns">create one in Outreach</Link>.</p>}
-      <label>Also add to lead list (optional)
+      {!hideList && <label>Also add to lead list (optional)
         <select value={config.listId ?? ''} onChange={(e) => set({ listId: Number(e.target.value) || null })}>
           <option value="">No list</option>
           {lists.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
-      </label>
+      </label>}
       <fieldset>
         <legend>Lead fields</legend>
         <label>Email<TemplateInput value={config.email ?? ''} onChange={(v) => set({ email: v })} columns={others} /></label>

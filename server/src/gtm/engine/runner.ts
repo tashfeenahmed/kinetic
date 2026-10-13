@@ -8,7 +8,7 @@ import type { Settings } from '../settings.ts';
 import { evaluate, truthy } from '../lib/sandbox.ts';
 import { getPath, render, renderDeep, renderValue, stringify } from '../lib/template.ts';
 import { enrichKind } from '../providers/catalog.ts';
-import { budgetBlock, STEP_PROVIDER } from '../providers/credits.ts';
+import { budgetBlock, isPlanError, notePlanBlock, planBlock, STEP_PROVIDER } from '../providers/credits.ts';
 import { signalKind } from '../providers/signals.ts';
 import * as integ from '../providers/integrations.ts';
 import type { Ctx, EnrichInput, Hit } from '../providers/types.ts';
@@ -322,7 +322,7 @@ export class Engine {
       if (step.requires.some((k) => !this.settings.has(k))) { attempts.push({ provider: id, result: 'no key', ms: 0 }); continue; }
       // Paid vendors stop at their monthly credit budget (Integrations → Credits).
       const paid = STEP_PROVIDER[id];
-      const blocked = paid ? budgetBlock(this.settings.db, paid) : null;
+      const blocked = paid ? budgetBlock(this.settings.db, paid) ?? planBlock(this.settings, `${cfg.kind}:${id}`, paid) : null;
       if (blocked) { attempts.push({ provider: id, result: `skipped: ${blocked}`, ms: 0 }); continue; }
       const t = Date.now();
       try {
@@ -334,6 +334,8 @@ export class Engine {
           return { value: { value: hit.value, provider: id, confidence: hit.confidence, data: hit.data }, status: 'done', meta: { provider: step.label, attempts } };
         }
       } catch (e: any) {
+        // The vendor's plan doesn't include this endpoint: remember it so later rows skip it.
+        if (paid && isPlanError(e)) notePlanBlock(this.settings, `${cfg.kind}:${id}`, paid, e);
         lastError = `${step.label}: ${e.message}`;
         attempts.push({ provider: id, result: `error: ${e.message}`.slice(0, 200), ms: Date.now() - t });
         this.store.log('warn', 'enrich', lastError, j);
