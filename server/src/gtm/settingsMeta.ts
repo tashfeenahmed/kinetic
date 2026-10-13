@@ -65,7 +65,8 @@ export const SETTINGS_META: SettingMeta[] = [
 
   // Signals
   { key: 'GITHUB_TOKEN', domain: 'github.com', label: 'GitHub token', group: 'Signals', priority: 'recommended', unlocks: 'Free key that powers the free email finder (commit patterns), GitHub org people source and GitHub signal — raises limits from 60 to 5,000 requests/hour. No scopes needed', cost: 'Free', link: 'https://github.com/settings/tokens' },
-  { key: 'COMPANIES_HOUSE_API_KEY', domain: 'companieshouse.gov.uk', label: 'UK Companies House', group: 'Signals', priority: 'optional', unlocks: 'UK filings signal', cost: 'Free', link: 'https://developer.company-information.service.gov.uk' },
+  { key: 'COMPANIES_HOUSE_API_KEY', domain: 'companieshouse.gov.uk', label: 'UK Companies House', group: 'Signals', priority: 'optional', unlocks: 'UK filings signal; company details and directors for UK funded companies', cost: 'Free', link: 'https://developer.company-information.service.gov.uk' },
+  { key: 'COMPANIES_HOUSE_STREAM_KEY', domain: 'companieshouse.gov.uk', label: 'UK Companies House stream', group: 'Signals', priority: 'optional', unlocks: 'UK share allotments (SH01) for Recently funded companies — a separate "Streaming API" key from the same developer account', cost: 'Free', link: 'https://developer.company-information.service.gov.uk' },
   { key: 'CERTSPOTTER_API_KEY', domain: 'sslmate.com', label: 'Cert Spotter', group: 'Signals', priority: 'optional', unlocks: 'More new-subdomain lookups than the free ~10/hour', cost: 'Paid tiers', link: 'https://sslmate.com/certspotter/api', free: 'Free tier + crt.sh fallback (built in)' },
 
   // CRM

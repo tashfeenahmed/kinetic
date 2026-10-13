@@ -28,7 +28,7 @@ const RULES: Rule[] = [
 ];
 
 const FIND_WHAT: Record<string, string> = {
-  companies: 'companies', people: 'people', jobs: 'open roles', local: 'local businesses', google_maps: 'local businesses', lookalikes: 'lookalikes',
+  companies: 'companies', people: 'people', jobs: 'open roles', local: 'local businesses', google_maps: 'local businesses', lookalikes: 'lookalikes', funding_rounds: 'recently funded companies',
 };
 
 /**

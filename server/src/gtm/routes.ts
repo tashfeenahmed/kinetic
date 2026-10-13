@@ -115,7 +115,7 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
    * Companies: YC directory (free), falling back to an AI web search when it has no match.
    */
   const findBody = z.object({
-    mode: z.enum(['companies', 'people', 'jobs', 'google_maps', 'company_lookalikes', 'people_lookalikes']),
+    mode: z.enum(['companies', 'people', 'jobs', 'google_maps', 'company_lookalikes', 'people_lookalikes', 'funding_rounds']),
     params: z.record(z.string(), z.any()).optional(), // google_maps: location/radius_km/bbox…; lookalikes: companies, location…
     query: z.string().trim().min(1, 'Type what you are looking for'),
     limit: z.number().int().min(1).max(500).default(100),
