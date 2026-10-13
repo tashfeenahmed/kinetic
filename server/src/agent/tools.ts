@@ -45,6 +45,10 @@ export interface ToolEnv {
   userId: number;
   /** One-time approval tokens granted by the user for exact requests. */
   approvals: Map<string, string>;
+  /** Run approval-needing calls without pausing (MCP: the token holder authorized their AI client). Hard denies still apply. */
+  autoApprove?: boolean;
+  /** How the caller signed in (default: session, i.e. the in-app chat). */
+  via?: Auth['via'];
 }
 
 export interface Link { label: string; to: string }
@@ -152,7 +156,7 @@ export async function apiTool(args: any, env: ToolEnv, approvalToken?: string): 
   const settings = env.ctx.gtm!.settings;
   const verdict = classify(method, pathname, body, { db: env.ctx.db, settings, workspaceId: env.workspaceId });
   if (verdict.kind === 'deny') return fail(`Blocked: ${verdict.reason}`, `${label} → blocked`);
-  if (verdict.kind === 'approve') {
+  if (verdict.kind === 'approve' && !env.autoApprove) {
     const key = approvalToken ? env.approvals.get(approvalToken) : undefined;
     if (approvalToken) env.approvals.delete(approvalToken);
     if (key !== requestKey(req)) return { kind: 'pause', label: `${label} — needs your approval`, pause: { type: 'approval', reason: verdict.reason, request: req } };
@@ -161,7 +165,7 @@ export async function apiTool(args: any, env: ToolEnv, approvalToken?: string): 
   // Act as the user, with their current role in the chat's workspace.
   const member = env.ctx.db.get<{ role: Auth['role'] }>('SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?', [env.workspaceId, env.userId]);
   if (!member) return fail('You no longer have access to this workspace.', `${label} → forbidden`);
-  const token = mintInternalToken({ userId: env.userId, workspaceId: env.workspaceId, role: member.role, via: 'session' });
+  const token = mintInternalToken({ userId: env.userId, workspaceId: env.workspaceId, role: member.role, via: env.via ?? 'session' });
   const search = new URLSearchParams(Object.entries(query).filter(([, v]) => v != null).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : String(v)])).toString();
   let res;
   try {

@@ -28,6 +28,23 @@ export interface RunOptions {
   force?: boolean;
 }
 
+export type RunSelection = { columnIds?: number[]; rowIds?: number[] } & RunOptions;
+
+/**
+ * The cells a run would queue, per column (run() enqueues them; estimateRun() counts them).
+ * With no rowIds, every row; with no columnIds, every runnable column. Without force,
+ * cells that already ran (or are queued/running) are left alone.
+ */
+export function selectCells(store: Store, tableId: number, opts: RunSelection = {}): { col: Column; rowIds: number[] }[] {
+  const cols = store.columns(tableId).filter((c) => RUNNABLE.includes(c.type) && (!opts.columnIds || opts.columnIds.includes(c.id)));
+  const rowIds = opts.rowIds ?? store.rowIds(tableId);
+  return cols.map((col) => {
+    if (opts.force) return { col, rowIds };
+    const existing = new Map(store.db.all<{ row_id: number; status: string }>('SELECT row_id, status FROM gtm_cells WHERE column_id = ?', [col.id]).map((c) => [c.row_id, c.status]));
+    return { col, rowIds: rowIds.filter((id) => { const st = existing.get(id); return !st || st === 'idle' || st === 'error'; }) };
+  });
+}
+
 interface Outcome { value: unknown; status: 'done' | 'empty' | 'skipped'; error?: string; meta?: Record<string, unknown> }
 
 export class Engine {
@@ -83,18 +100,11 @@ export class Engine {
   }
 
   /** Queue cells. With no rowIds, every row; with no columnIds, every runnable column. */
-  run(tableId: number, opts: { columnIds?: number[]; rowIds?: number[] } & RunOptions = {}): number {
-    const cols = this.store.columns(tableId).filter((c) => RUNNABLE.includes(c.type) && (!opts.columnIds || opts.columnIds.includes(c.id)));
-    const rowIds = opts.rowIds ?? this.store.rowIds(tableId);
+  run(tableId: number, opts: RunSelection = {}): number {
     let n = 0;
     this.store.db.tx(() => {
-      for (const col of cols) {
-        const existing = opts.force ? new Map() : new Map(this.store.db.all(`SELECT row_id, status FROM gtm_cells WHERE column_id = ?`, [col.id]).map((c) => [c.row_id, c.status]));
-        for (const rowId of rowIds) {
-          const st = existing.get(rowId);
-          if (!opts.force && st && st !== 'idle' && st !== 'error') continue;
-          if (this.enqueue({ tableId, rowId, columnId: col.id, type: col.type })) n++;
-        }
+      for (const { col, rowIds } of selectCells(this.store, tableId, opts)) {
+        for (const rowId of rowIds) if (this.enqueue({ tableId, rowId, columnId: col.id, type: col.type })) n++;
       }
     });
     this.pump();
@@ -265,7 +275,7 @@ export class Engine {
         const v = getPath(row[cfg.source], cfg.path ?? '');
         return { value: v ?? null, status: v == null ? 'empty' : 'done' };
       }
-      case 'enrich': return this.enrich(cfg, row, j);
+      case 'enrich': return this.enrich(cfg, row, j, col);
       case 'signal': {
         const kind = signalKind(cfg.kind);
         const input = renderInputs(cfg.inputs, row) as any;
@@ -306,8 +316,11 @@ export class Engine {
     }
   }
 
-  private async enrich(cfg: any, row: Record<string, unknown>, j: Job): Promise<Outcome> {
+  private async enrich(cfg: any, row: Record<string, unknown>, j: Job, col: Column): Promise<Outcome> {
     const kind = enrichKind(cfg.kind);
+    // Steps that read the whole row (fit score) see the other cells, never action results.
+    const actions = new Set(this.store.columns(j.tableId).filter((c) => c.type === 'action').map((c) => c.name));
+    const others = Object.fromEntries(Object.entries(row).filter(([k]) => k !== col.name && !k.startsWith('_') && !actions.has(k)));
     const input = renderInputs(cfg.inputs, row) as EnrichInput;
     if (!kind.needs.some((group) => group.every((k) => input[k]))) {
       return { value: null, status: 'skipped', error: `Missing input — needs one of: ${kind.needs.map((g) => g.join(' + ')).join(' | ')}` };
@@ -326,7 +339,7 @@ export class Engine {
       if (blocked) { attempts.push({ provider: id, result: `skipped: ${blocked}`, ms: 0 }); continue; }
       const t = Date.now();
       try {
-        const hit = await step.run(input, this.ctx(j));
+        const hit = await step.run(input, { ...this.ctx(j), row: others });
         const found = hit && hit.value != null && hit.value !== '';
         attempts.push({ provider: id, result: found ? (hit.weak ? `weak: ${hit.confidence ?? 'unconfirmed'}` : 'found') : 'not found', ms: Date.now() - t });
         if (found && hit.weak) { fallback ??= { hit, id, label: step.label }; continue; }

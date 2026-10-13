@@ -86,6 +86,9 @@ export function SenderDrawer({ senderId, onClose }: { senderId: number | null; o
               {s.last_error ?? 'The last login failed.'}
             </Alert>
           )}
+          {s.status === 'Paused' && s.paused_reason && (
+            <Alert tone="yellow" title="Paused automatically">{s.paused_reason}. Resume it once the cause is fixed.</Alert>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button size="sm" icon={<Stethoscope className="size-4" />} onClick={() => actions.testConnection(s)}>Test connection</Button>
             <Button size="sm" icon={<RefreshCw className="size-4" />} onClick={() => actions.syncNow(s)}>Sync now</Button>
@@ -107,6 +110,8 @@ export function SenderDrawer({ senderId, onClose }: { senderId: number | null; o
             <Row label="Last synced">{s.last_synced_at ? <span title={fmtDateTime(s.last_synced_at)}>{fmtRelative(s.last_synced_at)}</span> : 'Not yet'}</Row>
             <Row label="Sent last 24h">{s.sent_last_24h} / {s.daily_limit}</Row>
             <Row label="Added">{fmtDateTime(s.created_at)}</Row>
+            <Row label="Health">{s.health_score == null ? 'Not checked yet' : `${s.health_score} / 100${s.health_reasons.length ? '' : ' · no problems found'}`}</Row>
+            {s.health_reasons.length > 0 && <ul className="list-disc pb-1.5 pl-4 text-xs text-slate-600">{s.health_reasons.map((r) => <li key={r}>{r}</li>)}</ul>}
             {s.last_error && s.status !== 'Disconnected' && <Row label="Last error"><span className="text-red-600">{s.last_error}</span></Row>}
           </Card>
 

@@ -21,6 +21,8 @@ description: Mailbox warmup and inbox placement — which mailboxes are warming 
 Reading health: a new mailbox needs about 2–3 weeks of warmup before cold sending. Inbox rate = landed_inbox ÷ (landed_inbox + landed_spam); treat ≥ 90% with no
 bounces as healthy. If the inbox rate drops, lower the cold `daily_limit` (`mailbox-settings`) before anything else, and
 check the domain's DNS (`sending-domains-and-mailboxes`). Keep warmup running alongside campaigns.
+Each mailbox's overall `health_score` and `health_reasons` (warmup, bounces, placement, blocklists, DNS) are on
+`GET /api/sender-emails/{id}` (`mailbox-settings`).
 
 ## Inbox placement tests
 A placement test sends one campaign step from chosen mailboxes to seed inboxes the user owns and reports

@@ -14,6 +14,7 @@ import { emit } from '../events.ts';
 import { localDayStart, openWindow, type SendSchedule } from '../lib/schedule.ts';
 import { domainOf } from '../lib/dns.ts';
 import { chooseVariant, composeCampaignEmail } from './compose.ts';
+import { checkEmail } from '../lib/emailCheck.ts';
 import { ensureThread } from './threads.ts';
 import { bumpVisits, dueAfterSend, resolveNextStep } from './branching.ts';
 import { mayEnterStep } from './abtest.ts';
@@ -222,9 +223,16 @@ export async function dispatch(ctx: Ctx, limit = 50): Promise<{ sent: number; fa
   for (const slot of due) {
     const claimed = ctx.db.run(`UPDATE scheduled_emails SET status = 'sending' WHERE id = ? AND status = 'scheduled'`, [slot.id]).changes;
     if (!claimed) continue;
-    const r = await sendSlot(ctx, slot);
-    if (r === 'sent') sent++;
-    else if (r === 'failed') failed++;
+    try {
+      const r = await sendSlot(ctx, slot);
+      if (r === 'sent') sent++;
+      else if (r === 'failed') failed++;
+    } catch (err: any) {
+      // Never leave a slot stuck in 'sending' or let one bad slot stop the batch.
+      ctx.db.run(`UPDATE scheduled_emails SET status = 'failed', error = ? WHERE id = ? AND status = 'sending'`, [String(err?.message ?? err).slice(0, 500), slot.id]);
+      ctx.log.error({ err, slot: slot.id }, 'dispatch failed');
+      failed++;
+    }
   }
   return { sent, failed };
 }
@@ -265,7 +273,23 @@ async function sendSlot(ctx: Ctx, slot: Row): Promise<'sent' | 'failed' | 'cance
     forceThread = !!previous;
   }
 
-  const { message, trackingToken } = composeCampaignEmail(ctx, { campaign, step, lead, sender, previous, forceThread });
+  // Back off this lead for 30 minutes so a broken mailbox or template does not hot-loop.
+  const backOff = () => db.update('campaign_leads', cl.id, { next_due_at: new Date(ctx.now().getTime() + 30 * 60_000).toISOString() });
+
+  let composed: ReturnType<typeof composeCampaignEmail>;
+  try {
+    composed = composeCampaignEmail(ctx, { campaign, step, lead, sender, previous, forceThread });
+  } catch (err: any) {
+    db.tx(() => { cancel(`could not build the email: ${String(err?.message ?? err)}`.slice(0, 500)); backOff(); });
+    return 'cancelled';
+  }
+  const { message, trackingToken } = composed;
+  // Pre-send check: a broken email (unfilled variable, empty body...) is held back, the rest of the batch goes on.
+  const { errors } = checkEmail({ ...composed.rendered, firstStep: slot.step_order === 1 });
+  if (errors.length) {
+    db.tx(() => { cancel(`pre-send check: ${errors.map((e) => e.message).join(' ')}`.slice(0, 500)); backOff(); });
+    return 'cancelled';
+  }
   try {
     const res = await ctx.mail.send(sender, message);
     if (res.rejected.length && !res.accepted.length) throw new Error(`rejected: ${res.response}`);
@@ -273,8 +297,7 @@ async function sendSlot(ctx: Ctx, slot: Row): Promise<'sent' | 'failed' | 'cance
     const msg = String(err?.message ?? err);
     db.tx(() => {
       db.update('scheduled_emails', slot.id, { status: 'failed', error: msg.slice(0, 500) });
-      // Back off this lead for 30 minutes so a broken mailbox does not hot-loop.
-      db.update('campaign_leads', cl.id, { next_due_at: new Date(ctx.now().getTime() + 30 * 60_000).toISOString() });
+      backOff();
       if (isAuthError(err)) markDisconnected(ctx, sender, msg);
     });
     ctx.log.warn({ slot: slot.id, err: msg }, 'send failed');
@@ -346,12 +369,19 @@ export function markDisconnected(ctx: Ctx, sender: Row, error: string) {
   emit(ctx, sender.workspace_id, 'EMAIL_ACCOUNT_DISCONNECTED', { sender_email_id: sender.id, email: sender.email, error }, { sender_email_id: sender.id });
 }
 
+/** Pauses a mailbox and cancels its booked slots. `reason` is set when Kinetic paused it on its own (engine/health.ts). */
+export function pauseSender(ctx: Ctx, sender: Row, reason: string | null = null) {
+  ctx.db.update('sender_emails', sender.id, { status: 'Paused', paused_reason: reason, updated_at: ctx.now().toISOString() });
+  cancelScheduled(ctx, { senderId: sender.id }, 'sender paused');
+}
+
 /** Cancels booked slots, e.g. when a campaign is paused or a lead replies. */
-export function cancelScheduled(ctx: Ctx, where: { campaignId?: number; leadId?: number; campaignLeadId?: number }, reason: string) {
+export function cancelScheduled(ctx: Ctx, where: { campaignId?: number; leadId?: number; campaignLeadId?: number; senderId?: number }, reason: string) {
   const clauses: string[] = [`status = 'scheduled'`];
   const params: (number | string)[] = [];
   if (where.campaignId) { clauses.push('campaign_id = ?'); params.push(where.campaignId); }
   if (where.leadId) { clauses.push('lead_id = ?'); params.push(where.leadId); }
   if (where.campaignLeadId) { clauses.push('campaign_lead_id = ?'); params.push(where.campaignLeadId); }
+  if (where.senderId) { clauses.push('sender_email_id = ?'); params.push(where.senderId); }
   ctx.db.run(`UPDATE scheduled_emails SET status = 'cancelled', error = ? WHERE ${clauses.join(' AND ')}`, [reason, ...params]);
 }

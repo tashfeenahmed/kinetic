@@ -12,6 +12,7 @@ import { mapsSearch, type MapsQuery } from './maps.ts';
 import { companyLookalikes, peopleLookalikes, type PersonSeed } from './lookalikes.ts';
 import { dedupeKey, rowIds, type SourceShape } from './normalize.ts';
 import { fundingRounds } from './funding/index.ts';
+import { hackerNewsSearch } from './hackerNews.ts';
 
 export const SOURCES = {
   google_maps: { label: 'Local businesses (Google Maps / OpenStreetMap)', shape: 'place' },
@@ -25,6 +26,7 @@ export const SOURCES = {
   apollo_people: { label: 'Apollo people', shape: 'person' },
   github_people: { label: 'GitHub org members', shape: 'person' },
   jobs: { label: 'Public job boards', shape: 'job' },
+  hacker_news: { label: 'Hacker News (launches, who is hiring, people asking for a tool)', shape: 'company' },
   hubspot_contacts: { label: 'HubSpot contacts', shape: 'person' },
   hubspot_companies: { label: 'HubSpot companies', shape: 'company' },
 } as const satisfies Record<string, { label: string; shape: SourceShape }>;
@@ -103,6 +105,7 @@ export async function runSource(app: AppCtx, workspaceId: number, source: Source
       return { records: await githubPeople(settings.get('GITHUB_TOKEN'), { ...p, limit: Math.min(limit, 200) }), label: 'GitHub org members' };
     }
     case 'jobs': return { records: await jobsSearch(settings, { domains: params.domains ?? params.query, keywords: params.keywords, limit }), label: 'public job boards' };
+    case 'hacker_news': return { records: await hackerNewsSearch(params, Math.min(limit, 1000), ctx.log), label: 'Hacker News' };
     case 'hubspot_contacts': return { records: await integ.hubspotImport(settings, 'contacts', ['email', 'firstname', 'lastname', 'jobtitle', 'company', 'website', 'phone', 'lifecyclestage'], limit), label: 'HubSpot' };
     case 'hubspot_companies': return { records: await integ.hubspotImport(settings, 'companies', ['name', 'domain', 'industry', 'numberofemployees', 'city', 'country'], limit), label: 'HubSpot' };
   }

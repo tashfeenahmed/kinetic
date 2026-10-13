@@ -21,7 +21,7 @@ interface Props {
 
 const INPUT_LABELS: Record<string, string> = {
   firstName: 'First name', lastName: 'Last name', fullName: 'Full name', email: 'Email', domain: 'Company domain / website',
-  companyName: 'Company name', linkedinUrl: 'LinkedIn URL', title: 'Job title', url: 'URL',
+  companyName: 'Company name', linkedinUrl: 'LinkedIn URL', title: 'Job title', url: 'URL', context: 'Extra details (optional)',
   target: 'Target', keywords: 'Keywords (comma-separated)', days: 'Look-back days',
 };
 
@@ -29,6 +29,7 @@ const TARGET_LABELS: Record<string, string> = {
   hiring: 'ATS board URL or slug (optional — auto-detected from the website)',
   github: 'GitHub org (optional — defaults to domain name)',
   website_change: 'Page URL to watch (defaults to homepage)',
+  website_audit: 'Page URL (optional — defaults to the homepage)',
 };
 
 /** Guess which column feeds an input, by name. */

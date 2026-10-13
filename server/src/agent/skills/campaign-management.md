@@ -17,7 +17,7 @@ A/B tests are `campaigns-ab-testing`. This skill covers everything after that.
 - Queue: `GET /api/campaigns/{id}/scheduled-emails`; across all campaigns `GET /api/scheduled-emails`
   (`status` scheduled|sending|sent|failed|cancelled, `date`, `tz`, `campaign_id`, `sender_email_id`),
   one email `GET /api/scheduled-emails/{id}`, today/upcoming totals `GET /api/scheduled-emails/summary`.
-- Workspace-wide totals: `GET /api/workspaces/v1.1/stats?days=30` and daily `GET /api/workspaces/v1.1/line-area-chart-stats?days=30`.
+- Workspace-wide totals: `GET /api/workspaces/v1.1/stats?days=30` (includes the deal funnel: `meetings`, `won`, `won_value`, `open_deals`) and daily `GET /api/workspaces/v1.1/line-area-chart-stats?days=30`.
 
 When reporting, give rates, not just counts, and compare to the campaign's own earlier period when asked "is it getting better".
 
@@ -60,6 +60,6 @@ Connected and warmed up (check `warmup-and-placement`).
 ## Sequence steps (quick changes)
 - Turn a step variant on/off: `PATCH /api/campaigns/sequence-steps/{id}/activate-or-deactivate` `{ "active": false }`.
 - Delete a step: `DELETE /api/campaigns/sequence-steps/{id}` (approval).
-- Preview with a real lead: `POST /api/campaigns/{id}/preview` `{ "email_subject": "…", "email_body": "…", "lead_id": 5 }`.
+- Preview with a real lead: `POST /api/campaigns/{id}/preview` `{ "email_subject": "…", "email_body": "…", "lead_id": 5 }`. The response includes the pre-send check: `errors` (unfilled variables, broken `{a|b}` options, empty parts — such emails are held back at send time) and `warnings` (spammy or machine-sounding phrases, too long, too many links). Fix warnings before launching; launch-check lists them too.
 - Send a test of a step: `POST /api/campaigns/sequence-steps/{id}/test-email` `{ "sender_email_id": 2, "to_email": "me@…" }`
   (approval; ask the user which address).

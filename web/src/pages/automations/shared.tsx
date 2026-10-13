@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Facebook, Github, Instagram, Linkedin, Twitter } from 'lucide-react';
+import { Facebook, Github, Instagram, Linkedin, MessageCircle, Twitter } from 'lucide-react';
 import { api } from '../../lib/api.ts';
 import { Badge, cx, type Tone } from '../../components/ui.tsx';
 
 // ---- API shapes (see server/src/companion) -------------------------------------------
 
-export type Network = 'linkedin' | 'sales_navigator' | 'instagram' | 'x' | 'facebook' | 'reddit' | 'github';
+export type Network = 'linkedin' | 'sales_navigator' | 'instagram' | 'x' | 'facebook' | 'whatsapp' | 'reddit' | 'github';
 export type Category = 'data' | 'action' | 'monitor';
 export type FieldType = 'text' | 'textarea' | 'url' | 'number' | 'select' | 'boolean' | 'targets' | 'template';
 
@@ -82,7 +82,7 @@ export function useTableColumns(tableId: number | null | undefined) {
 // ---- presentation --------------------------------------------------------------------
 
 export const NETWORK_LABEL: Record<Network, string> = {
-  linkedin: 'LinkedIn', sales_navigator: 'Sales Navigator', instagram: 'Instagram', x: 'X / Twitter', facebook: 'Facebook', reddit: 'Reddit', github: 'GitHub',
+  linkedin: 'LinkedIn', sales_navigator: 'Sales Navigator', instagram: 'Instagram', x: 'X / Twitter', facebook: 'Facebook', whatsapp: 'WhatsApp', reddit: 'Reddit', github: 'GitHub',
 };
 
 const NETWORK_STYLE: Record<Network, { bg: string; icon?: typeof Linkedin; mono?: string }> = {
@@ -91,6 +91,7 @@ const NETWORK_STYLE: Record<Network, { bg: string; icon?: typeof Linkedin; mono?
   instagram: { bg: 'bg-gradient-to-br from-[#f58529] via-[#dd2a7b] to-[#8134af]', icon: Instagram },
   x: { bg: 'bg-zinc-900', icon: Twitter },
   facebook: { bg: 'bg-[#1877f2]', icon: Facebook },
+  whatsapp: { bg: 'bg-[#25d366]', icon: MessageCircle },
   reddit: { bg: 'bg-[#ff4500]', mono: 'r/' },
   github: { bg: 'bg-zinc-800', icon: Github },
 };

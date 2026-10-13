@@ -48,7 +48,7 @@ Kinetic is all of it in **one process and one SQLite file** you own:
 
 |  |  |
 |---|---|
-| 🔎 **Find** | Free sources first: Google Maps / OpenStreetMap, YC directory, GitHub orgs, job boards, SEC Form D and UK Companies House (recently funded companies), lookalikes, CSV, webhooks — or just ask the agent. |
+| 🔎 **Find** | Free sources first: Google Maps / OpenStreetMap, YC directory, GitHub orgs, Hacker News (launches, hiring threads, people asking for tools), job boards, SEC Form D and UK Companies House (recently funded companies), lookalikes, CSV, webhooks — or just ask the agent. |
 | 🧪 **Enrich** | Waterfalls that try **free steps first** (company website + web search read with AI, email patterns checked over SMTP) and only spend paid credits (Apollo, Hunter, Prospeo, People Data Labs…) when they have to — with monthly budgets per vendor. |
 | 🧠 **Research** | AI columns that browse and return typed fields with sources. Any OpenRouter model, or a local model through Ollama / LM Studio. |
 | 📡 **Watch** | Signals for hiring, funding, news, SEC filings, tech-stack and page changes, new subdomains and job changes — with Slack and webhook alerts. |
@@ -123,7 +123,8 @@ Spreadsheets whose columns do work. Start from a template, import a CSV, POST ro
 |---|---|
 | **Enrichment** | Waterfalls across providers, free steps first: work email, verification, decision makers, company profile, LinkedIn, phone, domains. Each cell shows which provider answered. |
 | **AI research** | An agent per row that searches, reads pages and returns typed fields (with sources). |
-| **Signal** | Hiring, news, funding, SEC, tech stack, page changes, GitHub, Outreach status — with "changed in the last 7 days" markers. |
+| **Fit score** | Scores each row 0–100 against your ideal customer profile in the Knowledge Hub, with a one-line reason. |
+| **Signal** | Hiring, news, funding, SEC, tech stack, website audit (agency, booking, ad pixels, stale site), page changes, GitHub, Outreach status — with "changed in the last 7 days" markers. |
 | **Formula / Extract / HTTP** | JavaScript over the row, pull a field out of a result, call any API. |
 | **Action** | Send to a campaign or lead list, Slack, webhooks, HubSpot, Salesforce. |
 | **Function** | Reusable recipes — save a set of columns once, add them to any table. |
@@ -153,6 +154,9 @@ flowchart LR
 - **Leads** — one record per email across every table and campaign: status, lists, tags, custom variables, full email history and **where the email came from**. Unsubscribes and bounces are permanent.
 - **Campaigns** — multi-step sequences with A/B variants, spintax and `{VARIABLES}` from any table column (an AI "icebreaker" column becomes `{ICEBREAKER}`), per-mailbox limits and timezone windows.
 - **Master inbox** — every reply from every mailbox, labelled by AI, with reply templates and drafts.
+- **Pipeline** — interested replies open a deal, meeting requests move it on; track value through to won or lost.
+- **Pre-send check** — every email is checked before it goes: unfilled `{VARIABLES}` or broken spintax hold it back, and spammy or machine-sounding phrases, long bodies and too many links are flagged.
+- **Learnings** — A/B winners and won deals are written to the Knowledge Hub, so the agent writes the next campaign from what worked.
 
 <br/>
 
@@ -167,6 +171,7 @@ flowchart LR
 - **Inbox placement tests** — send to seed inboxes at Gmail, Outlook and Yahoo and see where you land.
 - **Domains on autopilot** — connect Cloudflare and Kinetic writes MX, SPF (merged, never duplicated), DKIM, DMARC and tracking records, then verifies them.
 - **Sending IPs** — pin mailboxes to fixed IPs or proxies.
+- **Mailbox health** — a 0–100 score per mailbox from bounces, warmup, placement and free blocklist checks; a bounce spike or a blocklisted domain pauses the mailbox and alerts you.
 
 <br/>
 
@@ -197,7 +202,8 @@ Every key is optional and stored encrypted. Kinetic works with **no paid keys at
 - **REST API** — 385 routes covering everything the UI does. OpenAPI spec at `/api/openapi.json`, interactive reference at `/api/reference`. Workspace-scoped API tokens.
 - **Webhooks** — 17 signed events (sent, opened, replied, interested, bounced, unsubscribed, signal changed…) with retries.
 - **Automations** — triggers and actions inside Kinetic, plus n8n / Make / Zapier recipes.
-- **Kinetic Companion** — a browser extension that runs LinkedIn, Instagram, X and Facebook steps inside your own logged-in browser, at a human pace.
+- **MCP server** — connect Claude Code, Claude Desktop or Cursor at `/mcp` with an API token; they get the same tools and playbooks as the built-in agent.
+- **Kinetic Companion** — a browser extension that runs LinkedIn, Instagram, X, Facebook and WhatsApp Web steps inside your own logged-in browser, at a human pace.
 
 <br/>
 

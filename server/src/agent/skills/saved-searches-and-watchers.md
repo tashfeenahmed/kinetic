@@ -22,6 +22,7 @@ or a name+city hash depending on the source) and appends only the new ones. Each
 | `apollo_companies` / `apollo_people` | `{"keywords": "logistics", "locations": "Germany"}` / `{"titles": "Head of Sales", "domains": "ramp.com"}` (needs APOLLO_API_KEY) |
 | `github_people` | `{"org": "vercel"}` |
 | `jobs` | `{"domains": "ramp.com, linear.app", "keywords": "sales"}` |
+| `hacker_news` | `{"mode": "launches", "keywords": "crm"}` — modes `launches`, `hiring`, `intent` (see `reddit-and-github-sources`) |
 
 Preview any source without saving: `POST /api/sources/preview` `{ "source": "yc_companies", "params": {...}, "limit": 20 }`.
 

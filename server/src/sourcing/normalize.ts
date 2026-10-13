@@ -1,13 +1,13 @@
 /**
- * Normalising identifiers (domains, emails, company names, LinkedIn URLs, place ids)
+ * Normalising identifiers (domains, emails, company names, LinkedIn URLs, place ids, phones)
  * and reading them out of loosely-named row objects. Shared by exclusions and the
  * dedupe keys of saved searches.
  */
 import { createHash } from 'node:crypto';
 import { toDomain } from '../gtm/lib/sandbox.ts';
 
-export type IdKind = 'domain' | 'email' | 'company' | 'linkedin' | 'place';
-export const ID_KINDS: IdKind[] = ['domain', 'email', 'company', 'linkedin', 'place'];
+export type IdKind = 'domain' | 'email' | 'company' | 'linkedin' | 'place' | 'phone';
+export const ID_KINDS: IdKind[] = ['domain', 'email', 'company', 'linkedin', 'place', 'phone'];
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Sites a business listing links to that are not the business's own domain.
@@ -49,6 +49,25 @@ export function normPlace(v: unknown): string {
   return String(v ?? '').trim().replace(/^places\//, '');
 }
 
+/**
+ * A phone number in E.164 ("+4915112345678"), or '' when it can't be one. Numbers written
+ * without a country code ("030 1234567") need `countryCode` ("49" or "+49"); without it
+ * only 11–15 digit numbers not starting with 0 are taken as already international.
+ */
+export function normPhone(v: unknown, countryCode?: string): string {
+  let s = String(v ?? '').trim().replace(/^(tel:|whatsapp:)/i, '').replace(/\s*(ext\.?|x|#)\s*\d+$/i, '');
+  if (/[a-z]/i.test(s.replace(/^\+/, ''))) return '';
+  const plus = /^\s*(\+|00)/.test(s);
+  s = s.replace(/^\s*(\+|00)/, '').replace(/\(0\)/g, '').replace(/\D/g, '');
+  const cc = String(countryCode ?? '').replace(/\D/g, '');
+  let digits: string;
+  if (plus) digits = s;
+  else if (cc) digits = s.startsWith(cc) && s.length > 10 ? s : cc + s.replace(/^0+/, '');
+  else if (s.length >= 11 && !s.startsWith('0')) digits = s;
+  else return '';
+  return /^[1-9]\d{7,14}$/.test(digits) ? `+${digits}` : '';
+}
+
 export function normalize(kind: IdKind, v: unknown): string {
   switch (kind) {
     case 'domain': return normDomain(v);
@@ -56,6 +75,7 @@ export function normalize(kind: IdKind, v: unknown): string {
     case 'company': return normCompany(v);
     case 'linkedin': return normLinkedin(v);
     case 'place': return normPlace(v);
+    case 'phone': return normPhone(v);
   }
 }
 
@@ -66,6 +86,7 @@ export function detectKind(v: string): IdKind | null {
   if (/linkedin\.com\//i.test(s)) return 'linkedin';
   if (s.includes('@') && normEmail(s)) return 'email';
   if (/^(ChIJ|places\/|osm:|node\/|way\/|relation\/)/.test(s)) return 'place';
+  if (/^\+?[\d\s().-]{8,}$/.test(s) && normPhone(s)) return 'phone';
   if (!/\s/.test(s) && normDomain(s) && /\.[a-z]{2,}$/i.test(toDomain(s))) return 'domain';
   return 'company';
 }
@@ -76,6 +97,7 @@ const FIELDS: Record<IdKind, string[]> = {
   linkedin: ['linkedin url', 'linkedin', 'linkedin_url', 'person linkedin', 'company linkedin', 'linkedin profile'],
   email: ['email', 'work email', 'email address', 'e-mail', 'email_address'],
   domain: ['company domain', 'domain', 'website', 'company website', 'url', 'company_domain', 'website url'],
+  phone: ['phone', 'phone number', 'mobile', 'mobile phone', 'whatsapp', 'cell', 'telephone', 'mobile_phone'],
   company: ['company', 'company name', 'organization', 'organisation', 'account', 'company_name', 'name'],
 };
 
@@ -130,6 +152,8 @@ export function dedupeKey(row: Record<string, unknown>, shape: SourceShape): str
     return `hash:${hash([get('full name') || `${get('first name')} ${get('last name')}`, ids.company ?? ids.domain ?? '', get('title')])}`;
   }
   if (shape === 'company' && ids.domain) return `domain:${ids.domain}`;
+  const hn = get('hn url');
+  if (hn) return `hn:${hn}`;
   if (ids.linkedin) return `li:${ids.linkedin}`;
   if (ids.domain && shape !== 'place') return `domain:${ids.domain}`;
   return `hash:${hash([ids.company ?? get('name'), get('city') || get('address') || get('location')])}`;

@@ -15,6 +15,7 @@ export const EVENT_TYPES = {
   EMAIL_ACCOUNT_ADDED: 'Email Account Added',
   EMAIL_ACCOUNT_DISCONNECTED: 'Email Account Disconnected',
   EMAIL_ACCOUNT_RECONNECTED: 'Email Account Reconnected',
+  SENDER_AUTO_PAUSED: 'Email Account Auto-Paused',
   TAG_ATTACHED: 'Tag Attached',
   TAG_REMOVED: 'Tag Removed',
   CAMPAIGN_COMPLETED: 'Campaign Completed',
@@ -28,6 +29,7 @@ export const EVENT_TYPES = {
   LINKEDIN_REPLY_RECEIVED: 'LinkedIn Reply Received',
   LINKEDIN_POST_ENGAGER: 'LinkedIn Post Engager',
   COMPANION_JOB_COMPLETED: 'Companion Job Completed',
+  DEAL_STAGE_CHANGED: 'Deal Stage Changed',
 } as const;
 
 export type EventType = keyof typeof EVENT_TYPES;

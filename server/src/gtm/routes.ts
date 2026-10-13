@@ -5,6 +5,7 @@ import { stringify as toCsv } from 'csv-stringify/sync';
 import type { Ctx } from '../context.ts';
 import { auth, canWrite, requireAdmin, defineRoutes, type Auth } from '../http.ts';
 import { RUNNABLE, type ColumnType } from './engine/store.ts';
+import { estimateRun } from './engine/estimate.ts';
 import { listModels, DEFAULT_MODEL } from './engine/agent.ts';
 import { ENRICH_KINDS } from './providers/catalog.ts';
 import { CREDIT_PROVIDERS, creditsOverview, setBudgets } from './providers/credits.ts';
@@ -83,6 +84,7 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
         store.createColumn(tableId, { name: 'Tech stack', type: 'signal', auto_run: true, config: { kind: 'tech_stack', inputs: { domain: '{{Company domain}}' } } });
         store.createColumn(tableId, { name: 'Open roles', type: 'signal', auto_run: true, config: { kind: 'hiring', inputs: { domain: '{{Company domain}}', companyName: '{{Company}}' } } });
         store.createColumn(tableId, { name: 'Research', type: 'ai', config: { prompt: 'Research {{Company}} ({{Company domain}}). What do they sell, to whom, and what changed recently?', outputs: [{ name: 'summary', type: 'string', description: 'two sentences' }, { name: 'icp', type: 'string', description: 'who they sell to' }], webSearch: true, fetchPages: true, maxSteps: 6 } });
+        store.createColumn(tableId, { name: 'Fit score', type: 'enrich', config: { kind: 'fit_score', inputs: { companyName: '{{Company}}', domain: '{{Company domain}}', context: '{{Research.summary}}' } } });
         break;
       case 'find_emails':
         text('Full name', 'Company domain');
@@ -359,13 +361,19 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
   });
 
   // ---------- running ----------
+  const runBody = z.object({ columnIds: z.array(z.number()).optional(), rowIds: z.array(z.number()).optional(), force: z.boolean().optional() });
   r.post('/api/gtm/tables/:id/run', 'Run cells', async (req) => {
     const a = canWrite(req);
     const tableId = tableOf(req, a);
-    const body = z.object({ columnIds: z.array(z.number()).optional(), rowIds: z.array(z.number()).optional(), force: z.boolean().optional() }).parse(req.body ?? {});
+    const body = runBody.parse(req.body ?? {});
     const own = new Set(store.rowIds(tableId));
     return { queued: engine.run(tableId, { ...body, rowIds: body.rowIds?.filter((rid) => own.has(rid)) }) };
-  });
+  }, { body: runBody });
+
+  r.post('/api/gtm/tables/:id/run/estimate', 'Estimate a run before starting it (same body as run): cells, AI tasks, worst-case paid credits per vendor vs. the monthly budget', async (req) => {
+    const tableId = tableOf(req, auth(req));
+    return estimateRun(store, settings, tableId, runBody.parse(req.body ?? {}));
+  }, { body: runBody });
 
   r.post('/api/gtm/tables/:id/stop', 'Cancel queued cells', async (req) => ({ cancelled: engine.cancel(tableOf(req, canWrite(req))) }));
 
@@ -437,11 +445,11 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
   });
 
   /** Pull prospects from a source into the table. */
-  r.post('/api/gtm/tables/:id/import/source', 'Import rows from YC, GitHub, job boards, HubSpot, Apollo, Google Maps or lookalikes (exclusions applied)', async (req) => {
+  r.post('/api/gtm/tables/:id/import/source', 'Import rows from YC, GitHub, job boards, Hacker News, HubSpot, Apollo, Google Maps or lookalikes (exclusions applied)', async (req) => {
     const a = canWrite(req);
     const tableId = tableOf(req, a);
     const body = z.object({
-      source: z.enum(['hubspot_contacts', 'hubspot_companies', 'apollo_people', 'apollo_companies', 'yc_companies', 'github_people', 'jobs', 'google_maps', 'company_lookalikes', 'people_lookalikes']),
+      source: z.enum(['hubspot_contacts', 'hubspot_companies', 'apollo_people', 'apollo_companies', 'yc_companies', 'github_people', 'jobs', 'hacker_news', 'google_maps', 'company_lookalikes', 'people_lookalikes']),
       exclude: z.boolean().default(true),
       params: z.record(z.string(), z.any()).default({}),
       limit: z.number().int().min(1).max(2000).default(100),

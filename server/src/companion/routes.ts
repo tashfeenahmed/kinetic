@@ -193,7 +193,7 @@ export function companionRoutes(app: FastifyInstance, ctx: Ctx) {
       const r = await renderMessage({
         template, profile, row: (t.target.row as Record<string, unknown> | undefined) ?? lead?.data ?? {},
         aiInstructions: String(t.params.ai_instructions ?? ''), settings: ctx.gtm!.settings,
-        maxLength: t.kind.includes('connect') ? 300 : 8000,
+        maxLength: t.kind.includes('connect') ? 300 : t.site === 'whatsapp' ? 4000 : 8000,
       });
       return { text: r.text };
     } catch (e: any) {

@@ -16,7 +16,7 @@ export function Modal({ title, onClose, children, footer }: { title: string; onC
   );
 }
 
-type Src = 'csv' | 'webhook' | 'yc_companies' | 'github_people' | 'hubspot_contacts' | 'hubspot_companies' | 'apollo_people' | 'apollo_companies';
+type Src = 'csv' | 'webhook' | 'yc_companies' | 'github_people' | 'hacker_news' | 'hubspot_contacts' | 'hubspot_companies' | 'apollo_people' | 'apollo_companies';
 
 export function ImportDialog({ tableId, webhookUrl, onClose, onDone }: { tableId: number; webhookUrl: string; onClose: () => void; onDone: () => void }) {
   const [src, setSrc] = useState<Src>('csv');
@@ -45,7 +45,7 @@ export function ImportDialog({ tableId, webhookUrl, onClose, onDone }: { tableId
     }
   }
 
-  const tabs: [Src, string][] = [['csv', 'CSV'], ['webhook', 'Webhook'], ['yc_companies', 'YC companies (free)'], ['github_people', 'GitHub org people (free)'], ['hubspot_contacts', 'HubSpot contacts'], ['hubspot_companies', 'HubSpot companies'], ['apollo_people', 'Apollo people search'], ['apollo_companies', 'Apollo company search']];
+  const tabs: [Src, string][] = [['csv', 'CSV'], ['webhook', 'Webhook'], ['yc_companies', 'YC companies (free)'], ['github_people', 'GitHub org people (free)'], ['hacker_news', 'Hacker News (free)'], ['hubspot_contacts', 'HubSpot contacts'], ['hubspot_companies', 'HubSpot companies'], ['apollo_people', 'Apollo people search'], ['apollo_companies', 'Apollo company search']];
   const curl = `curl -X POST ${webhookUrl} \\\n  -H 'content-type: application/json' \\\n  -d '{"Full name":"Ada Lovelace","Company domain":"example.com"}'`;
   return (
     <Modal title="Add rows" onClose={onClose} footer={src !== 'webhook' && <><span className="hint">{msg}</span><span style={{ flex: 1 }} /><button className="primary" disabled={busy || (src === 'csv' && !csv)} onClick={go}>{busy ? 'Importing…' : 'Import'}</button></>}>
@@ -86,6 +86,24 @@ export function ImportDialog({ tableId, webhookUrl, onClose, onDone }: { tableId
             <label>…or company domain<input {...p('domain')} placeholder="vercel.com" /></label>
           </div>
           <p className="hint">Public members of the org with name, email (if public), website, X and location. Without a GitHub token you get ~50 profiles per hour.</p>
+        </>
+      )}
+      {src === 'hacker_news' && (
+        <>
+          <div className="form-grid">
+            <label>Look for
+              <select value={params.mode ?? 'launches'} onChange={(e) => setParams({ ...params, mode: e.target.value })}>
+                <option value="launches">New launches (Show HN / Launch HN)</option>
+                <option value="hiring">Companies in "Who is hiring?"</option>
+                <option value="intent">People asking for a tool or alternatives</option>
+              </select>
+            </label>
+            <label>Keywords (comma = any)<input {...p('keywords')} placeholder="crm, analytics" /></label>
+            {params.mode === 'hiring'
+              ? <label>Months of threads<input type="number" min={1} max={6} {...p('months')} placeholder="1" /></label>
+              : <label>Days back<input type="number" min={1} {...p('days')} placeholder="30" /></label>}
+          </div>
+          <p className="hint">Free public Hacker News search. Launches and hiring posts give the company and its website; buyer-intent rows give the person and what they asked.</p>
         </>
       )}
       {src === 'apollo_people' && (

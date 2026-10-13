@@ -12,6 +12,8 @@ export interface Ctx {
   log: (message: string) => void;
   /** The cell's previous value, for change-detecting signals. */
   prev?: unknown;
+  /** The row's other cells (minus actions), for steps that read the whole row (fit score). */
+  row?: Record<string, unknown>;
 }
 
 /** Normalised inputs an enrichment column maps from row columns. */
@@ -25,6 +27,8 @@ export interface EnrichInput {
   linkedinUrl?: string;
   title?: string;
   url?: string;
+  /** Free-text extra details (e.g. "{{Research}}"); also makes the column wait for those columns. */
+  context?: string;
 }
 
 /** What one provider found. `value` is the headline shown in the grid. */

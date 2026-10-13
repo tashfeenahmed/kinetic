@@ -13,6 +13,9 @@ import { SaveAsFunctionDialog } from '../components/SaveAsFunctionDialog';
 import { useEventStream } from '../../lib/useEventStream';
 import { Popover } from '../../components/ui';
 
+/** Runs that may use paid credits on more rows than this ask first, showing the estimate. */
+const PAID_CONFIRM_ROWS = 10;
+
 type Panel =
   | { kind: 'picker' }
   | { kind: 'editor'; column: Column | null; type?: ColumnType; config?: any; name?: string }
@@ -73,7 +76,11 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
   }, () => { void load(); });
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 3000); };
-  const run = async (body: { columnIds?: number[]; rowIds?: number[]; force?: boolean }) => {
+  /** Runs cells; when paid vendors could be used on more than a few rows, confirms with the worst-case estimate first. */
+  const run = async (body: { columnIds?: number[]; rowIds?: number[]; force?: boolean }, question?: string) => {
+    const est = await api<{ paidCells: number; summary: string }>(`/api/gtm/tables/${tableId}/run/estimate`, { body }).catch(() => null);
+    const paid = est && est.paidCells > PAID_CONFIRM_ROWS ? est.summary : '';
+    if ((question || paid) && !confirm([question, paid, paid && 'Run now?'].filter(Boolean).join('\n\n'))) return;
     const r = await api(`/api/gtm/tables/${tableId}/run`, { body });
     flash(r.queued ? `Running ${r.queued} cell${r.queued === 1 ? '' : 's'}` : 'Nothing new to run — right-click cells to re-run');
   };
@@ -166,7 +173,7 @@ export function TablePage({ tableId, catalog, tables, onTablesChanged }: { table
               if (mode === 'edit') setPanel({ kind: 'editor', column: col });
               else if (mode === 'fn') setFnColumns([col.id]);
               else if (mode === 'run') void run({ columnIds: [col.id] });
-              else if (confirm(`Re-run "${col.name}" for all ${view.rows.length} rows?`)) void run({ columnIds: [col.id], force: true });
+              else void run({ columnIds: [col.id], force: true }, `Re-run "${col.name}" for all ${view.rows.length} rows?`);
             }}
           >
             <option value="">Column actions…</option>

@@ -265,6 +265,11 @@ export function opsRoutes(app: FastifyInstance, ctx: Ctx) {
     const r = db.get(
       `SELECT COUNT(DISTINCT lead_id) unique_replies, COUNT(DISTINCT CASE WHEN interested = 1 THEN lead_id END) interested
        FROM replies WHERE workspace_id = ? AND automated = 0 AND folder != 'bounced' AND received_at >= ?`, [a.workspaceId, since])!;
+    const deals = db.get(
+      `SELECT COUNT(CASE WHEN meeting_at >= ? THEN 1 END) meetings, COUNT(CASE WHEN stage = 'won' AND stage_changed_at >= ? THEN 1 END) won,
+         COALESCE(SUM(CASE WHEN stage = 'won' AND stage_changed_at >= ? THEN value END), 0) won_value,
+         COUNT(CASE WHEN stage NOT IN ('won','lost') THEN 1 END) open_deals
+       FROM deals WHERE workspace_id = ?`, [since, since, since, a.workspaceId])!;
     const unsub = db.get<{ n: number }>(`SELECT COUNT(*) n FROM events WHERE workspace_id = ? AND type = 'LEAD_UNSUBSCRIBED' AND created_at >= ?`, [a.workspaceId, since])!.n;
     const pct = (n: number) => (s.leads_contacted ? Math.round((n / s.leads_contacted) * 1000) / 10 : 0);
     const counts = db.get(
@@ -278,7 +283,7 @@ export function opsRoutes(app: FastifyInstance, ctx: Ctx) {
       Array(8).fill(a.workspaceId))!;
     return {
       data: {
-        ...s, ...r, unsubscribed: unsub,
+        ...s, ...r, ...deals, unsubscribed: unsub,
         reply_rate: pct(r.unique_replies), interested_rate: pct(r.interested), bounce_rate: pct(s.bounced), open_rate: pct(s.unique_opens),
         ...counts,
       },
@@ -356,6 +361,7 @@ function sampleData(type: EventType): Record<string, unknown> {
     case 'MANUAL_EMAIL_SENT': return { sent_email_id: 556, ...sender, to: ['jane@acme.com'], subject: 'Re: Quick question', lead_id: 42 };
     case 'EMAIL_ACCOUNT_ADDED': case 'EMAIL_ACCOUNT_RECONNECTED': return { ...sender, email: sender.sender_email };
     case 'EMAIL_ACCOUNT_DISCONNECTED': return { ...sender, email: sender.sender_email, error: 'Invalid credentials' };
+    case 'SENDER_AUTO_PAUSED': return { ...sender, reason: '6% of emails bounced in the last 7 days (3 of 50)' };
     case 'TAG_ATTACHED': case 'TAG_REMOVED': return { tag_id: 1, tag_name: 'Interested', taggable_id: 20, taggable_type: 'Campaign' };
     case 'CAMPAIGN_COMPLETED': return { campaign_id: 3, campaign_name: 'Q4 outreach' };
     case 'SIGNAL_CHANGED': return { table: { id: 4, name: 'Target accounts' }, row: { id: 18, label: 'Acme' }, column: { id: 31, name: 'Hiring (open roles)', kind: 'hiring' }, from: 12, to: 19 };
@@ -367,5 +373,6 @@ function sampleData(type: EventType): Record<string, unknown> {
     case 'LINKEDIN_CONNECTION_ACCEPTED': case 'LINKEDIN_REPLY_RECEIVED': return { linkedin_campaign: { id: 2, name: 'Founders Q4' }, lead: { id: 9, profile_url: 'https://www.linkedin.com/in/jane-doe/', full_name: 'Jane Doe', state: type === 'LINKEDIN_REPLY_RECEIVED' ? 'replied' : 'accepted' }, ...(type === 'LINKEDIN_REPLY_RECEIVED' ? { message: 'Thanks — happy to chat next week.' } : {}) };
     case 'LINKEDIN_POST_ENGAGER': return { automation: { id: 5, name: 'Competitor posts' }, post_url: 'https://www.linkedin.com/feed/update/urn:li:activity:7100000000000000000/', engager: { fullName: 'Jane Doe', profileUrl: 'https://www.linkedin.com/in/jane-doe/', engagement: 'comment', commentText: 'Great point!' } };
     case 'COMPANION_JOB_COMPLETED': return { automation: { id: 5, name: 'Head of Growth search', phantom: 'linkedin.search_export' }, run: { id: 12, status: 'completed', results: 240, new_results: 37, error: null }, table_id: 4 };
+    case 'DEAL_STAGE_CHANGED': return { deal_id: 8, ...lead, company: 'Acme', campaign_id: 3, campaign_name: 'Q4 outreach', from_stage: 'interested', to_stage: 'meeting', value: 12000, currency: 'EUR', lost_reason: null, source: 'reply' };
   }
 }

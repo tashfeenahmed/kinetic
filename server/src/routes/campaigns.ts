@@ -6,7 +6,8 @@ import type { Row } from '../db/db.ts';
 import { auth, badRequest, bool, canWrite, defineRoutes, HttpError, idList, idParam, notFound, pageQuery, paginate, parse } from '../http.ts';
 import { cancelScheduled, campaignSchedule, loadSteps } from '../engine/sequencer.ts';
 import { composeCampaignEmail } from '../engine/compose.ts';
-import { buildVariables, missingVariables } from '../lib/template.ts';
+import { BUILTIN_VARIABLES, buildVariables, missingVariables, render, varKey } from '../lib/template.ts';
+import { checkEmail } from '../lib/emailCheck.ts';
 import { isValidTimezone, nextWindow, timezones, WEEKDAYS } from '../lib/schedule.ts';
 import { attachLeads } from './leads.ts';
 import { tagsFor } from './tags.ts';
@@ -258,7 +259,7 @@ export function campaignRoutes(app: FastifyInstance, ctx: Ctx) {
   r.get('/api/campaigns/:id/launch-check', 'What still needs doing before launch', (req) => {
     const a = auth(req);
     const c = getCampaign(a.workspaceId, idParam(req));
-    return { data: { problems: launchProblems(ctx, c), warnings: validateBranching(ctx, c, loadSteps(ctx, c.id)).warnings } };
+    return { data: { problems: launchProblems(ctx, c), warnings: [...validateBranching(ctx, c, loadSteps(ctx, c.id)).warnings, ...templateIssues(ctx, c).warnings] } };
   });
 
   r.patch('/api/campaigns/:id/pause', 'Pause campaign', (req) => {
@@ -435,7 +436,7 @@ export function campaignRoutes(app: FastifyInstance, ctx: Ctx) {
     return { data: { success: true } };
   }, { body: testBody });
 
-  const previewBody = z.object({ email_subject: z.string(), email_body: z.string(), lead_id: z.coerce.number().int().optional(), sender_email_id: z.coerce.number().int().optional() });
+  const previewBody = z.object({ email_subject: z.string(), email_body: z.string(), lead_id: z.coerce.number().int().optional(), sender_email_id: z.coerce.number().int().optional(), thread_reply: z.boolean().optional(), step_order: z.coerce.number().int().optional() });
   sr.post('/api/campaigns/:id/preview', 'Render a step for a lead', (req) => {
     const a = auth(req);
     const c = getCampaign(a.workspaceId, idParam(req));
@@ -447,9 +448,12 @@ export function campaignRoutes(app: FastifyInstance, ctx: Ctx) {
       || db.get('SELECT s.* FROM sender_emails s JOIN campaign_sender_emails cs ON cs.sender_email_id = s.id WHERE cs.campaign_id = ? LIMIT 1', [c.id])
       || { id: 0, name: 'Your Name', email: 'you@yourdomain.com', email_signature: '' };
     const step = { id: 0, step_order: 1, email_subject: b.email_subject, email_body: b.email_body, thread_reply: 0 };
-    const { message } = composeCampaignEmail(ctx, { campaign: { ...c, open_tracking: 0, click_tracking: 0 }, step, lead, sender, previous: null });
+    const { message, rendered } = composeCampaignEmail(ctx, { campaign: { ...c, open_tracking: 0, click_tracking: 0 }, step, lead, sender, previous: null });
+    const check = checkEmail({ subject: rendered.subject, body: rendered.body, threaded: !!b.thread_reply, firstStep: (b.step_order ?? 1) === 1 });
     const vars = buildVariables({ lead: { ...lead, email: lead.email, custom_variables: JSON.parse(lead.custom_variables || '{}') }, sender: { name: sender.name, email: sender.email, signature: sender.email_signature }, extra: { UNSUBSCRIBE_LINK: 'x' } });
-    return { data: { subject: message.subject, text: message.text, html: message.html ?? null, lead: { id: lead.id, email: lead.email }, missing_variables: [...new Set([...missingVariables(b.email_subject, vars), ...missingVariables(b.email_body, vars)])] } };
+    const missing = [...new Set([...missingVariables(b.email_subject, vars), ...missingVariables(b.email_body, vars)])];
+    const errors = check.errors.filter((e) => !(e.code === 'leftover_variable' && missing.includes(varKey(e.excerpt!.slice(1, -1)))));
+    return { data: { subject: message.subject, text: message.text, html: message.html ?? null, lead: { id: lead.id, email: lead.email }, missing_variables: missing, errors, warnings: check.warnings } };
   }, { body: previewBody });
 
   // ---- leads in campaign ----
@@ -638,12 +642,42 @@ export function launchProblems(ctx: Ctx, c: Row): string[] {
   if (!leads) problems.push('Add leads to the campaign.');
   // Branch targets must exist; A/B metrics need their tracking switched on.
   problems.push(...validateBranching(ctx, c, loadSteps(ctx, c.id)).problems);
+  problems.push(...templateIssues(ctx, c).errors);
   for (const s of db.all('SELECT step_order, ab_test FROM sequence_steps WHERE campaign_id = ? AND variant_of_step_id IS NULL AND ab_test IS NOT NULL', [c.id])) {
     const cfg = parseAbConfig(s.ab_test);
     if (cfg.enabled && cfg.metric === 'open_rate' && !c.open_tracking) problems.push(`Step ${s.step_order}'s A/B test picks by open rate, but open tracking is off.`);
     if (cfg.enabled && cfg.metric === 'click_rate' && !c.click_tracking) problems.push(`Step ${s.step_order}'s A/B test picks by click rate, but click tracking is off.`);
   }
   return problems;
+}
+
+/**
+ * Pre-send check over every active step template, rendered with a stand-in value for
+ * every variable the campaign's leads have. Leftover braces mean a misspelt variable
+ * or broken text options. Empty body/subject are reported by launchProblems itself.
+ */
+export function templateIssues(ctx: Ctx, c: Row): { errors: string[]; warnings: string[] } {
+  const known = new Set<string>(BUILTIN_VARIABLES);
+  for (const r of ctx.db.all(
+    `SELECT DISTINCT j.key FROM campaign_leads cl JOIN leads l ON l.id = cl.lead_id, json_each(CASE WHEN json_valid(l.custom_variables) THEN l.custom_variables ELSE '{}' END) j
+     WHERE cl.campaign_id = ?`, [c.id])) known.add(varKey(String(r.key)));
+  const vars = new Map([...known].map((k) => [k, 'x']));
+  // Before leads are added there is nothing to compare custom variables against.
+  const hasLeads = !!ctx.db.get('SELECT 1 FROM campaign_leads WHERE campaign_id = ? LIMIT 1', [c.id]);
+  const errors = new Set<string>();
+  const warnings = new Set<string>();
+  for (const s of ctx.db.all('SELECT * FROM sequence_steps WHERE campaign_id = ? AND active = 1 ORDER BY step_order, id', [c.id])) {
+    const opts = { onUnknown: hasLeads ? undefined : () => 'x' };
+    const r = checkEmail({
+      subject: render(s.email_subject ?? '', vars, opts),
+      body: render(s.email_body ?? '', vars, opts),
+      threaded: !!s.thread_reply && s.step_order > 1,
+      firstStep: s.step_order === 1,
+    });
+    for (const e of r.errors) if (e.code !== 'empty_body' && e.code !== 'empty_subject') errors.add(`Step ${s.step_order}: ${e.message}`);
+    for (const w of r.warnings) warnings.add(`Step ${s.step_order}: ${w.message}`);
+  }
+  return { errors: [...errors], warnings: [...warnings] };
 }
 
 /** Day-by-day counts for charts (UTC days). */

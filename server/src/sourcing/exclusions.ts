@@ -1,5 +1,5 @@
 /**
- * Workspace exclusion lists: domains, emails, company names, LinkedIn URLs and place ids
+ * Workspace exclusion lists: domains, emails, company names, LinkedIn URLs, place ids and phones
  * that sourcing never brings back (customers, competitors, do-not-contact, people already
  * in campaigns). Values are stored normalised in an indexed table, so lists of 300k+
  * entries insert in one batched transaction and lookups stay fast.
@@ -117,7 +117,7 @@ export interface FilterResult<T> {
 
 /**
  * Drop rows matching any exclusion in the workspace. A row matches on its place id,
- * LinkedIn URL, email, domain (an email's domain counts) or normalised company name.
+ * LinkedIn URL, email, phone, domain (an email's domain counts) or normalised company name.
  */
 export function filterExcluded<T extends Record<string, unknown>>(db: Db, workspaceId: number, rows: T[]): FilterResult<T> {
   if (!rows.length || !hasExclusions(db, workspaceId)) return { kept: rows, excluded: 0, reasons: {} };
@@ -138,7 +138,7 @@ export function filterExcluded<T extends Record<string, unknown>>(db: Db, worksp
 }
 
 function matchKind(id: Partial<Record<IdKind, string>>, hits: Record<IdKind, Set<string>>): IdKind | null {
-  for (const k of ['place', 'linkedin', 'email', 'domain', 'company'] as IdKind[]) if (id[k] && hits[k].has(id[k]!)) return k;
+  for (const k of ['place', 'linkedin', 'email', 'phone', 'domain', 'company'] as IdKind[]) if (id[k] && hits[k].has(id[k]!)) return k;
   const emailDomain = id.email?.split('@')[1];
   if (emailDomain && !isFreemail(emailDomain) && hits.domain.has(emailDomain)) return 'domain';
   return null;

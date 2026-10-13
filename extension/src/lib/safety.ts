@@ -22,6 +22,7 @@ const LOGIN_PATHS: Record<Site, RegExp> = {
   instagram: /\/accounts\/login/,
   x: /\/(i\/flow\/login|login)/,
   facebook: /\/login(\.php)?/,
+  whatsapp: /$^/, // the QR code shows on the same URL (checked in sites/whatsapp.ts)
   reddit: /\/login/,
   github: /\/login/,
 };
@@ -30,6 +31,7 @@ const CHALLENGE_PATHS: Record<Site, RegExp> = {
   instagram: /\/challenge\//,
   x: /\/account\/access/,
   facebook: /\/checkpoint\//,
+  whatsapp: /$^/,
   reddit: /$^/,
   github: /$^/,
 };

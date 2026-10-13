@@ -20,6 +20,7 @@ import type { Ctx } from '../context.ts';
 import type { Row } from '../db/db.ts';
 import { emit } from '../events.ts';
 import { hashSeed } from '../lib/template.ts';
+import { tryAddLearning } from '../knowledge/learnings.ts';
 import { loadSteps } from './sequencer.ts';
 
 export const METRICS = ['reply_rate', 'interested_rate', 'positive_reply_rate', 'open_rate', 'click_rate'] as const;
@@ -253,7 +254,7 @@ export function applyWinner(ctx: Ctx, campaign: Row, main: Row, winnerId: number
   const winner = rows.find((r) => r.id === winnerId);
   if (!winner) throw new Error('winner is not a variant of this step');
   const cfg = parseAbConfig(main.ab_test);
-  return db.tx(() => {
+  const decisionId = db.tx(() => {
     const losers = rows.filter((r) => r.id !== winnerId && r.active).map((r) => r.id as number);
     const now = ctx.now().toISOString();
     if (losers.length) {
@@ -277,6 +278,30 @@ export function applyWinner(ctx: Ctx, campaign: Row, main: Row, winnerId: number
     }, { campaign_id: campaign.id });
     return decisionId;
   });
+  tryAddLearning(ctx, campaign.workspace_id, abLearning(campaign, rows, winnerId, cfg, result, by));
+  return decisionId;
+}
+
+/** One line for the Knowledge Hub's Learnings doc, e.g. `Campaign X step 1: subject "A" beat "B" on reply rate (4.1% vs 1.9%, …)`. */
+export function abLearning(campaign: Row, rows: Row[], winnerId: number, cfg: AbConfig, result: TestResult | null, by: 'auto' | 'manual'): string {
+  const ordered = orderedVariants(rows);
+  const win = ordered.find((r) => r.id === winnerId)!;
+  const stats = new Map(result?.variants.map((v) => [v.id, v]) ?? []);
+  const rivals = ordered.filter((r) => r.id !== winnerId && (stats.get(r.id)?.sent ?? 1) > 0);
+  // The strongest loser is the fairest comparison.
+  const loser = rivals.reduce<Row | undefined>((best, r) => (!best || (stats.get(r.id)?.metric_rate ?? 0) > (stats.get(best.id)?.metric_rate ?? 0) ? r : best), undefined);
+  const bySubject = !!win.email_subject && !!loser?.email_subject && win.email_subject !== loser.email_subject;
+  const clip = (t: string) => { const s = String(t ?? '').replace(/\s+/g, ' ').trim(); return s.length > 70 ? `${s.slice(0, 70)}…` : s; };
+  const what = (r: Row) => `"${clip(bySubject ? r.email_subject : r.email_body)}"`;
+  const head = `Campaign ${campaign.name} step ${win.step_order}: ${bySubject ? 'subject' : 'email'} ${what(win)}`;
+  if (!loser) return `${head} was kept as the winner (${by === 'manual' ? 'picked by hand' : 'picked automatically'}).`;
+  const ws = stats.get(win.id);
+  const ls = stats.get(loser.id);
+  const n = [...stats.values()].reduce((sum, v) => sum + v.mature_sent, 0);
+  const nums = ws && ls
+    ? ` (${ws.metric_rate}% vs ${ls.metric_rate}%, n=${n}${ws.confidence != null ? `, ${Math.round(ws.confidence * 100)}% confidence` : ''}${by === 'manual' ? ', picked by hand' : ''})`
+    : by === 'manual' ? ' (picked by hand)' : '';
+  return `${head} beat ${what(loser)} on ${cfg.metric.replace(/_/g, ' ')}${nums}.`;
 }
 
 /** Undoes the current decision: re-activates the variants it switched off. */

@@ -26,10 +26,12 @@ import { gtmLinkRoutes } from './gtm/linkRoutes.ts';
 import { visitorRoutes } from './visitors/routes.ts';
 import { sourcingRoutes } from './sourcing/routes.ts';
 import { agentRoutes } from './agent/routes.ts';
+import { mcpRoutes } from './agent/mcp.ts';
 import { knowledgeRoutes } from './knowledge/routes.ts';
 import { replyAiRoutes } from './routes/replyAi.ts';
 import { leadFilterRoutes } from './routes/leadFilters.ts';
 import { companionRoutes } from './companion/routes.ts';
+import { dealRoutes } from './routes/deals.ts';
 
 const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'web', 'dist');
 
@@ -88,9 +90,11 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
   gtmHookRoutes(app, ctx);
   knowledgeRoutes(app, ctx);
   agentRoutes(app, ctx);
+  mcpRoutes(app, ctx);
   replyAiRoutes(app, ctx);
   leadFilterRoutes(app, ctx);
   companionRoutes(app, ctx);
+  dealRoutes(app, ctx);
   docsRoutes(app, ctx);
   visitorRoutes(app, ctx);
 
