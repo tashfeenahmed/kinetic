@@ -58,13 +58,16 @@ export class RealMailGateway implements MailGateway {
     return { proxy: proxy || undefined, localAddress: r?.local_address || undefined };
   }
 
-  /** Returns credentials, refreshing the OAuth access token when it is about to expire. */
-  async credentials(sender: Row): Promise<{ user: string; pass?: string; accessToken?: string }> {
+  /**
+   * Returns credentials, refreshing the OAuth access token when it is about to expire
+   * (or always, with `force`: the provider rejected a token that hasn't expired yet).
+   */
+  async credentials(sender: Row, force = false): Promise<{ user: string; pass?: string; accessToken?: string }> {
     const user = sender.username || sender.email;
     if (sender.auth_type !== 'oauth') return { user, pass: decrypt(sender.secret_enc) };
 
     const expires = sender.oauth_expires_at ? Date.parse(sender.oauth_expires_at) : 0;
-    if (sender.oauth_access_token_enc && expires - Date.now() > 120_000) {
+    if (!force && sender.oauth_access_token_enc && expires - Date.now() > 120_000) {
       return { user, accessToken: decrypt(sender.oauth_access_token_enc) };
     }
     const provider = sender.provider as OAuthProvider;
@@ -126,14 +129,34 @@ export class RealMailGateway implements MailGateway {
     }
   }
 
+  /**
+   * Runs `fn` on a logged-in IMAP connection. Retries once when the connection times out or
+   * drops before login (Outlook does this now and then), and once with a freshly refreshed
+   * token when an OAuth login is rejected (e.g. the access token was revoked early).
+   */
   async withImap<T>(sender: Row, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
-    const creds = await this.credentials(sender);
     const { proxy } = this.egress(sender);
-    return runImap(
-      { host: sender.imap_server, port: sender.imap_port, secure: !!sender.imap_secure, auth: creds.accessToken ? { user: creds.user, accessToken: creds.accessToken } : { user: creds.user, pass: creds.pass! }, proxy },
-      fn,
-    );
+    const attempt = async (force: boolean) => {
+      const creds = await this.credentials(sender, force);
+      return runImap(
+        { host: sender.imap_server, port: sender.imap_port, secure: !!sender.imap_secure, auth: creds.accessToken ? { user: creds.user, accessToken: creds.accessToken } : { user: creds.user, pass: creds.pass! }, proxy },
+        fn,
+      );
+    };
+    try {
+      return await attempt(false);
+    } catch (e: any) {
+      if (sender.auth_type === 'oauth' && isLoginRejected(e)) return attempt(true);
+      if (isTransientConnectError(e)) {
+        await new Promise((r) => setTimeout(r, this.retryDelayMs));
+        return attempt(false);
+      }
+      throw e;
+    }
   }
+
+  /** Pause before retrying a connection that timed out (tests set it to 0). */
+  retryDelayMs = 3000;
 
   async verify(sender: Row) {
     let smtp: string | null = null;
@@ -175,12 +198,29 @@ export async function runImap<T>(opts: ImapOptions, fn: (client: ImapFlow) => Pr
     socketTimeout: 120_000,
   } as any);
   client.on('error', () => { /* surfaced through the awaited calls */ });
-  await client.connect();
+  try {
+    await client.connect();
+  } catch (e: any) {
+    e.stage = 'connect';
+    throw e;
+  }
   try {
     return await fn(client);
   } finally {
     await client.logout().catch(() => client.close());
   }
+}
+
+/** The server refused the login (as opposed to a network problem). */
+export function isLoginRejected(e: any): boolean {
+  if (e?.authenticationFailed) return true;
+  return /AUTHENTICATIONFAILED|AUTHENTICATE failed|Login failed|Invalid credentials/i.test(`${e?.responseText ?? ''} ${e?.message ?? ''}`);
+}
+
+/** A connection that timed out or dropped before we got going — worth one more try. */
+export function isTransientConnectError(e: any): boolean {
+  if (e?.stage !== 'connect' || isLoginRejected(e)) return false;
+  return /ETIMEDOUT|ECONNRESET|ECONNREFUSED|EPIPE|EAI_AGAIN|ENOTFOUND|timed? ?out|required time|Connection closed|socket hang up/i.test(`${e?.code ?? ''} ${e?.message ?? ''}`);
 }
 
 export function withSeedImap<T>(seed: ImapAccount, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
