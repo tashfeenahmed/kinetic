@@ -13,6 +13,7 @@ import { cancelScheduled } from '../engine/sequencer.ts';
 import { escapeHtml, htmlToText, looksLikeHtml, stripQuoted, textToHtml } from '../lib/html.ts';
 import { attachLeads } from './leads.ts';
 import { markdownToHtml } from '../lib/markdown.ts';
+import { realFiles } from '../mail/classify.ts';
 
 const attachmentInput = z.object({ filename: z.string().min(1), content_base64: z.string(), content_type: z.string().optional() });
 const sendFields = {
@@ -34,7 +35,8 @@ function decodeAttachments(list: z.infer<typeof attachmentInput>[]) {
 
 /** Attachments JSON from a row -> what the API returns (no file paths). */
 function attachmentLinks(json: string, base: string) {
-  return (JSON.parse(json || '[]') as Row[]).map((a, i) => ({ filename: a.filename, size: a.size, content_type: a.content_type, inline: !!a.inline, url: `${base}/${i}` }));
+  // The url keeps each file's stored index; realFiles also tidies rows saved before it existed.
+  return realFiles((JSON.parse(json || '[]') as Row[]).map((a, i) => ({ filename: a.filename as string, size: a.size, content_type: a.content_type, inline: !!a.inline, url: `${base}/${i}` })));
 }
 
 // Types a browser shows safely in a tab: viewed with ?inline=1, everything else always downloads.
@@ -45,7 +47,7 @@ function sendAttachment(req: any, reply: any, json: string) {
   if (!att || !existsSync(att.path)) throw notFound('attachment');
   const type = String(att.content_type || 'application/octet-stream').toLowerCase().split(';')[0]!.trim();
   const view = req.query?.inline === '1' && VIEWABLE.has(type);
-  const name = String(att.filename || 'attachment').replace(/[\r\n"\\]/g, '');
+  const name = String(realFiles([att])[0]?.filename || att.filename || 'attachment').replace(/[\r\n"\\]/g, '');
   reply.header('content-type', view && type === 'text/plain' ? 'text/plain; charset=utf-8' : view ? type : 'application/octet-stream');
   reply.header('content-disposition', `${view ? 'inline' : 'attachment'}; filename="${name.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`);
   reply.header('x-content-type-options', 'nosniff');
@@ -232,7 +234,7 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
     const header = `---------- Forwarded message ---------\nFrom: ${original.from_name} <${original.from_email}>\nDate: ${new Date(original.received_at).toUTCString()}\nSubject: ${original.subject}\nTo: ${original.to_email}`;
     const prev = original.body_text || htmlToText(original.body_html);
     // The original's files go along, as in a normal mail client (inline images are already in its HTML).
-    const originalFiles = (JSON.parse(original.attachments || '[]') as Row[]).filter((f) => !f.inline && existsSync(f.path))
+    const originalFiles = realFiles(JSON.parse(original.attachments || '[]') as (Row & { filename: string })[]).filter((f) => !f.inline && existsSync(f.path))
       .map((f) => ({ filename: f.filename as string, content: readFileSync(f.path), contentType: f.content_type as string }));
     const files = [...originalFiles, ...decodeAttachments(b.attachments)];
     if (files.reduce((n, f) => n + f.content.length, 0) > 25 * 1024 * 1024) throw new HttpError(422, { error: 'validation_error', message: 'The attachments are over 25 MB together, too big to forward.' });
