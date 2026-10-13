@@ -1,6 +1,7 @@
 {
   "name": "kinetic",
   "private": true,
+  "license": "MIT",
   "version": "0.1.0",
   "description": "Kinetic: GTM tables (enrichment, AI research, signals) and cold email outreach (campaigns, master inbox, warmup) in one self-hosted app.",
   "type": "module",
