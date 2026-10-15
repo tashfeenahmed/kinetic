@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { Icon } from '../components/Icon';
+import { useAuth } from '../../lib/auth.tsx';
 
 interface KeyInfo {
   key: string; label: string; group: string; priority: 'start' | 'recommended' | 'optional' | 'crm';
@@ -24,6 +25,10 @@ export function Settings({ onSaved, embedded }: { onSaved: () => void; embedded?
   const [tests, setTests] = useState<Record<string, { ok?: boolean; detail: string }>>({});
   const [filter, setFilter] = useState<'all' | KeyInfo['priority'] | 'missing'>('all');
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+  const { me } = useAuth();
+  // Only admins can change keys (the API refuses others); say so instead of letting a save fail.
+  const canEdit = !me || me.role === 'admin';
 
   useEffect(() => { api<KeyInfo[]>('/api/gtm/keys').then(setKeys); }, []);
 
@@ -39,12 +44,26 @@ export function Settings({ onSaved, embedded }: { onSaved: () => void; embedded?
   const starters = keys.filter((k) => k.priority === 'start');
 
   async function save() {
-    setKeys(await api('/api/gtm/keys', { method: 'PUT', body: draft }));
+    setError('');
+    try {
+      setKeys(await api('/api/gtm/keys', { method: 'PUT', body: draft }));
+    } catch (e) {
+      setError(`Not saved: ${(e as Error).message}`);
+      return;
+    }
     setDraft({});
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     onSaved();
   }
+
+  // Typed keys live only in this page until saved: warn before they are lost.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
   async function test(id: string) {
     setTests((t) => ({ ...t, [id]: { detail: 'checking…' } }));
     const r = await api(`/api/gtm/keys/test/${id}`, { body: {} }).catch((e) => ({ ok: false, detail: e.message }));
@@ -60,9 +79,12 @@ export function Settings({ onSaved, embedded }: { onSaved: () => void; embedded?
         </div>
         <span style={{ flex: 1 }} />
         {saved && <span className="ok">Saved ✓</span>}
-        {dirty && <button className="ghost" onClick={() => setDraft({})}>Discard</button>}
-        <button className="primary" disabled={!dirty} onClick={save}>Save {dirty ? Object.keys(draft).length : ''} change{Object.keys(draft).length === 1 ? '' : 's'}</button>
+        {error && <span className="err">{error}</span>}
+        {canEdit && dirty && <button className="ghost" onClick={() => setDraft({})}>Discard</button>}
+        {canEdit && <button className="primary" disabled={!dirty} onClick={save}>Save {dirty ? Object.keys(draft).length : ''} change{Object.keys(draft).length === 1 ? '' : 's'}</button>}
       </div>
+      {!canEdit && <p className="hint err">Only workspace admins can add or change keys. Ask an admin to add the key here; you can still see which ones are set.</p>}
+      {canEdit && dirty && <p className="hint">You have unsaved keys. Click <b>Save</b> above, or they are lost when you leave this page.</p>}
 
       <section className="card free-card">
         <header><h3>Works free, no keys</h3></header>
@@ -108,12 +130,12 @@ export function Settings({ onSaved, embedded }: { onSaved: () => void; embedded?
                 <input
                   type={k.secret === false ? 'text' : 'password'}
                   autoComplete="off"
-                  disabled={k.fromEnv}
+                  disabled={k.fromEnv || !canEdit}
                   placeholder={k.fromEnv ? `set in .env (${k.preview})` : k.set ? k.preview : k.placeholder ?? 'not set'}
                   value={draft[k.key] ?? ''}
                   onChange={(e) => setDraft({ ...draft, [k.key]: e.target.value })}
                 />
-                {k.set && !k.fromEnv && <button className="ghost sm" title="Remove on save" onClick={() => setDraft({ ...draft, [k.key]: '' })}>remove</button>}
+                {canEdit && k.set && !k.fromEnv && <button className="ghost sm" title="Remove on save" onClick={() => setDraft({ ...draft, [k.key]: '' })}>remove</button>}
                 {draft[k.key] === '' && k.set && <small className="err">will be removed</small>}
               </div>
             </div>

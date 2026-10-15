@@ -117,7 +117,7 @@ export function ChoosePasswordPage() {
 
   return (
     <AuthShell title={`Welcome${me?.name ? `, ${me.name.split(' ')[0]}` : ''}`}
-      subtitle={me?.team ? `You’ve been added to ${me.team.name} as ${me.team.role === 'admin' ? 'an admin' : `a ${me.team.role}`}.` : 'Choose your password to continue.'}
+      subtitle={me?.team ? `You’ve been added to ${me.team.name} as ${`${/^[aeiou]/.test(me.team.role) ? 'an' : 'a'} ${me.team.role}`}.` : 'Choose your password to continue.'}
       footer={<button onClick={signOut} className="text-slate-500 underline hover:text-slate-700">Sign out</button>}>
       <form onSubmit={submit} className="space-y-4">
         <p className="text-sm text-slate-600">You signed in with a temporary password. Choose your own to continue.</p>
