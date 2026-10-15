@@ -426,6 +426,11 @@ async function hackerNews(input: SignalInput, ctx: Ctx): Promise<Hit | null> {
 
 // ---------- GDELT global news (free, 1 request / 5 s) ----------
 let gdeltChain: Promise<unknown> = Promise.resolve();
+/** After GDELT refuses, skip it for a while: its limiter keeps refusing, and each try costs seconds. */
+let gdeltPausedUntil = 0;
+const GDELT_PAUSE_MS = 10 * 60_000;
+export function resetGdeltPause() { gdeltPausedUntil = 0; }
+
 async function gdelt(input: SignalInput, ctx: Ctx): Promise<Hit | null> {
   const name = input.companyName;
   if (!name) return null;
@@ -434,21 +439,19 @@ async function gdelt(input: SignalInput, ctx: Ctx): Promise<Hit | null> {
   if (name.replace(/\W/g, '').length < 3) throw new Error('GDELT needs a company name of at least 3 letters');
   const base = name.length >= 5 ? `"${name}"` : `${name} ${kw.length ? '' : '(company OR startup OR funding OR CEO)'}`.trim();
   const query = kw.length ? `${base} (${kw.join(' OR ')})` : base;
+  // GDELT throttles hard and drops connections; Google News covers the same story.
+  const viaGoogle = async (reason: string) => {
+    const g = await news(input, ctx);
+    return g && { ...g, data: { ...g.data, source: 'google_news', fallbackReason: reason.slice(0, 160) } };
+  };
+  if (Date.now() < gdeltPausedUntil) return viaGoogle('GDELT is rate-limiting this server; paused for a few minutes');
   const run = async () => {
-    for (let attempt = 0; ; attempt++) {
-      let text: string;
-      try {
-        const res = await request('https://api.gdeltproject.org/api/v2/doc/doc', { query: { query, mode: 'artlist', format: 'json', timespan: `${input.days ?? 30}d`, maxrecords: 50, sort: 'datedesc' }, timeoutMs: 30_000 });
-        text = await res.text();
-      } catch (e) {
-        if (attempt < 3) { await sleep(12_000 * (attempt + 1)); continue; } // GDELT drops connections under load
-        throw e;
-      }
-      if (text.startsWith('{')) return JSON.parse(text);
-      // GDELT's limiter is stricter than its documented 5 s; back off and retry.
-      if (/limit requests/i.test(text) && attempt < 3) { await sleep(12_000 * (attempt + 1)); continue; }
-      throw new Error(`GDELT: ${text.slice(0, 120)}`);
-    }
+    if (Date.now() < gdeltPausedUntil) throw new Error('GDELT paused after a rate limit');
+    const res = await request('https://api.gdeltproject.org/api/v2/doc/doc', { query: { query, mode: 'artlist', format: 'json', timespan: `${input.days ?? 30}d`, maxrecords: 50, sort: 'datedesc' }, timeoutMs: 20_000 });
+    const text = await res.text();
+    if (text.startsWith('{')) return JSON.parse(text);
+    if (res.status === 429 || /limit requests/i.test(text)) gdeltPausedUntil = Date.now() + GDELT_PAUSE_MS;
+    throw new Error(`GDELT: ${text.slice(0, 120) || res.status}`);
   };
   const next = gdeltChain.then(run, run);
   gdeltChain = next.then(() => sleep(5500), () => sleep(5500));
@@ -456,10 +459,8 @@ async function gdelt(input: SignalInput, ctx: Ctx): Promise<Hit | null> {
   try {
     d = await next;
   } catch (e) {
-    // GDELT throttles hard and drops connections; Google News covers the same story.
     ctx.log(`GDELT failed (${(e as Error).message.slice(0, 80)}); using Google News`);
-    const g = await news(input, ctx);
-    return g && { ...g, data: { ...g.data, source: 'google_news', fallbackReason: (e as Error).message.slice(0, 160) } };
+    return viaGoogle((e as Error).message);
   }
   const articles = (d.articles ?? []).map((a: any) => ({ title: a.title, url: a.url, source: a.domain, language: a.language, country: a.sourcecountry, date: a.seendate }));
   ctx.log(`GDELT "${query}": ${articles.length}`);
