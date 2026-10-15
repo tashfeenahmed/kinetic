@@ -120,16 +120,21 @@ const NOT_COMPANY_SITES = /(linkedin|facebook|twitter|x\.com|instagram|youtube|w
 export async function searchDomain(input: EnrichInput, ctx: Ctx): Promise<Hit | null> {
   if (!input.companyName) return null;
   const { engine, results } = await webSearch(`${input.companyName} ${input.context ?? ''} official website`.replace(/\s+/g, ' '), ctx, 8);
-  const sites = results.filter((r) => !NOT_COMPANY_SITES.test(r.url));
-  // Prefer a domain that carries a word of the name: the first result is often a directory.
-  const hit = sites.find((r) => nameInDomain(input.companyName!, r.url)) ?? sites[0];
-  return hit ? { value: toDomain(hit.url), confidence: nameInDomain(input.companyName, hit.url) ? 'search match' : 'search match (name not in domain)', weak: !nameInDomain(input.companyName, hit.url), data: { title: hit.title, url: hit.url, engine } } : null;
+  // Only a domain that carries the name: other results are directories, news and documents.
+  const scored = results.filter((r) => !NOT_COMPANY_SITES.test(r.url)).map((r) => ({ r, m: nameMatch(input.companyName!, r.url) })).filter((x) => x.m > 0);
+  const best = scored.sort((a, b) => b.m - a.m)[0];
+  if (!best) return null;
+  // Part of the name ("Quinn" for "Mitchell Quinn") may be another firm: a guess the next step can beat.
+  const full = best.m >= 1;
+  return { value: toDomain(best.r.url), confidence: full ? 'search match' : 'partial name match', weak: !full, data: { title: best.r.title, url: best.r.url, engine } };
 }
 
 const GENERIC_WORDS = new Set(['the', 'and', 'company', 'group', 'limited', 'services', 'properties', 'property', 'estate', 'estates', 'agents', 'auctioneers', 'homes', 'real', 'associates', 'partners', 'advisors', 'solutions', 'international', 'holdings']);
-function nameInDomain(name: string, url: string): boolean {
+/** Share of the name's distinctive words found in the domain (0–1). */
+function nameMatch(name: string, url: string): number {
   const host = slug(toDomain(url).split('.').slice(0, -1).join(''));
-  return name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !GENERIC_WORDS.has(w)).some((w) => host.includes(slug(w)));
+  const words = name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !GENERIC_WORDS.has(w));
+  return words.length ? words.filter((w) => host.includes(slug(w))).length / words.length : 0;
 }
 
 /**
@@ -143,7 +148,8 @@ export async function listingDomain(input: EnrichInput, ctx: Ctx): Promise<Hit |
   const { freemail } = await lists();
   for (const r of results.filter((x) => slug(x.title).includes(key)).slice(0, 3)) {
     if (!NOT_COMPANY_SITES.test(r.url)) {
-      if (nameInDomain(input.companyName, r.url)) return { value: toDomain(r.url), confidence: 'search match', data: { url: r.url } };
+      const m = nameMatch(input.companyName, r.url);
+      if (m > 0) return { value: toDomain(r.url), confidence: m >= 1 ? 'search match' : 'partial name match', weak: m < 1, data: { url: r.url } };
       continue;
     }
     const page = await fetchPage(r.url, 15_000).catch(() => null);
@@ -151,6 +157,7 @@ export async function listingDomain(input: EnrichInput, ctx: Ctx): Promise<Hit |
     const c = pageContacts(page.html);
     const site = c.websites.map(toDomain).find((d) => d && !NOT_COMPANY_SITES.test(d));
     const mail = c.emails.map((e) => e.split('@')[1]).find((d) => d && !freemail.has(d) && !NOT_COMPANY_SITES.test(d));
+    // The listing names this business, so its website/email stands even without the name in it.
     if (site || mail) return { value: site || mail, confidence: site ? 'listing website' : 'listing email domain', data: { source_url: page.url, emails: c.emails } };
   }
   return null;

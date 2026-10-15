@@ -102,3 +102,19 @@ describe('alert fallbacks', () => {
     s.engine.stop();
   });
 });
+
+describe('company domain search', () => {
+  const run = async (urls: string[]) => {
+    const { searchDomain } = await import('../src/gtm/providers/free.ts');
+    vi.stubGlobal('fetch', async () => Response.json({ results: urls.map((url) => ({ title: 'Mitchell Quinn Auctioneers', url, content: 'Mitchell Quinn Auctioneers Greystones' })) }));
+    const settings = new Settings(new Db(':memory:'));
+    settings.set('SEARXNG_URL', 'http://searx:8888');
+    return searchDomain({ companyName: 'Mitchell Quinn Auctioneers', context: 'Greystones' }, { settings, log: () => {} });
+  };
+
+  it('takes only a domain that carries the name, preferring the full name', async () => {
+    expect(await run(['https://www.irishtimes.com/a', 'https://quinnproperty.ie/', 'https://mitchellquinn.ie/'])).toMatchObject({ value: 'mitchellquinn.ie', confidence: 'search match' });
+    expect(await run(['https://www.irishtimes.com/a', 'https://archive.org/x'])).toBeNull();
+    expect(await run(['https://quinnproperty.ie/'])).toMatchObject({ value: 'quinnproperty.ie', weak: true, confidence: 'partial name match' });
+  });
+});
