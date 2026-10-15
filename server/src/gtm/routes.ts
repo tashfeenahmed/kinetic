@@ -25,6 +25,7 @@ import { appendNewRows, runSource } from '../sourcing/sources.ts';
 import { actionNeeds, missingConnections, requireConnected } from './requirements.ts';
 
 const id = z.coerce.number().int().positive();
+const PERSON_SIGNALS = new Set(['job_change', 'outreach_status']);
 const COLUMN_TYPES = ['text', 'formula', 'extract', 'enrich', 'ai', 'http', 'signal', 'action', 'lookup', 'function'] as const;
 
 export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
@@ -331,7 +332,8 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
     for (const kindId of body.signals) { const k = SIGNAL_KINDS.find((x) => x.id === kindId); if (k) requireConnected(k.label, k.requires, settings); }
     for (const kindId of body.signals) {
       const kind = SIGNAL_KINDS.find((k) => k.id === kindId);
-      if (!kind) continue;
+      // Person signals have nobody to follow on a company row.
+      if (!kind || PERSON_SIGNALS.has(kind.id)) continue;
       const col = existing.get(kind.label);
       if (col) { created.push({ id: col.id, name: col.name }); continue; }
       const inputs: Record<string, string> = {};

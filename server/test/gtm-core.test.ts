@@ -175,9 +175,10 @@ describe('connections required before adding', () => {
       const t = (await env.api('POST', '/api/gtm/tables', { name: 'T' })).body;
       const tableId = t.id ?? t.data?.id;
       const cat = (await env.api('GET', '/api/gtm/catalog')).body;
-      expect(cat.signals.find((s: any) => s.id === 'job_change').missing).toEqual(['People Data Labs or Apollo']);
+      expect(cat.signals.find((s: any) => s.id === 'uk_filings').missing).toHaveLength(1);
+      expect(cat.signals.find((s: any) => s.id === 'job_change').missing).toEqual([]); // free LinkedIn search fallback
       expect(cat.signals.find((s: any) => s.id === 'hiring').missing).toEqual([]);
-      const r = await env.api('POST', `/api/gtm/tables/${tableId}/columns`, { name: 'Job change', type: 'signal', config: { kind: 'job_change', inputs: {} } });
+      const r = await env.api('POST', `/api/gtm/tables/${tableId}/columns`, { name: 'UK filings', type: 'signal', config: { kind: 'uk_filings', inputs: {} } });
       expect(r.status).toBe(422);
       expect(r.body).toMatchObject({ error: 'not_connected' });
       expect(r.body.message).toContain('Integrations');

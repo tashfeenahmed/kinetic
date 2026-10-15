@@ -41,13 +41,25 @@ async function searchWith(engine: Engine, query: string, ctx: Ctx, count: number
   const s = ctx.settings;
   switch (engine) {
     case 'searxng': {
-      // SearXNG needs `json` enabled under search.formats in its settings.yml.
-      const d = await getJson(`${s.get('SEARXNG_URL')!.replace(/\/$/, '')}/search`, { query: { q: query, format: 'json', language: 'en' }, headers: { accept: 'application/json' } });
-      // No results because every upstream engine is rate-limited/CAPTCHA'd isn't "nothing found": let the next engine answer.
-      if (!d.results?.length && d.unresponsive_engines?.length) {
-        throw new Error(`SearXNG engines unavailable (${d.unresponsive_engines.map((e: any) => `${e[0]}: ${e[1]}`).join(', ')})`);
+      // SearXNG needs `json` enabled under search.formats in its settings.yml. Several
+      // instances (comma-separated) are tried in order: one on a home connection is
+      // rarely blocked, one on a datacenter IP often is.
+      const urls = s.get('SEARXNG_URL')!.split(/[\s,]+/).filter(Boolean);
+      let lastError: Error | null = null;
+      for (const url of urls) {
+        try {
+          const d = await getJson(`${url.replace(/\/$/, '')}/search`, { query: { q: query, format: 'json', language: 'en' }, headers: { accept: 'application/json' }, timeoutMs: 20_000 });
+          // No results because every upstream engine is rate-limited/CAPTCHA'd isn't "nothing found": let the next one answer.
+          if (!d.results?.length && d.unresponsive_engines?.length) {
+            throw new Error(`SearXNG engines unavailable (${d.unresponsive_engines.map((e: any) => `${e[0]}: ${e[1]}`).join(', ')})`);
+          }
+          const results = relevant(query, (d.results ?? []).map((r: any) => ({ title: r.title ?? '', url: r.url, snippet: r.content ?? '' })));
+          if (results.length || url === urls.at(-1)) return results.slice(0, count);
+        } catch (e) {
+          lastError = e as Error;
+        }
       }
-      return (d.results ?? []).slice(0, count).map((r: any) => ({ title: r.title ?? '', url: r.url, snippet: r.content ?? '' }));
+      throw lastError ?? new Error('SearXNG returned nothing');
     }
     case 'serper': {
       const d = await getJson('https://google.serper.dev/search', { headers: { 'X-API-KEY': s.get('SERPER_API_KEY')! }, json: { q: query, num: count } });
@@ -75,6 +87,16 @@ async function searchWith(engine: Engine, query: string, ctx: Ctx, count: number
 
 // Free engines block bursts (SearXNG's upstreams start CAPTCHAs, Brave's free plan allows 1 query/s,
 // DuckDuckGo rate-limits), so each engine's queries run one at a time with a gap between them.
+/**
+ * Drops results that share no word with the query: a blocked upstream engine can
+ * answer with unrelated pages (spam, other languages) instead of an error.
+ */
+export function relevant(query: string, results: SearchResult[]): SearchResult[] {
+  const words = query.toLowerCase().replace(/\b(site|inurl|intitle):\S+/g, ' ').split(/[^a-z0-9]+/).filter((w) => w.length >= 4);
+  if (!words.length) return results;
+  return results.filter((r) => { const hay = `${r.title} ${r.url} ${r.snippet}`.toLowerCase(); return words.some((w) => hay.includes(w)); });
+}
+
 const GAP_MS: Partial<Record<Engine, number>> = { searxng: 1000, brave: 1100, duckduckgo: 1500 };
 const chains = new Map<Engine, Promise<unknown>>();
 function throttled<T>(engine: Engine, fn: () => Promise<T>): Promise<T> {

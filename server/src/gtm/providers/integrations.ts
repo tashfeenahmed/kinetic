@@ -20,6 +20,23 @@ export async function slackPost(settings: Settings, opts: { text: string; channe
   return { value: 'sent', data: { via: 'webhook' } };
 }
 
+/** True when a Slack post has somewhere to go. */
+export function slackReady(settings: Settings, opts: { channel?: string; webhookUrl?: string }): boolean {
+  return !!((opts.channel && settings.has('SLACK_BOT_TOKEN')) || opts.webhookUrl || settings.has('SLACK_WEBHOOK_URL'));
+}
+
+// ---------- ntfy (free, open-source push notifications) ----------
+export async function ntfyPost(settings: Settings, opts: { title: string; text: string }): Promise<Hit> {
+  const topic = settings.get('NTFY_TOPIC');
+  if (!topic) throw new Error('Set an ntfy topic');
+  const base = (settings.get('NTFY_URL') || 'https://ntfy.sh').replace(/\/+$/, '');
+  // Slack markup (*bold*, :emoji:) reads as noise in a push notification.
+  const text = opts.text.replace(/:[a-z_]+:\s*/g, '').replace(/\*([^*\n]+)\*/g, '$1');
+  const res = await request(`${base}/${encodeURIComponent(topic)}`, { method: 'POST', body: text, headers: { title: opts.title.replace(/[^\x20-\x7e]/g, '').slice(0, 200), tags: 'satellite' } });
+  if (!res.ok) throw new Error(`ntfy ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return { value: 'sent', data: { via: 'ntfy' } };
+}
+
 // ---------- Generic webhook / HTTP ----------
 export async function callHttp(opts: { url: string; method?: string; headers?: Record<string, string>; body?: unknown }): Promise<Hit> {
   const hasBody = opts.body !== undefined && opts.body !== '' && !['GET', 'HEAD'].includes((opts.method ?? 'POST').toUpperCase());

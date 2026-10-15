@@ -1,6 +1,6 @@
 /** Enrichment steps that need no paid API. */
 import { promises as dns } from 'node:dns';
-import { fetchPage, links, meta } from '../lib/html.ts';
+import { fetchPage, links, meta, pageContacts } from '../lib/html.ts';
 import { toDomain } from '../lib/sandbox.ts';
 import { webSearch } from './search.ts';
 import { nameParts, type Ctx, type EnrichInput, type Hit } from './types.ts';
@@ -114,14 +114,46 @@ export async function searchCompanyLinkedin(input: EnrichInput, ctx: Ctx): Promi
   return hit ? { value: hit.url.split('?')[0], confidence: 'search match', data: { title: hit.title, engine } } : null;
 }
 
-const NOT_COMPANY_SITES = /(linkedin|facebook|twitter|x\.com|instagram|youtube|wikipedia|crunchbase|bloomberg|glassdoor|indeed|zoominfo|dnb\.com|yelp|pitchbook|craft\.co|owler|apollo\.io|rocketreach|tracxn|cbinsights|github|medium|reddit|google\.|bing\.|amazon\.)/i;
+const NOT_COMPANY_SITES = /(linkedin|facebook|twitter|x\.com|instagram|youtube|wikipedia|crunchbase|bloomberg|glassdoor|indeed|zoominfo|dnb\.com|yelp|pitchbook|craft\.co|owler|apollo\.io|rocketreach|tracxn|cbinsights|github|medium|reddit|google\.|bing\.|amazon\.|myhome\.ie|daft\.ie|goldenpages|yellowpages|yell\.com|propertypal|rightmove|zoopla|tripadvisor|trustpilot|cylex|hotfrog|foursquare|solocheck|vision-net|companieshouse|opencorporates|bizapedia|checkatrade|houzz|thumbtack|findglocal|infobel|irishjobs|cybo|brownbook|manta|cgf\.ie|allbiz)/i;
 
 /** Company name → website domain via web search. */
 export async function searchDomain(input: EnrichInput, ctx: Ctx): Promise<Hit | null> {
   if (!input.companyName) return null;
-  const { engine, results } = await webSearch(`${input.companyName} official website`, ctx, 8);
-  const hit = results.find((r) => !NOT_COMPANY_SITES.test(r.url));
-  return hit ? { value: toDomain(hit.url), confidence: 'search match', data: { title: hit.title, url: hit.url, engine } } : null;
+  const { engine, results } = await webSearch(`${input.companyName} ${input.context ?? ''} official website`.replace(/\s+/g, ' '), ctx, 8);
+  const sites = results.filter((r) => !NOT_COMPANY_SITES.test(r.url));
+  // Prefer a domain that carries a word of the name: the first result is often a directory.
+  const hit = sites.find((r) => nameInDomain(input.companyName!, r.url)) ?? sites[0];
+  return hit ? { value: toDomain(hit.url), confidence: nameInDomain(input.companyName, hit.url) ? 'search match' : 'search match (name not in domain)', weak: !nameInDomain(input.companyName, hit.url), data: { title: hit.title, url: hit.url, engine } } : null;
+}
+
+const GENERIC_WORDS = new Set(['the', 'and', 'company', 'group', 'limited', 'services', 'properties', 'property', 'estate', 'estates', 'agents', 'auctioneers', 'homes', 'real', 'associates', 'partners', 'advisors', 'solutions', 'international', 'holdings']);
+function nameInDomain(name: string, url: string): boolean {
+  const host = slug(toDomain(url).split('.').slice(0, -1).join(''));
+  return name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !GENERIC_WORDS.has(w)).some((w) => host.includes(slug(w)));
+}
+
+/**
+ * Company name → domain from directory listings (local businesses rarely rank for
+ * "official website"): the listing's page data names the website or a work email.
+ */
+export async function listingDomain(input: EnrichInput, ctx: Ctx): Promise<Hit | null> {
+  if (!input.companyName) return null;
+  const { results } = await webSearch(`"${input.companyName}" ${input.context ?? ''}`.trim(), ctx, 8);
+  const key = slug(input.companyName).slice(0, 12);
+  const { freemail } = await lists();
+  for (const r of results.filter((x) => slug(x.title).includes(key)).slice(0, 3)) {
+    if (!NOT_COMPANY_SITES.test(r.url)) {
+      if (nameInDomain(input.companyName, r.url)) return { value: toDomain(r.url), confidence: 'search match', data: { url: r.url } };
+      continue;
+    }
+    const page = await fetchPage(r.url, 15_000).catch(() => null);
+    if (!page || page.status >= 400) continue;
+    const c = pageContacts(page.html);
+    const site = c.websites.map(toDomain).find((d) => d && !NOT_COMPANY_SITES.test(d));
+    const mail = c.emails.map((e) => e.split('@')[1]).find((d) => d && !freemail.has(d) && !NOT_COMPANY_SITES.test(d));
+    if (site || mail) return { value: site || mail, confidence: site ? 'listing website' : 'listing email domain', data: { source_url: page.url, emails: c.emails } };
+  }
+  return null;
 }
 
 function slug(s: string) {
@@ -130,3 +162,49 @@ function slug(s: string) {
 
 const FREEMAIL = new Set(['gmail.com', 'googlemail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'live.com', 'icloud.com', 'me.com', 'aol.com', 'proton.me', 'protonmail.com', 'gmx.com', 'yandex.com', 'mail.com', 'zoho.com']);
 const DISPOSABLE = new Set(['mailinator.com', 'guerrillamail.com', '10minutemail.com', 'tempmail.com', 'temp-mail.org', 'yopmail.com', 'trashmail.com', 'getnada.com', 'sharklasers.com', 'dispostable.com', 'maildrop.cc', 'throwawaymail.com']);
+
+// ---------- Company phone (free) ----------
+const PHONE_RE = /(?:\+|\(|\b)\d[\d ().\/-]{5,18}\d\b(?!\.\.\.)/g;
+const phoneDigits = (p: string) => p.replace(/\D/g, '');
+const plausiblePhone = (p: string) => { const n = phoneDigits(p).length; return n >= 7 && n <= 15 && !/^(19|20)\d\d$/.test(p.trim()); };
+
+/** The company's own site: page data (JSON-LD, tel: links), then its contact page. */
+export async function websitePhone(input: EnrichInput): Promise<Hit | null> {
+  const domain = toDomain(input.domain);
+  if (!domain) return null;
+  const home = await fetchPage(domain).catch(() => null);
+  if (!home || home.status >= 400) return null;
+  let found = pageContacts(home.html).phones.filter(plausiblePhone);
+  let url = home.url;
+  if (!found.length) {
+    const contact = links(home.html, home.url).find((l) => toDomain(l) === toDomain(home.url) && /contact|get-in-touch|find-us|locations?\b/i.test(l));
+    const page = contact ? await fetchPage(contact).catch(() => null) : null;
+    if (page && page.status < 400) {
+      found = pageContacts(page.html).phones.filter(plausiblePhone);
+      url = page.url;
+    }
+  }
+  return found.length ? { value: found[0], confidence: 'company website', data: { phones: found, source_url: url } } : null;
+}
+
+/**
+ * Web search: business directories and listings that name the company. Reads each
+ * matching result page's data (full numbers even where the page masks them), then
+ * falls back to numbers quoted in the search snippets.
+ */
+export async function searchPhone(input: EnrichInput, ctx: Ctx): Promise<Hit | null> {
+  if (!input.companyName) return null;
+  const name = input.companyName.trim();
+  const { engine, results } = await webSearch(`"${name}" phone ${input.context ?? ''}`.trim(), ctx, 8);
+  const key = slug(name).slice(0, 12);
+  const matching = results.filter((r) => slug(r.title).includes(key) || slug(r.snippet).includes(key));
+  for (const r of matching.slice(0, 3)) {
+    const page = await fetchPage(r.url, 15_000).catch(() => null);
+    const phones = page && page.status < 400 ? pageContacts(page.html).phones.filter(plausiblePhone) : [];
+    if (phones.length) return { value: phones[0], confidence: 'listing page data', data: { phones, source_url: page!.url, engine } };
+  }
+  const counts = new Map<string, number>();
+  for (const r of matching) for (const m of r.snippet.match(PHONE_RE) ?? []) if (plausiblePhone(m)) counts.set(m.trim(), (counts.get(m.trim()) ?? 0) + 1);
+  const best = [...counts].sort((a, b) => b[1] - a[1])[0];
+  return best ? { value: best[0], confidence: 'search snippet', weak: true, data: { phones: [...counts.keys()].slice(0, 5), engine } } : null;
+}
