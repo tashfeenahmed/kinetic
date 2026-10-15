@@ -118,3 +118,24 @@ describe('company domain search', () => {
     expect(await run(['https://quinnproperty.ie/'])).toMatchObject({ value: 'quinnproperty.ie', weak: true, confidence: 'partial name match' });
   });
 });
+
+describe('GDELT', () => {
+  it('answers from Google News at once when GDELT refuses, then skips GDELT for a while', async () => {
+    const { resetGdeltPause } = await import('../src/gtm/providers/signals.ts');
+    resetGdeltPause();
+    const hits: string[] = [];
+    vi.stubGlobal('fetch', async (url: any) => {
+      const u = String(url); hits.push(new URL(u).host);
+      if (u.includes('gdeltproject')) return new Response('Please limit requests to one every 5 seconds', { status: 429 });
+      return new Response('<rss><item><title>Acme opens Bray office</title><link>https://news.example/a</link><pubDate>Wed, 14 Oct 2026 09:00:00 GMT</pubDate></item></rss>');
+    });
+    const settings = new Settings(new Db(':memory:'));
+    const ctx = { settings, log: () => {} };
+    const first = await signalKind('gdelt').run({ companyName: 'Acme Estates' }, ctx);
+    expect(first).toMatchObject({ value: 'Acme opens Bray office', data: { source: 'google_news' } });
+    const second = await signalKind('gdelt').run({ companyName: 'Other Estates' }, ctx);
+    expect(second?.data?.source).toBe('google_news');
+    expect(hits.filter((h) => h.includes('gdelt'))).toHaveLength(1);
+    resetGdeltPause();
+  });
+});
