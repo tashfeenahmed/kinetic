@@ -15,6 +15,7 @@ import { apolloPerson, pdlPerson } from './vendors.ts';
 import type { Ctx, Hit } from './types.ts';
 import { websiteVisits } from '../../visitors/signal.ts';
 import { websiteAudit } from './websiteAudit.ts';
+import { webSearch } from './search.ts';
 
 export interface SignalInput {
   domain?: string;
@@ -328,7 +329,7 @@ async function techStack(input: SignalInput, ctx: Ctx): Promise<Hit | null> {
 async function websiteChange(input: SignalInput, ctx: Ctx): Promise<Hit | null> {
   const url = input.target || (input.domain ? `https://${toDomain(input.domain)}` : '');
   if (!url) return null;
-  const page = await fetchPage(url);
+  const page = await fetchFirst(input.target ? [url] : siteVariants(url));
   const text = page.text.replace(/\s+/g, ' ').trim();
   const hash = createHash('sha256').update(text).digest('hex').slice(0, 16);
   const prev = (ctx.prev as any)?.data;
@@ -338,6 +339,23 @@ async function websiteChange(input: SignalInput, ctx: Ctx): Promise<Hit | null> 
     added = text.split(/(?<=[.!?])\s+/).filter((s) => s.length > 20 && !before.has(s)).slice(0, 20);
   }
   return { value: hash, data: { url: page.url, status: page.status, title: page.title, hash, changed: !!prev?.hash && prev.hash !== hash, added, text: text.slice(0, 20_000) } };
+}
+
+/** https://x, https://www.x, http://x: small business sites often answer on only one. */
+function siteVariants(url: string): string[] {
+  const host = new URL(url).host.replace(/^www\./, '');
+  return [url, `https://www.${host}`, `http://${host}`].filter((u, i, a) => a.indexOf(u) === i);
+}
+
+/** First URL that answers; slow sites get a second, longer try. */
+async function fetchFirst(urls: string[]) {
+  let last: unknown;
+  for (const timeout of [20_000, 45_000]) {
+    for (const u of urls) {
+      try { return await fetchPage(u, timeout); } catch (e) { last = e; }
+    }
+  }
+  throw last;
 }
 
 // ---------- GitHub activity ----------
@@ -434,7 +452,15 @@ async function gdelt(input: SignalInput, ctx: Ctx): Promise<Hit | null> {
   };
   const next = gdeltChain.then(run, run);
   gdeltChain = next.then(() => sleep(5500), () => sleep(5500));
-  const d: any = await next;
+  let d: any;
+  try {
+    d = await next;
+  } catch (e) {
+    // GDELT throttles hard and drops connections; Google News covers the same story.
+    ctx.log(`GDELT failed (${(e as Error).message.slice(0, 80)}); using Google News`);
+    const g = await news(input, ctx);
+    return g && { ...g, data: { ...g.data, source: 'google_news', fallbackReason: (e as Error).message.slice(0, 160) } };
+  }
   const articles = (d.articles ?? []).map((a: any) => ({ title: a.title, url: a.url, source: a.domain, language: a.language, country: a.sourcecountry, date: a.seendate }));
   ctx.log(`GDELT "${query}": ${articles.length}`);
   return { value: articles[0]?.title ?? null, data: { query, count: articles.length, languages: [...new Set(articles.map((a: any) => a.language))], articles: articles.slice(0, 20) } };
@@ -528,23 +554,59 @@ async function ukFilings(input: SignalInput, ctx: Ctx): Promise<Hit | null> {
   return { value: latest ? `${latest.date} ${latest.category}: ${latest.description}` : null, data: { company, number, officerChanges: filings.filter((x: any) => x.category === 'officers').slice(0, 5), filings } };
 }
 
-// ---------- Job change (needs Apollo or PDL) ----------
+// ---------- Job change: PDL → Apollo → LinkedIn via web search (free) ----------
+interface Employment { company?: string; domain?: string; title?: string; started?: string; source: string }
+
+/** "Jane Doe - Head of Sales - Acme | LinkedIn" → title + company, when the name matches. */
+export function linkedinHeadline(resultTitle: string, fullName: string): { title?: string; company?: string } | null {
+  const parts = resultTitle.replace(/\s*[|·]\s*LinkedIn.*$/i, '').split(/\s+[-–—]\s+/).map((x) => x.trim()).filter(Boolean);
+  const want = fullName.toLowerCase().split(/\s+/).filter((w) => w.length > 1);
+  if (parts.length < 2 || !want.every((w) => parts[0].toLowerCase().includes(w))) return null;
+  return parts.length >= 3 ? { title: parts[1], company: parts[2] } : { company: parts[1] };
+}
+
+async function linkedinJob(input: SignalInput, ctx: Ctx): Promise<Employment | null> {
+  const slugName = input.linkedinUrl?.match(/linkedin\.com\/in\/([^/?#]+)/i)?.[1];
+  const name = input.fullName?.trim() || (slugName ? slugName.replace(/-[0-9a-z]*\d[0-9a-z]*$/i, '').replace(/-/g, ' ') : '');
+  if (!name) return null;
+  const { results } = await webSearch(`"${name}" site:linkedin.com/in`, ctx, 8);
+  const own = results.filter((r) => /linkedin\.com\/in\//i.test(r.url));
+  const pick = (slugName && own.find((r) => r.url.toLowerCase().includes(slugName.toLowerCase()))) || own.find((r) => linkedinHeadline(r.title, name));
+  const h = pick && linkedinHeadline(pick.title, name);
+  return h?.company ? { company: h.company, title: h.title, source: 'linkedin search' } : null;
+}
+
+const orgKey = (s: unknown) => String(s ?? '').toLowerCase().replace(/^www\./, '').replace(/\.[a-z.]+$/, '').replace(/\b(ltd|limited|inc|llc|plc|gmbh|co|company|group|the)\b|[^a-z0-9]/g, '');
+
 async function jobChange(input: SignalInput, ctx: Ctx): Promise<Hit | null> {
   const person = { email: input.email, linkedinUrl: input.linkedinUrl, fullName: input.fullName };
-  let current: { company?: string; domain?: string; title?: string; started?: string; source: string } | null = null;
-  if (ctx.settings.has('PDL_API_KEY')) {
+  // A company row has nobody to follow.
+  if (!person.email && !person.linkedinUrl && !person.fullName) return null;
+  const sources: [string, () => Promise<Employment | null>][] = [];
+  if (ctx.settings.has('PDL_API_KEY')) sources.push(['pdl', async () => {
     const p = await pdlPerson(person, ctx);
-    if (p) current = { company: p.job_company_name, domain: p.job_company_website, title: p.job_title, started: p.job_start_date, source: 'pdl' };
-  }
-  if (!current && ctx.settings.has('APOLLO_API_KEY')) {
+    return p ? { company: p.job_company_name, domain: p.job_company_website, title: p.job_title, started: p.job_start_date, source: 'pdl' } : null;
+  }]);
+  if (ctx.settings.has('APOLLO_API_KEY')) sources.push(['apollo', async () => {
     const p = await apolloPerson(person, ctx);
-    if (p) current = { company: p.organization?.name, domain: p.organization?.primary_domain, title: p.title, started: p.employment_history?.find((e: any) => e.current)?.start_date, source: 'apollo' };
+    return p ? { company: p.organization?.name, domain: p.organization?.primary_domain, title: p.title, started: p.employment_history?.find((e: any) => e.current)?.start_date, source: 'apollo' } : null;
+  }]);
+  sources.push(['linkedin search', () => linkedinJob(input, ctx)]);
+  let current: Employment | null = null;
+  const failed: string[] = [];
+  for (const [id, run] of sources) {
+    try { current = await run(); } catch (e) { failed.push(`${id}: ${(e as Error).message.slice(0, 120)}`); ctx.log(`job change: ${id} failed, trying the next source`); continue; }
+    if (current) break;
   }
-  if (!current) return null;
-  const known = `${input.companyName ?? ''} ${toDomain(input.domain)}`.toLowerCase();
-  const same = !!known.trim() && [current.company, current.domain].some((x) => x && known.includes(String(x).toLowerCase().replace(/^www\./, '')));
-  const changed = !!known.trim() && !same;
-  return { value: changed, data: { ...current, previouslyKnown: input.companyName || input.domain } };
+  if (!current) {
+    if (failed.length === sources.length) throw new Error(failed.join(' · '));
+    return null;
+  }
+  const known = [orgKey(input.companyName), orgKey(toDomain(input.domain))].filter(Boolean);
+  const now = [orgKey(current.company), orgKey(current.domain)].filter(Boolean);
+  const same = now.some((n) => known.some((k) => n.includes(k) || k.includes(n)));
+  const changed = known.length > 0 && !same;
+  return { value: changed, data: { ...current, previouslyKnown: input.companyName || input.domain, skipped: failed.length ? failed : undefined } };
 }
 
 // ---------- Outreach status (this workspace's campaigns) ----------
@@ -569,7 +631,7 @@ export const SIGNAL_KINDS: SignalKind[] = [
   { id: 'outreach_status', label: 'Outreach status', description: 'Live campaign state for the row\'s email: queued, contacted, replied, interested, meeting booked, proposal sent, won, lost, bounced, unsubscribed. Refreshes instantly on sends, opens and replies — pair with a Slack alert on "interested".', inputs: ['email'], requires: [], run: outreachStatus },
   { id: 'hiring', label: 'Hiring (open roles)', description: 'Open jobs from public Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Recruitee and Personio boards. Value = matching role count.', inputs: ['domain', 'companyName', 'target', 'keywords'], requires: [], run: hiring },
   { id: 'news', label: 'News (Google News)', description: 'Google News RSS for the company (optionally + keywords such as "raises, acquires, launches"). Value = newest headline, so a new story counts as a change.', inputs: ['companyName', 'domain', 'keywords', 'days'], requires: [], run: news },
-  { id: 'gdelt', label: 'Global news (GDELT)', description: 'Worldwide, multilingual news from GDELT. Free but best-effort: strict rate limits, so it is slow on big tables. Value = newest headline.', inputs: ['companyName', 'domain', 'keywords', 'days'], requires: [], run: gdelt },
+  { id: 'gdelt', label: 'Global news (GDELT)', description: 'Worldwide, multilingual news from GDELT. Free but best-effort: strict rate limits, so it is slow on big tables; when GDELT refuses, Google News fills in. Value = newest headline.', inputs: ['companyName', 'domain', 'keywords', 'days'], requires: [], run: gdelt },
   { id: 'hacker_news', label: 'Hacker News mentions', description: 'Stories mentioning the company on HN (Algolia API). Value = newest story title.', inputs: ['companyName', 'domain', 'days'], requires: [], run: hackerNews },
   { id: 'funding_sec', label: 'Funding (SEC Form D)', description: 'US private fundraises filed with the SEC. Value = latest filing date. Set SEC_USER_AGENT to "Name email".', inputs: ['companyName', 'days'], requires: [], run: secFormD },
   { id: 'sec_filings', label: 'SEC filings (8-K events)', description: 'Public-company events: exec changes, acquisitions, layoffs, new debt, material deals. Keywords = form types (default 8-K). Value = latest filing summary.', inputs: ['companyName', 'target', 'keywords', 'days'], requires: [], run: secFilings },
@@ -580,7 +642,7 @@ export const SIGNAL_KINDS: SignalKind[] = [
   { id: 'website_change', label: 'Website / page change', description: 'Watches a page (pricing, careers, homepage). Value = content hash; changes trigger dependants.', inputs: ['target', 'domain'], requires: [], run: websiteChange },
   { id: 'github', label: 'GitHub activity', description: 'Public repos for an org. Value = last push time.', inputs: ['target', 'domain'], requires: [], run: github },
   { id: 'new_subdomains', label: 'New subdomains (certificates)', description: 'New hostnames from TLS certificate logs (Cert Spotter, crt.sh fallback) — often precedes launches. Free tier ≈10 lookups/hour, so use on a short list or add a Cert Spotter key. Value = list of new hostnames.', inputs: ['domain', 'days'], requires: [], run: newSubdomains },
-  { id: 'job_change', label: 'Job change', description: 'Re-checks where a person works now (PDL or Apollo). Value = true when they have left the company you know.', inputs: ['email', 'linkedinUrl', 'fullName', 'companyName', 'domain'], requires: ['PDL_API_KEY|APOLLO_API_KEY'], run: jobChange },
+  { id: 'job_change', label: 'Job change', description: 'Re-checks where a person works now: People Data Labs, then Apollo, then their LinkedIn headline via web search (free). Needs a person (name, email or LinkedIn URL). Value = true when they have left the company you know.', inputs: ['email', 'linkedinUrl', 'fullName', 'companyName', 'domain'], requires: [], run: jobChange },
   { id: 'website_visits', label: 'Website visits', description: 'Visits to your tracked websites (Visitors) by the row\'s company domain or lead email. Value = visits in the last 30 days; data has last visit, pages and intent score.', inputs: ['domain', 'email'], requires: [], run: websiteVisits },
 ];
 

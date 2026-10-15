@@ -3,7 +3,7 @@
  * that ends by calling `submit` with the column's output fields.
  */
 import { getJson } from '../lib/http.ts';
-import { fetchPage } from '../lib/html.ts';
+import { fetchPage, pageContacts } from '../lib/html.ts';
 import { webSearch } from '../providers/search.ts';
 import type { Ctx } from '../providers/types.ts';
 import { knowledgeContext } from '../../knowledge/store.ts';
@@ -154,7 +154,11 @@ export async function readPage(url: string, ctx: Ctx): Promise<string> {
     if (res.ok) return (await res.text()).slice(0, 12_000);
   }
   const page = await fetchPage(url);
-  return `Title: ${page.title}\nURL: ${page.url}\n\n${page.text.slice(0, 12_000)}`;
+  const c = pageContacts(page.html);
+  const facts = [c.phones.length && `phone: ${c.phones.join(', ')}`, c.emails.length && `email: ${c.emails.join(', ')}`, c.websites.length && `website: ${c.websites.join(', ')}`].filter(Boolean);
+  // Full contact details from the page data: the visible text may show a masked number.
+  const contacts = facts.length ? `Contact details in the page data (complete, prefer these): ${facts.join(' · ')}\n` : '';
+  return `Title: ${page.title}\nURL: ${page.url}\n${contacts}\n${page.text.slice(0, 12_000)}`;
 }
 
 function fn(name: string, description: string, properties: Record<string, unknown>, required: string[]) {

@@ -364,12 +364,30 @@ export class Engine {
     return { value: null, status: 'empty', meta: { attempts } };
   }
 
+  /** Slack, then ntfy push, then an email digest to the workspace admins; the first that works wins. */
+  private async alert(text: string, slack: { channel?: string; webhookUrl?: string }, workspaceId?: number): Promise<Hit> {
+    const failed: string[] = [];
+    if (integ.slackReady(this.settings, slack)) {
+      try { return await integ.slackPost(this.settings, { text, ...slack }); } catch (e) { failed.push((e as Error).message); }
+    }
+    if (this.settings.has('NTFY_TOPIC')) {
+      try { const h = await integ.ntfyPost(this.settings, { title: text.split('\n')[0], text }); return { ...h, data: { ...h.data, ...(failed.length ? { slackError: failed[0] } : {}) } }; } catch (e) { failed.push((e as Error).message); }
+    }
+    if (this.outreach && workspaceId) {
+      try {
+        const r = this.outreach.emailAlert(workspaceId, text);
+        return { value: 'emailed', data: { via: 'email', from: r.from, to: r.to, ...(failed.length ? { errors: failed } : {}) } };
+      } catch (e) { failed.push((e as Error).message); }
+    }
+    throw new Error(failed.join(' · ') || 'Set a Slack webhook or an ntfy topic under Integrations');
+  }
+
   private async action(cfg: any, row: Record<string, unknown>, workspaceId?: number, tableId?: number): Promise<Outcome> {
     const fields = (cfg.fields ?? []).map((f: any) => ({ name: f.name, value: renderValue(f.value ?? '', row) }));
     let hit: Hit;
     switch (cfg.kind) {
       case 'slack':
-        hit = await integ.slackPost(this.settings, { text: render(cfg.text ?? '', row), channel: cfg.channel || undefined, webhookUrl: cfg.webhookUrl || undefined });
+        hit = await this.alert(render(cfg.text ?? '', row), { channel: cfg.channel || undefined, webhookUrl: cfg.webhookUrl || undefined }, workspaceId);
         break;
       case 'webhook': {
         const body = cfg.body?.trim() ? renderBody(cfg.body, row) : Object.fromEntries(Object.entries(row).map(([k, v]) => [k, v && typeof v === 'object' && 'value' in (v as any) ? (v as any).value : v]));

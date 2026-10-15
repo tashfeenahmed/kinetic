@@ -119,14 +119,26 @@ export const ENRICH_KINDS: EnrichKind[] = [
   {
     id: 'company_domain',
     label: 'Find company domain',
-    description: 'Company name → website domain.',
-    inputs: ['companyName'],
+    description: 'Company name → website domain. Extra details (e.g. {{Town}}) help find small local businesses through their directory listings.',
+    inputs: ['companyName', 'context'],
     needs: [['companyName']],
     steps: [
       step({ id: 'yc', label: 'YC directory (free)', requires: [], cost: 'free', run: async (i) => { const h = await open.ycCompany(i); return h?.data?.domain ? { value: h.data.domain, data: h.data } : null; } }),
       step({ id: 'wikidata', label: 'Wikidata (free)', requires: [], cost: 'free', run: open.wikidataDomain }),
       step({ id: 'apollo', label: 'Apollo', requires: ['APOLLO_API_KEY'], cost: 'free (search)', run: v.apolloDomain }),
       step({ id: 'search', label: 'Web search (free)', requires: [], cost: 'free / 1 search', run: free.searchDomain }),
+      step({ id: 'listing', label: 'Directory listing (free)', requires: [], cost: 'free / 1 search', run: free.listingDomain }),
+    ],
+  },
+  {
+    id: 'company_phone',
+    label: 'Find company phone',
+    description: 'Main phone number for a company: its own website (page data and contact page), then directory listings found by web search. Extra details (e.g. {{Town}}) narrow the search.',
+    inputs: ['domain', 'companyName', 'context'],
+    needs: [['domain'], ['companyName']],
+    steps: [
+      step({ id: 'website', label: 'Company website (free)', requires: [], cost: 'free', run: (i) => free.websitePhone(i) }),
+      step({ id: 'search', label: 'Directory listings (free)', requires: [], cost: 'free / 1 search', run: free.searchPhone }),
     ],
   },
   {
