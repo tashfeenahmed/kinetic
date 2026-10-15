@@ -158,3 +158,31 @@ describe('masked values', () => {
     } finally { await env.close(); }
   });
 });
+
+describe('rows listing', () => {
+  it('pages rows by column name and finds them by text', async () => {
+    const { makeEnv } = await import('./helpers.ts');
+    const env = await makeEnv();
+    try {
+      const t = (await env.api('POST', '/api/gtm/tables', { name: 'Agents' })).body;
+      await env.api('POST', `/api/gtm/tables/${t.id}/rows`, { rows: [{ Company: 'Benton', Town: 'Bray' }, { Company: 'Forkin', Town: 'Wicklow' }, { Company: 'DNG Bray', Town: 'Bray' }] });
+      const all = await env.api('GET', `/api/gtm/tables/${t.id}/rows?limit=2`);
+      expect(all.body).toMatchObject({ total: 3, offset: 0 });
+      expect(all.body.rows[0].values).toMatchObject({ Company: 'Benton', Town: 'Bray' });
+      expect(all.body.rows).toHaveLength(2);
+      const bray = await env.api('GET', `/api/gtm/tables/${t.id}/rows?q=bray&columns=Company`);
+      expect(bray.body.total).toBe(2);
+      expect(bray.body.rows.map((r: any) => r.values)).toEqual([{ Company: 'Benton' }, { Company: 'DNG Bray' }]);
+    } finally { await env.close(); }
+  });
+});
+
+describe('maps search', () => {
+  it('maps sports to OpenStreetMap club tags and refuses a Google search without a key clearly', async () => {
+    const { overpassQuery, mapsSearch } = await import('../src/sourcing/maps.ts');
+    const q = overpassQuery('football academy', { south: 53.3, west: -6.35, north: 53.4, east: -6.2 }, 50);
+    expect(q).toContain('nwr["club"="sport"]["sport"="soccer"]["name"]');
+    const settings = new Settings(new Db(':memory:'));
+    await expect(mapsSearch({ query: 'cafe', location: 'Dublin', provider: 'google' } as any, { settings })).rejects.toMatchObject({ statusCode: 400 });
+  });
+});

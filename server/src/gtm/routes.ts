@@ -281,6 +281,34 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
   });
 
   // ---------- rows ----------
+  const rowsQuery = z.object({
+    limit: z.coerce.number().int().min(1).max(500).default(100),
+    offset: z.coerce.number().int().min(0).default(0),
+    q: z.string().trim().max(200).optional(),
+    columns: z.string().max(2000).optional(),
+  });
+  r.get('/api/gtm/tables/:id/rows', 'List rows by column name, a page at a time (limit, offset), optionally only rows whose values contain q; columns = comma-separated names to return. → { total, rows: [{ id, values, errors? }] }', async (req) => {
+    const tableId = tableOf(req, auth(req));
+    const b = rowsQuery.parse(req.query ?? {});
+    const cols = store.columns(tableId);
+    const want = b.columns ? new Set(b.columns.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean)) : null;
+    const shown = want ? cols.filter((c) => want.has(c.name.toLowerCase())) : cols;
+    const text = (v: unknown) => { const u = unwrap(v); return u == null ? '' : typeof u === 'object' ? JSON.stringify(u) : String(u); };
+    let rows = store.grid(tableId).map((r) => {
+      const cells = r.cells as Record<number, { value: unknown; status: string; error: string | null }>;
+      const values: Record<string, unknown> = {};
+      const errors: Record<string, string> = {};
+      for (const c of shown) {
+        const cell = cells[c.id];
+        values[c.name] = cell ? unwrap(cell.value) ?? null : null;
+        if (cell?.status === 'error' && cell.error) errors[c.name] = cell.error;
+      }
+      return { id: r.id, values, ...(Object.keys(errors).length ? { errors } : {}), _all: cols.map((c) => text(cells[c.id]?.value)).join(' ').toLowerCase() };
+    });
+    if (b.q) { const q = b.q.toLowerCase(); rows = rows.filter((r) => r._all.includes(q)); }
+    return { total: rows.length, offset: b.offset, rows: rows.slice(b.offset, b.offset + b.limit).map(({ _all, ...r }) => r) };
+  }, { query: rowsQuery });
+
   r.post('/api/gtm/tables/:id/rows', 'Add rows', async (req) => {
     const a = canWrite(req);
     const tableId = tableOf(req, a);

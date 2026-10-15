@@ -242,10 +242,19 @@ describe('fill from website files the docs in a folder', () => {
     expect(a.body.data.created.map((d: any) => d.folder_path)).toEqual(['tillr.ie', 'tillr.ie', 'tillr.ie']);
     expect(await tree(e)).toEqual(['F tillr.ie', '  D Company overview', '  D Products & offers', '  D Tone of voice']);
 
-    // Nothing new to create -> no empty folder either.
-    const again = await e.api('POST', '/api/knowledge/autofill', { domain: 'tillr.ie', apply: true, folder: 'Company' });
-    expect(again.body.data).toMatchObject({ created: [], folder: null });
+    // Same site again: its folder already has every doc -> skipped, no empty folder.
+    const again = await e.api('POST', '/api/knowledge/autofill', { domain: 'tillr.ie', apply: true });
+    expect(again.body.data).toMatchObject({ created: [], updated: [], applied: false, skipped: ['Company overview', 'Products & offers', 'Tone of voice'] });
     expect((await e.api('GET', '/api/knowledge/folders')).body.data.length).toBe(1);
+    // overwrite=true refreshes that folder's docs in place.
+    const fresh = await e.api('POST', '/api/knowledge/autofill', { domain: 'tillr.ie', apply: true, overwrite: true });
+    expect(fresh.body.data).toMatchObject({ created: [], skipped: [], applied: true });
+    expect(fresh.body.data.updated).toHaveLength(3);
+    expect(await tree(e)).toEqual(['F tillr.ie', '  D Company overview', '  D Products & offers', '  D Tone of voice']);
+    // Another site's folder doesn't block a new one.
+    const other = await e.api('POST', '/api/knowledge/autofill', { domain: 'tillr.ie', apply: true, folder: 'Other site' });
+    expect(other.body.data.created).toHaveLength(3);
+    await e.api('DELETE', `/api/knowledge/folders/${other.body.data.folder.id}?contents=delete`);
 
     // The review step: the user renames the target folder, or picks an existing one.
     const b = await e.api('POST', '/api/knowledge/docs/bulk', { docs: [{ title: 'ICP', content: 'x' }], created_by: 'autofill', folder: 'Company' });

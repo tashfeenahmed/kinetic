@@ -141,8 +141,8 @@ describe('local business search', () => {
     const ok = await env.api('POST', '/api/sources/google-maps/search', { query: 'dentist', location: 'Berlin', radius_km: 5 });
     expect(ok.status, JSON.stringify(ok.body)).toBe(200);
     expect(ok.body.rows).toHaveLength(3);
-    expect(calls.some((c) => c.url.startsWith('https://overpass.kumi.systems'))).toBe(true);
-    busyOverpass.add('overpass.kumi.systems').add('overpass.private.coffee');
+    expect(calls.some((c) => c.url.startsWith('https://overpass.openstreetmap.fr'))).toBe(true);
+    busyOverpass.add('overpass.openstreetmap.fr').add('overpass.kumi.systems').add('overpass.private.coffee');
     const busy = await env.api('POST', '/api/gtm/find', { mode: 'google_maps', query: 'dentist', params: { location: 'Berlin', radius_km: 5 } });
     expect(busy.status).toBe(503);
     expect(busy.body).toMatchObject({ error: 'provider_busy' });

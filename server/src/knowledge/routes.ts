@@ -204,10 +204,19 @@ export function knowledgeRoutes(app: FastifyInstance, ctx: Ctx) {
   }, { query: ctxQuery });
 
   // ---- Fill from website: a multi-step research run ----
-  const existingTitles = (ws: number) => new Set(listDocs(db, ws).map((x) => x.title.toLowerCase()));
+  /** Docs in one folder (by path, e.g. the site's folder "acme.com"), by lower-cased title. */
+  const docsInFolder = (ws: number, folderPath: string) => {
+    const paths = pathsOf(ws);
+    const want = folderPath.trim().toLowerCase();
+    return new Map(listDocs(db, ws).filter((x) => x.folder_id != null && (paths.get(x.folder_id) ?? '').toLowerCase() === want).map((x) => [x.title.toLowerCase(), x]));
+  };
+  /** Top-level docs are the workspace's own (written by the user): a site's draft never duplicates them. */
+  const topLevelTitles = (ws: number) => new Set(listDocs(db, ws).filter((x) => x.folder_id == null).map((x) => x.title.toLowerCase()));
+  // A site's drafts clash with its own folder and the top level, not with other sites' folders.
+  const existingTitles = (ws: number, folderPath: string) => new Set([...docsInFolder(ws, folderPath).keys(), ...topLevelTitles(ws)]);
   const runJson = (run: ResearchRunState) => {
     const res = run.result;
-    const existing = res ? existingTitles(run.workspaceId) : null;
+    const existing = res ? existingTitles(run.workspaceId, res.host) : null;
     return {
       id: run.id, domain: run.domain, status: run.status, steps: run.steps, error: run.error, started_at: run.started_at, finished_at: run.finished_at,
       result: res ? {
@@ -249,8 +258,8 @@ export function knowledgeRoutes(app: FastifyInstance, ctx: Ctx) {
     req.raw.on('close', () => { clearInterval(ping); research.bus.off(`run:${run.id}`, listener); });
   });
 
-  const autofillBody = z.object({ domain: z.string().trim().min(3).max(300), apply: bool.default(false), ...folderRef });
-  r.post('/api/knowledge/autofill', 'Fill from website in one call (waits 1-3 minutes): runs the full research (site crawl, web search for competitors/reviews/press, competitor sites) and drafts detailed docs (company, products, ICP, buyer personas, positioning, competitors, proof, tone of voice, objection handling); apply=true creates them in a folder named after the site (or folder / folder_id)', async (req) => {
+  const autofillBody = z.object({ domain: z.string().trim().min(3).max(300), apply: bool.default(false), overwrite: bool.default(false), ...folderRef });
+  r.post('/api/knowledge/autofill', 'Fill from website in one call (waits 1-3 minutes): runs the full research (site crawl, web search for competitors/reviews/press, competitor sites) and drafts detailed docs (company, products, ICP, buyer personas, positioning, competitors, proof, tone of voice, objection handling); apply=true saves them in a folder named after the site (or folder / folder_id). Docs already in that folder with the same title are skipped, or replaced with overwrite=true. Returns created, updated and skipped', async (req) => {
     const a = canWrite(req);
     const b = parse(autofillBody, req.body);
     const started = research.start(a.workspaceId, b.domain);
@@ -258,24 +267,37 @@ export function knowledgeRoutes(app: FastifyInstance, ctx: Ctx) {
     const run = research.get(a.workspaceId, started.id)!;
     if (!run.result) throw badRequest(`Could not read ${b.domain}: ${run.error ?? run.status}`);
     const d = run.result;
-    const existing = existingTitles(a.workspaceId);
-    const drafts = d.docs.map((x) => ({ ...x, exists: existing.has(x.title.toLowerCase()) }));
+    const target = b.folder_id || b.folder?.trim() ? b : { folder: d.host };
+    const targetPath = b.folder_id != null ? (pathsOf(a.workspaceId).get(b.folder_id) ?? '') : String(target.folder);
+    const existing = docsInFolder(a.workspaceId, targetPath);
+    const own = topLevelTitles(a.workspaceId);
+    const drafts = d.docs.map((x) => ({ ...x, exists: existing.has(x.title.toLowerCase()) || own.has(x.title.toLowerCase()) }));
     let created: ReturnType<typeof docJson>[] = [];
+    let updated: ReturnType<typeof docJson>[] = [];
+    let skipped: string[] = [];
     let folder: ReturnType<typeof folderJson> | null = null;
     if (b.apply) {
-      // Never overwrite: docs whose title already exists are skipped. The rest go in one folder.
       const fresh = drafts.filter((x) => !x.exists);
-      if (fresh.length) {
-        const made = db.tx(() => {
-          const folder_id = folderFor(a.workspaceId, b.folder_id || b.folder?.trim() ? b : { folder: d.host });
-          return [...fresh].reverse().map((x) => createDoc(db, a.workspaceId, { title: x.title, content: x.content, source_url: d.pages[0], created_by: 'autofill', folder_id })).reverse();
+      // Overwrite replaces the site folder's docs only; the user's own top-level docs are never touched.
+      const clash = drafts.filter((x) => x.exists && (!b.overwrite || !existing.has(x.title.toLowerCase())));
+      const replace = b.overwrite ? drafts.filter((x) => existing.has(x.title.toLowerCase())) : [];
+      skipped = clash.map((x) => x.title);
+      const r = db.tx(() => {
+        const folder_id = fresh.length || replace.length ? folderFor(a.workspaceId, target) : null;
+        const made = [...fresh].reverse().map((x) => createDoc(db, a.workspaceId, { title: x.title, content: x.content, source_url: d.pages[0], created_by: 'autofill', folder_id })).reverse();
+        const changed = replace.map((x) => {
+          const doc = existing.get(x.title.toLowerCase())!;
+          db.update('knowledge_docs', doc.id, { content: x.content, source_url: d.pages[0] ?? doc.source_url, updated_at: nowIso() });
+          return getDoc(db, a.workspaceId, doc.id)!;
         });
-        const paths = pathsOf(a.workspaceId);
-        created = made.map((x) => docJson(x, false, paths));
-        if (made[0].folder_id) folder = folderJson(getFolder(db, a.workspaceId, made[0].folder_id)!, paths);
-      }
+        return { made, changed, folder_id };
+      });
+      const paths = pathsOf(a.workspaceId);
+      created = r.made.map((x) => docJson(x, false, paths));
+      updated = r.changed.map((x) => docJson(x, false, paths));
+      if (r.folder_id) folder = folderJson(getFolder(db, a.workspaceId, r.folder_id)!, paths);
     }
-    return { data: { ...runJson(run).result, drafts, applied: b.apply, created, folder, run_id: run.id } };
+    return { data: { ...runJson(run).result, drafts, applied: b.apply && (created.length > 0 || updated.length > 0), created, updated, skipped, folder, run_id: run.id } };
   }, { body: autofillBody });
 
   // ---- "@Agent" inside a document ----

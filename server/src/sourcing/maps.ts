@@ -58,9 +58,10 @@ function polite<T>(name: string, fn: () => Promise<T>): Promise<T> {
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function userAgent(settings: Settings) {
-  const contact = settings.get('SEC_USER_AGENT');
-  return `Kinetic/0.1 (self-hosted lead research${contact ? `; ${contact}` : ''})`;
+/** Nominatim asks for a contact; some Overpass mirrors refuse agents that carry one, so Overpass gets the project URL only. */
+function userAgent(settings: Settings, contact = true) {
+  const who = contact ? settings.get('SEC_USER_AGENT') : undefined;
+  return `Kinetic/0.1 (+https://github.com/tashfeenahmed/kinetic${who ? `; ${who}` : ''})`;
 }
 
 // ---------- geocoding ----------
@@ -108,7 +109,9 @@ export async function resolveArea(q: MapsQuery, settings: Settings): Promise<Map
 
 export async function mapsSearch(q: MapsQuery, deps: Deps): Promise<MapsResult> {
   const provider = q.provider === 'google' || (q.provider !== 'osm' && deps.settings.has('GOOGLE_MAPS_API_KEY')) ? 'google' : 'osm';
-  if (provider === 'google' && !deps.settings.has('GOOGLE_MAPS_API_KEY')) throw new Error('Set GOOGLE_MAPS_API_KEY on the Integrations page, or use the free OpenStreetMap provider');
+  if (provider === 'google' && !deps.settings.has('GOOGLE_MAPS_API_KEY')) {
+    throw Object.assign(new Error('No Google Maps key is saved. A workspace admin can add one under Integrations → Data, AI & CRM providers → Google Maps (Places API). Until then, use provider "auto" or "osm" (free OpenStreetMap).'), { statusCode: 400 });
+  }
   if (!q.query?.trim()) throw Object.assign(new Error('Say what kind of business to look for, e.g. "dentist"'), { statusCode: 400 });
   const area = await resolveArea(q, deps.settings);
   const limit = Math.min(Math.max(q.limit ?? 100, 1), 2000);
@@ -198,7 +201,7 @@ function googleRow(p: any): Record<string, unknown> {
 }
 
 // ---------- OpenStreetMap (Overpass) ----------
-const BUSINESS_KEYS = ['shop', 'amenity', 'office', 'craft', 'healthcare', 'tourism', 'leisure'];
+const BUSINESS_KEYS = ['shop', 'amenity', 'office', 'craft', 'healthcare', 'tourism', 'leisure', 'club'];
 
 /** Common categories → OSM tags. Anything else is matched by name. */
 const CATEGORY_TAGS: [RegExp, string[]][] = [
@@ -255,6 +258,16 @@ const CATEGORY_TAGS: [RegExp, string[]][] = [
   [/laundr|dry clean/, ['shop=laundry', 'shop=dry_cleaning']],
   [/travel agen/, ['shop=travel_agency']],
   [/print/, ['shop=copyshop', 'craft=printer']],
+  [/football|soccer/, ['club=sport&sport=soccer', 'leisure=sports_centre&sport=soccer']],
+  [/rugby/, ['club=sport&sport=rugby_union', 'leisure=sports_centre&sport=rugby_union']],
+  [/\bgaa\b|hurling|gaelic/, ['club=sport&sport=gaelic_games', 'leisure=sports_centre&sport=gaelic_games']],
+  [/tennis|padel/, ['club=sport&sport=tennis', 'leisure=sports_centre&sport=tennis', 'leisure=sports_centre&sport=padel']],
+  [/golf/, ['leisure=golf_course', 'club=sport&sport=golf']],
+  [/swim/, ['leisure=sports_centre&sport=swimming', 'club=sport&sport=swimming']],
+  [/martial|karate|judo|taekwondo|jiu.?jitsu|\bmma\b|boxing/, ['leisure=sports_centre&sport=martial_arts', 'club=sport&sport=martial_arts', 'leisure=sports_centre&sport=boxing']],
+  [/dance|ballet/, ['leisure=dance', 'amenity=dancing_school']],
+  [/yoga|pilates/, ['leisure=fitness_centre&sport=yoga', 'shop=yoga']],
+  [/sports? (club|academy|centre|center)|athletic/, ['club=sport', 'leisure=sports_centre']],
 ];
 
 const escOverpass = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -270,28 +283,30 @@ export function overpassQuery(query: string, b: BBox, max: number): string {
     if (raw) { tags.add(`${raw[1]}=${raw[2]}`); continue; }
     for (const [re, t] of CATEGORY_TAGS) if (re.test(part)) t.forEach((x) => tags.add(x));
   }
-  const statements = [...tags].map((t) => { const [k, v] = t.split('='); return `nwr["${escOverpass(k)}"="${escOverpass(v)}"]["name"]${box};`; });
+  // A tag set may need several tags at once ("club=sport&sport=soccer").
+  const statements = [...tags].map((t) => `nwr${t.split('&').map((kv) => { const [k, v] = kv.split('='); return `["${escOverpass(k)}"="${escOverpass(v)}"]`; }).join('')}["name"]${box};`);
   // Name match for anything typed as words ("sushi", "yoga studio"), on business features only.
   const words = q.split(',').map((x) => x.trim()).filter((x) => x && !x.includes('='));
   if (words.length) {
     const re = words.map((w) => escRe(w)).join('|');
     statements.push(`nwr[~"^(${BUSINESS_KEYS.join('|')})$"~"."]["name"~"${escOverpass(re)}",i]${box};`);
   }
-  return `[out:json][timeout:60];(${statements.join('')});out center tags ${Math.max(1, Math.min(max, 5000))};`;
+  return `[out:json][timeout:40];(${statements.join('')});out center tags ${Math.max(1, Math.min(max, 5000))};`;
 }
 
 /** Public Overpass servers; the main one rate-limits bursts, so busy answers move on to a mirror. */
-const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.openstreetmap.fr/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
 
 async function overpass(body: string, deps: Deps): Promise<any> {
   let last = '';
-  for (let attempt = 0; attempt < OVERPASS.length * 2; attempt++) {
+  // Each server once, then the main one again: at most ~3 minutes before saying it's busy.
+  for (let attempt = 0; attempt < OVERPASS.length + 1; attempt++) {
     const url = OVERPASS[attempt % OVERPASS.length]!;
     if (attempt >= OVERPASS.length) await sleep(retryDelayMs);
     try {
       const res = await request(url, {
-        method: 'POST', body, timeoutMs: 90_000, direct: true,
-        headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': userAgent(deps.settings) },
+        method: 'POST', body, timeoutMs: 45_000, direct: true,
+        headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': userAgent(deps.settings, false) },
       });
       const text = await res.text();
       if (res.ok) return JSON.parse(text);

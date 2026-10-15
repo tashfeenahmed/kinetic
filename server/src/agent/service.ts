@@ -12,6 +12,7 @@ import { agentModel, chat, type ToolCall } from './llm.ts';
 import { allSkills, skillsIndex } from './skills.ts';
 import { apiTool, grantApproval, runTool, TOOLS, type ApiRequest, type ToolEnv } from './tools.ts';
 import { knowledgeContext } from '../knowledge/store.ts';
+import { getOAuthApp } from '../settings.ts';
 
 export const MAX_STEPS = 40;
 
@@ -242,7 +243,7 @@ export class AgentService {
   buildMessages(s: Row): unknown[] {
     const rows = this.messages(s.id);
     const recentFrom = Math.max(0, rows.length - 14);
-    const out: unknown[] = [{ role: 'system', content: this.systemPrompt(s.workspace_id) }];
+    const out: unknown[] = [{ role: 'system', content: this.systemPrompt(s.workspace_id, s.user_id) }];
     rows.forEach((m, i) => {
       if (m.role === 'user') out.push({ role: 'user', content: m.content });
       else if (m.role === 'assistant') {
@@ -256,8 +257,10 @@ export class AgentService {
     return out;
   }
 
-  systemPrompt(workspaceId: number): string {
+  systemPrompt(workspaceId: number, userId?: number): string {
     const db = this.db;
+    const me = userId ? db.get<{ name: string; role: string }>('SELECT u.name, m.role FROM users u JOIN workspace_members m ON m.user_id = u.id AND m.workspace_id = ? WHERE u.id = ?', [workspaceId, userId]) : undefined;
+    const signIn = (['google', 'microsoft'] as const).filter((p) => getOAuthApp(db, p));
     const ws = db.get('SELECT name FROM workspaces WHERE id = ?', [workspaceId]);
     const tables = db.all(`SELECT t.id, t.name, (SELECT COUNT(*) FROM gtm_rows r WHERE r.table_id = t.id) AS rows FROM gtm_tables t WHERE t.workspace_id = ? ORDER BY t.updated_at DESC LIMIT 30`, [workspaceId]);
     const campaigns = db.all(`SELECT id, name, status FROM campaigns WHERE workspace_id = ? AND status != 'archived' ORDER BY id DESC LIMIT 30`, [workspaceId]);
@@ -267,7 +270,7 @@ export class AgentService {
     const kb = knowledgeContext(this.ctx, workspaceId, 4000);
     const skills = skillsIndex(allSkills(db, workspaceId));
     const settings = this.ctx.gtm!.settings;
-    const keys = ['OPENROUTER_API_KEY', 'SERPER_API_KEY', 'GITHUB_TOKEN', 'APOLLO_API_KEY', 'HUNTER_API_KEY', 'ICYPEAS_API_KEY', 'MILLIONVERIFIER_API_KEY', 'PDL_API_KEY', 'SLACK_WEBHOOK_URL'] as const;
+    const keys = ['OPENROUTER_API_KEY', 'SERPER_API_KEY', 'BRAVE_API_KEY', 'SEARXNG_URL', 'GOOGLE_MAPS_API_KEY', 'GITHUB_TOKEN', 'APOLLO_API_KEY', 'HUNTER_API_KEY', 'ICYPEAS_API_KEY', 'MILLIONVERIFIER_API_KEY', 'PDL_API_KEY', 'SLACK_WEBHOOK_URL', 'NTFY_TOPIC'] as const;
     return `You are the Kinetic Agent, an expert go-to-market operator working inside Kinetic, a self-hosted GTM platform (Clay-style tables with enrichment, AI research and signals + cold email outreach).
 You DO the work by calling Kinetic's API with the \`api\` tool, as the user, in their current workspace. Today is ${new Date().toISOString().slice(0, 10)}.
 
@@ -286,6 +289,8 @@ Workspace "${ws?.name ?? workspaceId}" snapshot (live: refreshed every step, so 
 - Campaigns (${campaigns.length}): ${campaigns.map((c) => `#${c.id} "${c.name}" [${c.status}]`).join('; ') || 'none yet'}
 - Sender mailboxes: ${senders}; leads: ${leads}; lead lists: ${lists.map((l) => `#${l.id} "${l.name}"`).join(', ') || 'none'}
 - Keys set: ${keys.filter((k) => settings.has(k)).join(', ') || 'none (free sources only)'}
+- You're talking to ${me ? `${me.name}, a workspace ${me.role}` : 'a workspace member'}. Only admins can add or change keys (Integrations → Data, AI & CRM providers), OAuth apps and members${me && me.role !== 'admin' ? ': for any of those, tell them to ask an admin' : ''}. A key is live only once it shows in "Keys set" above.
+- Mailbox sign-in apps: ${signIn.length ? signIn.map((p) => (p === 'google' ? 'Google' : 'Microsoft')).join(', ') : 'none'}. ${signIn.includes('google') ? '' : 'Gmail / Google Workspace mailboxes are added with an app password: 2-Step Verification on, create one at myaccount.google.com/apppasswords, then Sender Emails → Add → IMAP/SMTP (Gmail preset). '}${signIn.includes('microsoft') ? '' : 'Microsoft mailboxes need the Microsoft app set up under Integrations first.'}
 
 Knowledge Hub (markdown documents, pinned first; long docs are cut — read them in full with the knowledge tool):
 ${kb || '(no documents yet — offer to fill it from the user\'s website or write the key docs; suggest it when targeting or copy matters)'}

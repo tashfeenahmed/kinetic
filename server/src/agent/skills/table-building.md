@@ -16,6 +16,7 @@ A table = columns + rows; cells hold values. A column's `config` drives what it 
 - `DELETE /api/gtm/tables/{id}` (needs approval)
 
 ## Rows & cells
+- `GET /api/gtm/tables/{id}/rows?limit=100&offset=0&q=acme&columns=Company,Email` → `{ total, rows: [{ id, values: { <column name>: value }, errors? }] }`: read a big table a page at a time, or find rows (e.g. to delete) by text. Use this rather than `GET /api/gtm/tables/{id}`, whose answer gets truncated.
 - `POST /api/gtm/tables/{id}/rows` `{ "rows": [{ "Company": "Acme", "Company domain": "acme.com" }] }` — keys are column names; unknown keys create text columns. `{ "count": 10 }` adds blank rows. → `{ ids }`, plus `warnings` when values look masked or cut off (`01 286...`, `j***@acme.com`): fix those before you report.
 - Copying rows from a web page (a directory, a list): save only what the page really states. Directories often mask phones and emails until clicked; the full value is usually on each business's own page (its page data — `fetch_page` lists it under "Contact details"). Leave a cell blank rather than save a partial value, and fill gaps with **Find company domain** (`company_domain`, `context: "{{Town}}"`) and **Find company phone** (`company_phone`) enrich columns.
 - `PATCH /api/gtm/tables/{id}/cells` `{ "changes": [{ "rowId": 1, "columnId": 2, "value": "x" }] }` — text columns only.
