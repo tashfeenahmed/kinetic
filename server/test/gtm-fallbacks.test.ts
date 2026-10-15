@@ -139,3 +139,22 @@ describe('GDELT', () => {
     resetGdeltPause();
   });
 });
+
+describe('masked values', () => {
+  it('flags phones and emails a page showed only partly when rows are added', async () => {
+    const { makeEnv } = await import('./helpers.ts');
+    const { looksMasked } = await import('../src/gtm/routes.ts');
+    expect(['01 286...', '040 46…', 'j***@acme.com', '087 XXX XXXX'].every(looksMasked)).toBe(true);
+    expect(['01 286 7625', 'Coming soon...', 'info@acme.com', 'Read more...'].some(looksMasked)).toBe(false);
+    const env = await makeEnv();
+    try {
+      const t = (await env.api('POST', '/api/gtm/tables', { name: 'Agents' })).body;
+      const r = await env.api('POST', `/api/gtm/tables/${t.id}/rows`, { rows: [{ Company: 'Benton', Phone: '01 211...' }, { Company: 'DNG', Phone: '01 286 7625' }] });
+      expect(r.body.ids).toHaveLength(2);
+      expect(r.body.masked).toEqual([{ row: 0, column: 'Phone', value: '01 211...' }]);
+      expect(r.body.warnings[0]).toContain('masked or cut off');
+      const clean = await env.api('POST', `/api/gtm/tables/${t.id}/rows`, { rows: [{ Company: 'Forkin', Phone: '040 461 933' }] });
+      expect(clean.body).toEqual({ ids: [expect.any(Number)] });
+    } finally { await env.close(); }
+  });
+});

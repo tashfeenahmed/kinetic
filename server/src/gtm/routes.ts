@@ -25,6 +25,20 @@ import { appendNewRows, runSource } from '../sourcing/sources.ts';
 import { actionNeeds, missingConnections, requireConnected } from './requirements.ts';
 
 const id = z.coerce.number().int().positive();
+/** Phone numbers and emails a page showed only partly: "01 286...", "j***@acme.com", "087 XXX XXXX". */
+export function looksMasked(v: unknown): boolean {
+  if (typeof v !== 'string') return false;
+  const t = v.trim();
+  if (!/\d|@/.test(t)) return false;
+  return /(\.{3}|…)$/.test(t) || /\*{2,}|\bx{3,}\b/i.test(t);
+}
+
+function maskedValues(records: Record<string, unknown>[]) {
+  const out: { row: number; column: string; value: string }[] = [];
+  records.forEach((r, i) => { for (const [k, v] of Object.entries(r)) if (looksMasked(v)) out.push({ row: i, column: k, value: String(v) }); });
+  return out.slice(0, 50);
+}
+
 const PERSON_SIGNALS = new Set(['job_change', 'outreach_status']);
 const COLUMN_TYPES = ['text', 'formula', 'extract', 'enrich', 'ai', 'http', 'signal', 'action', 'lookup', 'function'] as const;
 
@@ -274,7 +288,14 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
     const records = body.count ? Array.from({ length: body.count }, () => ({})) : body.rows;
     const ids = store.addRows(tableId, records);
     afterInsert(tableId, ids);
-    return { ids };
+    const masked = maskedValues(records);
+    if (!masked.length) return { ids };
+    return {
+      ids,
+      warnings: [`${masked.length} value(s) look masked or cut off, e.g. ${masked.slice(0, 3).map((m) => `${m.column} "${m.value}"`).join(', ')}. ` +
+        'Sites often hide the end of a phone or email until clicked. Open each item\'s own page (the full value is usually in its page data) or add a "Find company phone" / "Find company domain" column, then replace them. Never present cut-off values as real.'],
+      masked,
+    };
   });
 
   r.delete('/api/gtm/tables/:id/rows', 'Delete rows', async (req) => {
