@@ -4,6 +4,10 @@ description: Find local businesses (dentists, cafes, plumbers, agencies…) in a
 ---
 # Local business search (Google Maps / OpenStreetMap)
 
+Use this before any web scraping for local businesses: rows come with phone, website and domain. If the
+search fails, say so and retry once in a minute (the free OpenStreetMap servers are often busy) or search
+a smaller area. Only then fall back to a directory site, following the copying rules in `table-building`.
+
 Provider: **Google Places API (New)** when `GOOGLE_MAPS_API_KEY` is set on the Integrations page,
 otherwise **OpenStreetMap** (Nominatim geocoding + Overpass) — free, no key, but fewer phones/websites
 and no ratings. Check which one is active: `GET /api/sources` → `google_maps.provider` (`google` | `osm`).
