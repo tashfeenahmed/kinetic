@@ -104,6 +104,33 @@ describe('reply classification', () => {
     expect(m.bounce).toEqual({ originalMessageId: 'orig123@bear.test', recipient: 'nobody@acme.com', permanent: true, diagnostic: 'smtp; 550 5.1.1 user unknown' });
     expect(categorize(m).category).toBe('bounce');
   });
+  it('survives a bounce whose sender has regex metacharacters in the address', async () => {
+    // Quoted local parts may carry .*+?()| etc. — compiling them raw into a RegExp threw SyntaxError
+    // and killed the whole IMAP fetch batch (parseInbound runs outside the per-message try/catch).
+    const dsn = [
+      'Message-ID: <b2@mx.test>', 'From: Mail Delivery Subsystem <"oops ("@mailer.test>', 'To: alex@bear.test',
+      'Subject: Delivery Status Notification (Failure)', 'MIME-Version: 1.0',
+      'Content-Type: multipart/report; report-type=delivery-status; boundary="b2"', '',
+      '--b2', 'Content-Type: text/plain', '', 'Your message was not delivered to lost@acme.com.', '',
+      '--b2', 'Content-Type: message/delivery-status', '', 'Final-Recipient: rfc822; lost@acme.com', 'Action: failed', 'Status: 5.1.1', '', '--b2--', '',
+    ].join('\r\n');
+    const m = await parseInbound(dsn);
+    expect(m.bounce?.recipient).toBe('lost@acme.com');
+  });
+  it('does not crash when the sender address is empty', async () => {
+    // A headerless From left fromEmail = ''; the old code compiled that to // (matches every
+    // position). Replacing with '' was harmless in itself, but any future use of that regex would
+    // mis-scan the whole body — the fix skips stripping entirely when there is no address.
+    const dsn = [
+      'Message-ID: <b3@mx.test>', 'From: Mail Delivery Subsystem', 'To: alex@bear.test',
+      'Subject: Delivery Status Notification (Failure)', 'MIME-Version: 1.0',
+      'Content-Type: multipart/report; report-type=delivery-status; boundary="b3"', '',
+      '--b3', 'Content-Type: text/plain', '', 'Your message was not delivered to lost@acme.com.', '',
+      '--b3', 'Content-Type: message/delivery-status', '', 'Reporting-MTA: dns; mx.test', 'Action: failed', 'Status: 5.1.1', '', '--b3--', '',
+    ].join('\r\n');
+    const m = await parseInbound(dsn);
+    expect(m.bounce?.recipient).toBe('lost@acme.com');
+  });
   it('treats delayed notices as non-bounces', async () => {
     const dsn = ['Message-ID: <d@mx.test>', 'From: mailer-daemon@mx.test', 'Subject: Delivery Status Notification (Delay)', 'Content-Type: multipart/report; report-type=delivery-status; boundary="b"', '', '--b', 'Content-Type: message/delivery-status', '', 'Final-Recipient: rfc822; x@y.test', 'Action: delayed', 'Status: 4.4.1', '', '--b--'].join('\r\n');
     expect((await parseInbound(dsn)).bounce).toBeNull();
