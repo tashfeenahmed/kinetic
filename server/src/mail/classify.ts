@@ -23,6 +23,7 @@ export interface InboundMessage {
 }
 
 const strip = (id: string | undefined | null) => (id ? id.trim().replace(/^<|>$/g, '') : null);
+const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function addr(a: AddressObject | AddressObject[] | undefined): { text: string; first?: { name: string; address: string } } {
   const list = Array.isArray(a) ? a : a ? [a] : [];
@@ -90,9 +91,15 @@ function detectBounce(m: ParsedMail, msg: InboundMessage) {
   const original = m.attachments.find((a) => a.contentType === 'message/rfc822' || a.contentType === 'text/rfc822-headers');
   const originalText = original ? original.content.toString('utf8') : msg.text;
 
+  // Strip the sender's own address before looking for the recipient in the text, so a bounce that
+  // quotes the "From:" line doesn't get misread as its own recipient. The address is escaped: a
+  // quoted local part can carry regex metacharacters (`"a*b"@x.test` compiles to /a*b/ and throws),
+  // and an empty address would compile to //, which erases the whole body.
+  const stripSender = (text: string) =>
+    msg.fromEmail ? text.replace(new RegExp(escapeRe(msg.fromEmail), 'gi'), '') : text;
   const recipient = /Final-Recipient:\s*rfc822;\s*([^\s;]+)/i.exec(dsn)?.[1]
     ?? (m.headers.get('x-failed-recipients') as string | undefined)
-    ?? /([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i.exec(msg.text.replace(new RegExp(msg.fromEmail, 'gi'), ''))?.[1]
+    ?? /([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i.exec(stripSender(msg.text))?.[1]
     ?? null;
   const status = /Status:\s*(\d\.\d+\.\d+)/i.exec(dsn)?.[1] ?? /\b([45]\.\d{1,3}\.\d{1,3})\b/.exec(msg.text)?.[1] ?? '';
   const action = /Action:\s*(\w+)/i.exec(dsn)?.[1]?.toLowerCase() ?? '';
