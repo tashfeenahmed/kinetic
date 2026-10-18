@@ -24,6 +24,9 @@ export interface InboundMessage {
 
 const strip = (id: string | undefined | null) => (id ? id.trim().replace(/^<|>$/g, '') : null);
 
+/** Escapes a literal string for embedding in a RegExp (same pattern as the repo's other escapers). */
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 function addr(a: AddressObject | AddressObject[] | undefined): { text: string; first?: { name: string; address: string } } {
   const list = Array.isArray(a) ? a : a ? [a] : [];
   const values = list.flatMap((x) => x.value);
@@ -92,7 +95,7 @@ function detectBounce(m: ParsedMail, msg: InboundMessage) {
 
   const recipient = /Final-Recipient:\s*rfc822;\s*([^\s;]+)/i.exec(dsn)?.[1]
     ?? (m.headers.get('x-failed-recipients') as string | undefined)
-    ?? /([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i.exec(msg.text.replace(new RegExp(msg.fromEmail, 'gi'), ''))?.[1]
+    ?? /([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i.exec(msg.text.replace(new RegExp(escapeRe(msg.fromEmail), 'gi'), ''))?.[1]
     ?? null;
   const status = /Status:\s*(\d\.\d+\.\d+)/i.exec(dsn)?.[1] ?? /\b([45]\.\d{1,3}\.\d{1,3})\b/.exec(msg.text)?.[1] ?? '';
   const action = /Action:\s*(\w+)/i.exec(dsn)?.[1]?.toLowerCase() ?? '';

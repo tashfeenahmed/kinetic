@@ -108,6 +108,16 @@ describe('reply classification', () => {
     const dsn = ['Message-ID: <d@mx.test>', 'From: mailer-daemon@mx.test', 'Subject: Delivery Status Notification (Delay)', 'Content-Type: multipart/report; report-type=delivery-status; boundary="b"', '', '--b', 'Content-Type: message/delivery-status', '', 'Final-Recipient: rfc822; x@y.test', 'Action: delayed', 'Status: 4.4.1', '', '--b--'].join('\r\n');
     expect((await parseInbound(dsn)).bounce).toBeNull();
   });
+  it('survives sender addresses that are regex metacharacters when scanning for the bounced recipient', async () => {
+    // The From address is interpolated into a RegExp to strip it from the body before
+    // looking for the bounced address; unescaped brackets/parens used to throw and kill the sync.
+    const raw = ['From: Mail Delivery Subsystem <"a[b"@mx.test>', 'To: alex@bear.test',
+      'Subject: Mail delivery failed: returning message to sender', 'Message-ID: <b2@mx.test>', '',
+      'Your message to bob@corp.com could not be delivered.', ''].join('\r\n');
+    const m = await parseInbound(raw);
+    expect(m.bounce?.recipient).toBe('bob@corp.com');
+    expect(m.bounce?.permanent).toBe(true);
+  });
 });
 
 describe('html helpers', () => {
