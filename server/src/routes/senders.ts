@@ -6,6 +6,7 @@ import type { Row } from '../db/db.ts';
 import { auth, badRequest, bool, canWrite, defineRoutes, HttpError, idList, idParam, notFound, parse, requireAdmin } from '../http.ts';
 import { decrypt, encrypt, randomToken } from '../lib/crypto.ts';
 import { checkDomain, domainOf } from '../lib/dns.ts';
+import { LIKE_ESCAPE, contains } from '../lib/like.ts';
 import { emit } from '../events.ts';
 import { guessProvider, PRESETS } from '../mail/providers.ts';
 import { authorizeUrl, exchangeCode, idTokenClaims, type OAuthProvider } from '../mail/oauth.ts';
@@ -128,7 +129,7 @@ export function senderRoutes(app: FastifyInstance, ctx: Ctx) {
     const q = parse(listQ, req.query);
     const where = ['workspace_id = ?'];
     const params: any[] = [a.workspaceId];
-    if (q.search) { where.push('(email LIKE ? OR name LIKE ?)'); params.push(`%${q.search}%`, `%${q.search}%`); }
+    if (q.search) { where.push(`(email LIKE ? ${LIKE_ESCAPE} OR name LIKE ? ${LIKE_ESCAPE})`); params.push(contains(q.search), contains(q.search)); }
     if (q.status) { where.push('status = ?'); params.push(q.status); }
     if (q.tag_id) { where.push(`EXISTS (SELECT 1 FROM taggables t WHERE t.taggable_type = 'sender_email' AND t.taggable_id = sender_emails.id AND t.tag_id = ?)`); params.push(q.tag_id); }
     return { data: db.all(`SELECT * FROM sender_emails WHERE ${where.join(' AND ')} ORDER BY email`, params).map((s) => senderJson(ctx, s)) };
