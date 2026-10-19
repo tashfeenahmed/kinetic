@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Ctx } from '../context.ts';
 import { defineRoutes, HttpError, parse, auth, type Auth } from '../http.ts';
 import { hashPassword, randomToken, sha256, verifyPassword } from '../lib/crypto.ts';
+import { createLoginGuard, loginKeys } from '../lib/loginGuard.ts';
 import { internalAuth } from '../agent/internalAuth.ts';
 
 export const SESSION_COOKIE = 'k_session';
@@ -83,12 +84,22 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
   }, { body: setupBody, public: true });
 
   const loginBody = z.object({ email: emailField(), password: z.string().min(1) });
+  // Five wrong passwords for an account (or from one address) in 15 minutes lock the door.
+  const loginGuard = createLoginGuard();
   r.post('/api/auth/login', 'Log in with email and password', (req, reply) => {
     const b = parse(loginBody, req.body);
+    const keys = loginKeys(b.email, req.ip);
+    const wait = Math.max(0, ...keys.map((k) => loginGuard.check(k, ctx.now().getTime())));
+    if (wait > 0) {
+      reply.header('retry-after', String(wait));
+      throw new HttpError(429, { error: 'too_many_attempts', message: `Too many failed sign-ins. Try again in ${Math.ceil(wait / 60)} minute(s).` });
+    }
     const user = ctx.db.get('SELECT * FROM users WHERE email = ?', [b.email]);
     if (!user || !verifyPassword(b.password, user.password_hash)) {
+      for (const k of keys) loginGuard.failure(k, ctx.now().getTime());
       throw new HttpError(422, { error: 'validation_error', message: 'These credentials do not match our records.', fields: { email: ['These credentials do not match our records.'] } });
     }
+    for (const k of keys) loginGuard.clear(k);
     // Removed from every workspace: a session would only lead to an empty, broken app.
     if (!ctx.db.get('SELECT 1 FROM workspace_members WHERE user_id = ?', [user.id])) {
       throw new HttpError(403, { error: 'no_workspace', message: 'Your account is no longer part of any workspace. Ask an admin to add you again.' });
