@@ -6,6 +6,7 @@ import type { Row } from '../db/db.ts';
 import { auth, badRequest, bool, canWrite, defineRoutes, HttpError, idList, idParam, notFound, pageQuery, paginate, parse } from '../http.ts';
 import { cancelScheduled, campaignSchedule, loadSteps } from '../engine/sequencer.ts';
 import { composeCampaignEmail } from '../engine/compose.ts';
+import { LIKE_ESCAPE, contains } from '../lib/like.ts';
 import { BUILTIN_VARIABLES, buildVariables, missingVariables, render, varKey } from '../lib/template.ts';
 import { checkEmail } from '../lib/emailCheck.ts';
 import { isValidTimezone, nextWindow, timezones, WEEKDAYS } from '../lib/schedule.ts';
@@ -203,7 +204,7 @@ export function campaignRoutes(app: FastifyInstance, ctx: Ctx) {
     const q = parse(listQ, req.query);
     const where = ['workspace_id = ?'];
     const params: any[] = [a.workspaceId];
-    if (q.search) { where.push('name LIKE ?'); params.push(`%${q.search}%`); }
+    if (q.search) { where.push(`name LIKE ? ${LIKE_ESCAPE}`); params.push(contains(q.search)); }
     if (q.status) { where.push('status = ?'); params.push(q.status); }
     else where.push(`status != 'archived'`);
     if (q.tag_id) { where.push(`EXISTS (SELECT 1 FROM taggables t WHERE t.taggable_type = 'campaign' AND t.taggable_id = campaigns.id AND t.tag_id = ?)`); params.push(q.tag_id); }
@@ -466,7 +467,7 @@ export function campaignRoutes(app: FastifyInstance, ctx: Ctx) {
     const where = ['cl.campaign_id = ?'];
     const params: any[] = [c.id];
     if (q.status) { where.push('cl.status = ?'); params.push(q.status); }
-    if (q.search) { where.push(`(l.email LIKE ? OR l.first_name LIKE ? OR l.last_name LIKE ? OR l.company LIKE ?)`); params.push(...Array(4).fill(`%${q.search}%`)); }
+    if (q.search) { where.push(`(l.email LIKE ? ${LIKE_ESCAPE} OR l.first_name LIKE ? ${LIKE_ESCAPE} OR l.last_name LIKE ? ${LIKE_ESCAPE} OR l.company LIKE ? ${LIKE_ESCAPE})`); params.push(...Array(4).fill(contains(q.search))); }
     return paginate(ctx,
       `SELECT l.id, l.email, l.first_name, l.last_name, l.company, l.title, l.status AS lead_status,
          cl.id AS campaign_lead_id, cl.status, cl.current_step, cl.last_sent_at, cl.next_due_at, cl.sender_email_id,

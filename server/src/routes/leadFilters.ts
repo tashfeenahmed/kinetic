@@ -6,6 +6,7 @@
  */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { LIKE_ESCAPE, contains } from '../lib/like.ts';
 import { stringify as toCsv } from 'csv-stringify/sync';
 import type { Ctx } from '../context.ts';
 import { auth, bool, canWrite, defineRoutes, HttpError, idList, idParam, notFound, parse } from '../http.ts';
@@ -75,8 +76,8 @@ export function leadWhere(ctx: Ctx, workspaceId: number, q: Partial<LeadFilters>
   const where = ['l.workspace_id = ?'];
   const params: any[] = [workspaceId];
   if (q.search) {
-    where.push(`(l.email LIKE ? OR l.first_name LIKE ? OR l.last_name LIKE ? OR l.company LIKE ? OR (l.first_name || ' ' || l.last_name) LIKE ?)`);
-    params.push(...Array(5).fill(`%${q.search}%`));
+    where.push(`(l.email LIKE ? ${LIKE_ESCAPE} OR l.first_name LIKE ? ${LIKE_ESCAPE} OR l.last_name LIKE ? ${LIKE_ESCAPE} OR l.company LIKE ? ${LIKE_ESCAPE} OR (l.first_name || ' ' || l.last_name) LIKE ? ${LIKE_ESCAPE})`);
+    params.push(...Array(5).fill(contains(q.search)));
   }
   if (q.status) { where.push('l.status = ?'); params.push(q.status); }
   if (q.lead_list_id) { where.push('l.lead_list_id = ?'); params.push(q.lead_list_id); }

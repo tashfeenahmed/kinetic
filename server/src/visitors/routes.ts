@@ -2,6 +2,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Ctx } from '../context.ts';
+import { LIKE_ESCAPE, contains } from '../lib/like.ts';
 import { auth, badRequest, canWrite, defineRoutes, idParam, notFound, paginate, parse } from '../http.ts';
 import { isIP } from 'node:net';
 import { trackerScript } from './script.ts';
@@ -199,7 +200,7 @@ export function visitorRoutes(app: FastifyInstance, ctx: Ctx) {
     const q = parse(listQuery, req.query);
     const params: any[] = [ws];
     let sql = 'SELECT * FROM visitor_companies WHERE workspace_id = ?';
-    if (q.search) { sql += ' AND (name LIKE ? OR domain LIKE ?)'; params.push(`%${q.search}%`, `%${q.search}%`); }
+    if (q.search) { sql += ` AND (name LIKE ? ${LIKE_ESCAPE} OR domain LIKE ? ${LIKE_ESCAPE})`; params.push(contains(q.search), contains(q.search)); }
     if (q.min_score != null) { sql += ' AND score >= ?'; params.push(q.min_score); }
     if (q.days) { sql += ' AND last_seen_at >= ?'; params.push(new Date(ctx.now().getTime() - q.days * 86_400_000).toISOString()); }
     if (q.site_id) { sql += ' AND id IN (SELECT company_id FROM visitor_sessions WHERE site_id = ? AND company_id IS NOT NULL)'; params.push(q.site_id); }
@@ -234,7 +235,7 @@ export function visitorRoutes(app: FastifyInstance, ctx: Ctx) {
     const q = parse(listQuery, req.query);
     const params: any[] = [ws];
     let sql = `${PERSON_SELECT} WHERE p.workspace_id = ?`;
-    if (q.search) { sql += ' AND (p.email LIKE ? OR l.first_name LIKE ? OR l.last_name LIKE ? OR c.name LIKE ?)'; params.push(...Array(4).fill(`%${q.search}%`)); }
+    if (q.search) { sql += ` AND (p.email LIKE ? ${LIKE_ESCAPE} OR l.first_name LIKE ? ${LIKE_ESCAPE} OR l.last_name LIKE ? ${LIKE_ESCAPE} OR c.name LIKE ? ${LIKE_ESCAPE})`; params.push(...Array(4).fill(contains(q.search))); }
     if (q.min_score != null) { sql += ' AND p.score >= ?'; params.push(q.min_score); }
     if (q.days) { sql += ' AND p.last_seen_at >= ?'; params.push(new Date(ctx.now().getTime() - q.days * 86_400_000).toISOString()); }
     sql += ' ORDER BY p.last_seen_at DESC';

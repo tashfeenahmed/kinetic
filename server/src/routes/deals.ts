@@ -4,6 +4,7 @@ import type { Ctx } from '../context.ts';
 import type { Row } from '../db/db.ts';
 import { auth, canWrite, defineRoutes, HttpError, idParam, notFound, parse } from '../http.ts';
 import { DEAL_STAGES, dealOfLead, openDeal, setDealStage } from '../engine/deals.ts';
+import { LIKE_ESCAPE, contains } from '../lib/like.ts';
 
 const DEAL_SQL = `SELECT d.*, l.email AS lead_email, l.first_name, l.last_name, l.company, l.title, c.name AS campaign_name
   FROM deals d JOIN leads l ON l.id = d.lead_id LEFT JOIN campaigns c ON c.id = d.campaign_id`;
@@ -39,8 +40,8 @@ export function dealRoutes(app: FastifyInstance, ctx: Ctx) {
     if (q.campaign_id) { where.push('d.campaign_id = ?'); params.push(q.campaign_id); }
     if (q.lead_id) { where.push('d.lead_id = ?'); params.push(q.lead_id); }
     if (q.search) {
-      where.push(`(l.email LIKE ? OR l.company LIKE ? OR l.first_name || ' ' || l.last_name LIKE ?)`);
-      params.push(...Array(3).fill(`%${q.search}%`));
+      where.push(`(l.email LIKE ? ${LIKE_ESCAPE} OR l.company LIKE ? ${LIKE_ESCAPE} OR l.first_name || ' ' || l.last_name LIKE ? ${LIKE_ESCAPE})`);
+      params.push(...Array(3).fill(contains(q.search)));
     }
     const rows = db.all(`${DEAL_SQL} WHERE ${where.join(' AND ')} ORDER BY d.stage_changed_at DESC LIMIT 2000`, params);
     return { data: rows.map(dealJson), stages: DEAL_STAGES };

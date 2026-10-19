@@ -6,6 +6,7 @@ import type { Ctx } from '../context.ts';
 import { auth, canWrite, defineRoutes, idParam, notFound, pageQuery, paginate, parse } from '../http.ts';
 import { cancelScheduled } from '../engine/sequencer.ts';
 import { varKey } from '../lib/template.ts';
+import { LIKE_ESCAPE, contains } from '../lib/like.ts';
 
 export function libraryRoutes(app: FastifyInstance, ctx: Ctx) {
   const { db } = ctx;
@@ -38,7 +39,7 @@ export function libraryRoutes(app: FastifyInstance, ctx: Ctx) {
     r.get(base, `Get all blacklisted ${kind}s`, (req) => {
       const a = auth(req);
       const q = parse(listQ, req.query);
-      return paginate(ctx, `SELECT * FROM ${table} WHERE workspace_id = ? AND ${kind} LIKE ? ORDER BY id DESC`, [a.workspaceId, `%${q.search ?? ''}%`], q);
+      return paginate(ctx, `SELECT * FROM ${table} WHERE workspace_id = ? AND ${kind} LIKE ? ${LIKE_ESCAPE} ORDER BY id DESC`, [a.workspaceId, contains(q.search ?? '')], q);
     }, { query: listQ });
 
     const value = kind === 'email' ? z.email().transform((s) => s.toLowerCase()) : z.string().trim().toLowerCase().regex(/^[a-z0-9.-]+\.[a-z]{2,}$/, 'is invalid');
