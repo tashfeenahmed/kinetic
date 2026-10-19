@@ -108,6 +108,23 @@ describe('reply classification', () => {
     const dsn = ['Message-ID: <d@mx.test>', 'From: mailer-daemon@mx.test', 'Subject: Delivery Status Notification (Delay)', 'Content-Type: multipart/report; report-type=delivery-status; boundary="b"', '', '--b', 'Content-Type: message/delivery-status', '', 'Final-Recipient: rfc822; x@y.test', 'Action: delayed', 'Status: 4.4.1', '', '--b--'].join('\r\n');
     expect((await parseInbound(dsn)).bounce).toBeNull();
   });
+  it('survives a bounce whose From address holds regex metacharacters', async () => {
+    // Some MTA filters write From: "MAILER-DAEMON+*(x)"@host. The address is compiled into a
+    // regex to strip it from the body before recipient sniffing; unescaped it threw SyntaxError
+    // inside parseInbound, which inbox.ts calls outside its per-message guard — the folder's
+    // IMAP cursor then never advanced and the mailbox stopped syncing entirely.
+    const raw = (from: string) => [
+      `From: MAILER-DAEMON <${from}>`, 'To: alex@bear.test', 'Subject: failure notice',
+      'Content-Type: text/plain', '', 'Your message to lead@acme.com was not delivered.', '',
+    ].join('\r\n');
+    const m = await parseInbound(raw('MAILER-DAEMON+*(x)@mail.example'));
+    expect(m.bounce).not.toBeNull();
+    expect(m.bounce!.recipient).toBe('lead@acme.com');
+    expect(m.bounce!.permanent).toBe(true);
+    // The daemon's own address is still stripped before sniffing (no self-match), metacharacters intact.
+    const selfOnly = await parseInbound(raw('mailer-daemon@mx.test').replace('lead@acme.com', 'mailer-daemon@mx.test'));
+    expect(selfOnly.bounce!.recipient).toBeNull();
+  });
 });
 
 describe('html helpers', () => {
