@@ -90,9 +90,18 @@ function detectBounce(m: ParsedMail, msg: InboundMessage) {
   const original = m.attachments.find((a) => a.contentType === 'message/rfc822' || a.contentType === 'text/rfc822-headers');
   const originalText = original ? original.content.toString('utf8') : msg.text;
 
+  // Strip the daemon's own address from the text before picking the first address that remains.
+  // The address is attacker-visible (any MTA sets From) and may hold regex metacharacters —
+  // compile it escaped or a junk address throws and wedges the whole folder sync (inbox.ts calls
+  // parseInbound outside its per-message try/catch, so the IMAP cursor never advances).
+  const stripFrom = (t: string) => {
+    if (!msg.fromEmail) return t;
+    const esc = msg.fromEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return t.replace(new RegExp(esc, 'gi'), '');
+  };
   const recipient = /Final-Recipient:\s*rfc822;\s*([^\s;]+)/i.exec(dsn)?.[1]
     ?? (m.headers.get('x-failed-recipients') as string | undefined)
-    ?? /([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i.exec(msg.text.replace(new RegExp(msg.fromEmail, 'gi'), ''))?.[1]
+    ?? /([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i.exec(stripFrom(msg.text))?.[1]
     ?? null;
   const status = /Status:\s*(\d\.\d+\.\d+)/i.exec(dsn)?.[1] ?? /\b([45]\.\d{1,3}\.\d{1,3})\b/.exec(msg.text)?.[1] ?? '';
   const action = /Action:\s*(\w+)/i.exec(dsn)?.[1]?.toLowerCase() ?? '';
