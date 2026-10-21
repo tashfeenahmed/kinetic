@@ -7,6 +7,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { stringify as toCsv } from 'csv-stringify/sync';
+import { csvSafe } from '../lib/csv.ts';
 import type { Ctx } from '../context.ts';
 import { auth, bool, canWrite, defineRoutes, HttpError, idList, idParam, notFound, parse } from '../http.ts';
 import { EMAIL_PROVIDERS, resolveDomains, unresolvedDomains } from '../engine/emailProviders.ts';
@@ -209,7 +210,8 @@ export function leadFilterRoutes(app: FastifyInstance, ctx: Ctx) {
     const body = toCsv([head, ...rows.map((x) => {
       const vars = JSON.parse(x.custom_variables || '{}');
       return [x.email, x.first_name, x.last_name, x.title, x.company, x.status, x.emails_sent ?? 0, x.opens ?? 0, x.clicks ?? 0, x.replies ?? 0, x.has_bounced ? 'yes' : 'no',
-        x.last_sent_at ?? '', x.last_opened_at ?? '', x.last_clicked_at ?? '', x.last_replied_at ?? '', x.email_provider ?? '', x.created_at, ...varNames.map((n) => vars[n] ?? '')];
+        x.last_sent_at ?? '', x.last_opened_at ?? '', x.last_clicked_at ?? '', x.last_replied_at ?? '', x.email_provider ?? '', x.created_at, ...varNames.map((n) => vars[n] ?? '')]
+        .map((v) => csvSafe(String(v ?? '')));
     })]);
     reply.header('content-type', 'text/csv; charset=utf-8');
     reply.header('content-disposition', `attachment; filename="leads-${ctx.now().toISOString().slice(0, 10)}.csv"`);
