@@ -245,8 +245,12 @@ export function leadRoutes(app: FastifyInstance, ctx: Ctx) {
     const a = canWrite(req);
     const b = parse(idsBody, req.body);
     const ph = b.lead_ids.map(() => '?').join(',');
+    // Scope by workspace_id: taggables has no FK to leads, so an unscoped
+    // id-IN wipe used to delete tag links of OTHER workspaces' leads whose ids
+    // happened to be in the request. Runs BEFORE the lead delete so the
+    // ownership subquery can still resolve the rows.
+    db.run(`DELETE FROM taggables WHERE taggable_type = 'lead' AND taggable_id IN (SELECT id FROM leads WHERE workspace_id = ? AND id IN (${ph}))`, [a.workspaceId, ...b.lead_ids]);
     const n = db.run(`DELETE FROM leads WHERE workspace_id = ? AND id IN (${ph})`, [a.workspaceId, ...b.lead_ids]).changes;
-    db.run(`DELETE FROM taggables WHERE taggable_type = 'lead' AND taggable_id IN (${ph})`, b.lead_ids);
     return { data: { deleted: n } };
   }, { body: idsBody });
 
