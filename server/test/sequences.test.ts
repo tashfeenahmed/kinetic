@@ -442,3 +442,39 @@ describe('conditional sequences', () => {
     expect(again[0].ab_test.enabled).toBe(true);
   });
 });
+
+describe('crash recovery', () => {
+  it('reclaims slots stuck in sending and re-plans the lead', async () => {
+    const { campaign, leadIds } = await setup({ steps: threeSteps([]) });
+    expect(plan(env.ctx).planned).toBe(1);
+    // Simulate a crash mid-send: the slot was claimed but never finished.
+    db().run(`UPDATE scheduled_emails SET status = 'sending' WHERE campaign_id = ?`, [campaign.id]);
+    db().run(`UPDATE campaign_leads SET status = 'in_sequence', current_step = 0 WHERE campaign_id = ?`, [campaign.id]);
+
+    // While fresh, dispatch leaves it alone (a send in flight must not be double-sent).
+    await dispatch(env.ctx, 500);
+    expect(db().get<{ n: number }>(`SELECT COUNT(*) n FROM scheduled_emails WHERE status = 'sending'`)!.n).toBe(1);
+    expect(stepsSent(leadIds[0]!)).toEqual([]);
+
+    // Past the grace window the next dispatch fails the orphan...
+    env.clock.now = new Date(env.clock.now.getTime() + 11 * 60_000);
+    await dispatch(env.ctx, 500);
+    expect(db().get<{ n: number }>(`SELECT COUNT(*) n FROM scheduled_emails WHERE status = 'sending'`)!.n).toBe(0);
+
+    // ...and the lead re-plans and goes out.
+    await sendDue();
+    expect(stepsSent(leadIds[0]!)).toEqual([1]);
+  });
+
+  it('a stuck slot does not keep the lead blocked across daily caps', async () => {
+    const { campaign } = await setup({ steps: threeSteps([]), settings: { max_emails_per_day: 1 } });
+    expect(plan(env.ctx).planned).toBe(1);
+    db().run(`UPDATE scheduled_emails SET status = 'sending' WHERE campaign_id = ?`, [campaign.id]);
+    env.clock.now = new Date(env.clock.now.getTime() + 11 * 60_000);
+    // Cap counts 'sending' too; without the reclaim, plan() would see campaignLeft = 0 forever.
+    expect(plan(env.ctx).planned).toBe(0);
+    await dispatch(env.ctx, 500); // reclaims (failed)
+    env.clock.now = new Date(env.clock.now.getTime() + 1000);
+    expect(plan(env.ctx).planned).toBe(1); // cap free again
+  });
+});

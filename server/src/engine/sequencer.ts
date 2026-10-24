@@ -212,9 +212,26 @@ function maybeComplete(ctx: Ctx, c: Row) {
   }
 }
 
+/**
+ * A slot stays in 'sending' only for the seconds it takes to hand the message to SMTP.
+ * The dispatch job never overlaps itself, so a 'sending' slot older than the grace
+ * window was left behind by a crash/restart: it would block that lead forever (plan()
+ * skips campaign_leads with an active slot) and keep eating the campaign's and
+ * mailbox's daily caps (both count 'sending'). Mark those failed so the lead re-plans.
+ */
+const STUCK_SLOT_GRACE_MS = 10 * 60_000;
+function reclaimStuckSlots(ctx: Ctx, now: Date) {
+  const cutoff = new Date(now.getTime() - STUCK_SLOT_GRACE_MS).toISOString();
+  const n = ctx.db.run(
+    `UPDATE scheduled_emails SET status = 'failed', error = 'send interrupted (app restarted?)' WHERE status = 'sending' AND scheduled_at < ?`,
+    [cutoff]).changes;
+  if (n) ctx.log.warn({ reclaimed: n }, 'reclaimed send slots stuck in sending');
+}
+
 /** Sends due slots. Returns how many were sent / failed. */
 export async function dispatch(ctx: Ctx, limit = 50): Promise<{ sent: number; failed: number }> {
   const now = ctx.now();
+  reclaimStuckSlots(ctx, now);
   const due = ctx.db.all(
     `SELECT * FROM scheduled_emails WHERE status = 'scheduled' AND scheduled_at <= ? ORDER BY scheduled_at LIMIT ?`,
     [now.toISOString(), limit]);
