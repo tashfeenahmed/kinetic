@@ -243,6 +243,39 @@ describe('replies, unsubscribes and webhooks', () => {
     expect(plan(env.ctx).planned).toBe(1); // lead0 continues, lead1 bounced
   });
 
+  it('a hard bounce permanently suppresses the address across re-imports', async () => {
+    const { campaign, senders, leadIds } = await setupCampaign({ leads: 2 });
+    await env.api('POST', `/api/campaigns/${campaign.id}/launch`);
+    plan(env.ctx);
+    env.clock.now = new Date('2026-10-12T20:00:00Z');
+    await dispatch(env.ctx);
+    const sender = env.ctx.db.get('SELECT * FROM sender_emails WHERE id = ?', [senders[0].id]);
+    const toLead = (i: number) => mail.sent.find((m) => m.msg.to.includes(`lead${i}@`))!.msg;
+
+    const bounce = [
+      'Message-ID: <dsn2@mx.test>', 'From: Mail Delivery Subsystem <mailer-daemon@googlemail.com>', `To: ${sender.email}`, 'Subject: Delivery Status Notification (Failure)',
+      'Content-Type: multipart/report; report-type=delivery-status; boundary="zz"', '', '--zz', 'Content-Type: text/plain', '', 'Address not found', '',
+      '--zz', 'Content-Type: message/delivery-status', '', 'Final-Recipient: rfc822; lead1@client1.test', 'Action: failed', 'Status: 5.1.1', '',
+      '--zz', 'Content-Type: text/rfc822-headers', '', `Message-ID: <${toLead(1).messageId}>`, '', '--zz--',
+    ].join('\r\n');
+    expect(await processInbound(env.ctx, sender, await parseInbound(bounce), { client: null, folder: 'INBOX', kind: 'inbox', uid: 3 })).toBe('bounce');
+    expect(env.ctx.db.get("SELECT reason, source FROM blacklisted_emails WHERE email = 'lead1@client1.test'")).toEqual({ reason: 'bounced', source: 'hard bounce' });
+
+    // The dead address survives deleting the lead and re-importing it: suppressed on import,
+    // never queued when attached to a campaign.
+    await env.api('DELETE', `/api/leads/${leadIds[1]}`);
+    const again = (await env.api('POST', '/api/leads/bulk/csv', { csv: 'Email,First\nlead1@client1.test,Lead1', mapping: { email: 'Email', first_name: 'First' } })).body.data;
+    const fresh = (await env.api('GET', `/api/leads/${again.lead_ids[0]}`)).body.data;
+    expect(fresh).toMatchObject({ suppressed: { reason: 'bounced' } });
+
+    const camp2 = (await env.api('POST', '/api/campaigns', { name: 'Second wave' })).body.data;
+    await env.api('POST', `/api/campaigns/${camp2.id}/attach-sender-emails`, { sender_email_ids: [senders[0].id] });
+    await env.api('PUT', `/api/campaigns/${camp2.id}/sequence`, { steps: [{ email_subject: 'Hi', email_body: 'Hello {FIRST_NAME}.' }] });
+    await env.api('POST', `/api/campaigns/${camp2.id}/leads/attach-leads`, { lead_ids: [fresh.id] });
+    await env.api('POST', `/api/campaigns/${camp2.id}/launch`);
+    expect(env.ctx.db.get('SELECT status FROM campaign_leads WHERE campaign_id = ? AND lead_id = ?', [camp2.id, fresh.id])).toEqual({ status: 'stopped' });
+  });
+
   it('one-click unsubscribe link stops all campaigns for the lead', async () => {
     const { campaign, leadIds } = await setupCampaign({ leads: 1 });
     await env.api('POST', `/api/campaigns/${campaign.id}/launch`);

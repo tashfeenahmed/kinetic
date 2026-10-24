@@ -268,6 +268,11 @@ function handleBounce(ctx: Ctx, sender: Row, msg: InboundMessage) {
     });
     if (!original || !b.permanent) return;
     db.update('sent_emails', original.id, { bounced: 1 });
+    // Permanent suppression: a hard bounce is a dead address. Block it workspace-wide so a
+    // deleted-and-re-imported lead (or the same address in another campaign) is never emailed
+    // again — sending to dead addresses is what burns sender domain reputation. Suppress the address
+    // we sent to: b.recipient can be a guess scraped from the bounce text, or a forwarding target.
+    suppress(ctx, sender.workspace_id, original.to_email, 'bounced', 'hard bounce');
     if (original.lead_id) {
       db.run(`UPDATE leads SET status = 'bounced', updated_at = ? WHERE id = ?`, [ctx.now().toISOString(), original.lead_id]);
       db.run(`UPDATE campaign_leads SET status = 'bounced', next_due_at = NULL WHERE lead_id = ? AND status IN ('pending','in_sequence')`, [original.lead_id]);
