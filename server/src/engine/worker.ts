@@ -24,12 +24,24 @@ interface Job {
 
 const SYNC_CONCURRENCY = 4;
 
+/**
+ * A Disconnected mailbox is still retried (a fixed password reconnects it on its own), but slowly:
+ * a failed sync never sets last_synced_at, so it would otherwise retry every tick, and each refused
+ * login counts against the account at the provider (Microsoft locks accounts that keep failing).
+ */
+const DISCONNECTED_RETRY_MS = 30 * 60_000;
+const disconnectedTries = new WeakMap<Ctx, Map<number, number>>();
+
 /** Syncs mailboxes that have not been synced for `staleMs`, a few at a time. */
-async function syncDue(ctx: Ctx, staleMs: number) {
-  const cutoff = new Date(ctx.now().getTime() - staleMs).toISOString();
+export async function syncDue(ctx: Ctx, staleMs: number, disconnectedRetryMs = DISCONNECTED_RETRY_MS) {
+  const nowMs = ctx.now().getTime();
+  const cutoff = new Date(nowMs - staleMs).toISOString();
+  let tries = disconnectedTries.get(ctx);
+  if (!tries) disconnectedTries.set(ctx, (tries = new Map()));
   const due = ctx.db.all(
     `SELECT * FROM sender_emails WHERE status != 'Paused' AND (last_synced_at IS NULL OR last_synced_at < ?) ORDER BY last_synced_at LIMIT 20`,
-    [cutoff]);
+    [cutoff]).filter((s) => s.status !== 'Disconnected' || nowMs - (tries.get(s.id) ?? -Infinity) >= disconnectedRetryMs);
+  for (const s of due) tries.set(s.id, nowMs);
   for (let i = 0; i < due.length; i += SYNC_CONCURRENCY) {
     await Promise.all(due.slice(i, i + SYNC_CONCURRENCY).map((s) => syncSender(ctx, s)));
   }
@@ -40,7 +52,7 @@ export function jobs(ctx: Ctx): Job[] {
   return [
     { name: 'plan', everyMs: 60_000 * k, run: plan },
     { name: 'dispatch', everyMs: 10_000 * k, run: (c) => dispatch(c) },
-    { name: 'sync', everyMs: 30_000 * k, run: (c) => syncDue(c, 120_000 * k) },
+    { name: 'sync', everyMs: 30_000 * k, run: (c) => syncDue(c, 120_000 * k, DISCONNECTED_RETRY_MS * k) },
     { name: 'warmup-plan', everyMs: 5 * 60_000 * k, run: planWarmup },
     { name: 'warmup-send', everyMs: 20_000 * k, run: (c) => dispatchWarmup(c) },
     { name: 'webhooks', everyMs: 15_000 * k, run: (c) => deliverWebhooks(c) },

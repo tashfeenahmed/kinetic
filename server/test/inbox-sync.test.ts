@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FakeMail, makeEnv, type TestEnv } from './helpers.ts';
 import { syncSender } from '../src/engine/inbox.ts';
 import { syncWorkspace } from '../src/engine/syncAll.ts';
+import { syncDue } from '../src/engine/worker.ts';
 import type { Row } from '../src/db/db.ts';
 
 const NOW = new Date('2026-10-12T14:00:00Z');
@@ -119,5 +120,32 @@ describe('POST /api/replies/sync', () => {
     expect(res.mailboxes.find((m) => m.email === 'fast@two.test')?.status).toBe('synced');
     expect(await bg).toBe(1);
     expect(mail.sessions).toBe(2);
+  });
+});
+
+describe('background sync of a Disconnected mailbox', () => {
+  it('retries a refused login every 30 minutes, not every tick', async () => {
+    const s = await addSender('dead@north.test');
+    await addSender('ok@north.test');
+    mail.withImap = (async (...args: any[]) => {
+      if (args[0].email === 'dead@north.test') { mail.sessions++; throw new Error('Login failed.'); }
+      return ImapFakeMail.prototype.withImap.apply(mail, args as any);
+    }) as any;
+    const status = () => env.ctx.db.get('SELECT status FROM sender_emails WHERE id = ?', [s.id]).status;
+
+    const before = mail.sessions;
+    await syncDue(env.ctx, 120_000);
+    expect(status()).toBe('Disconnected');
+    const afterFirst = mail.sessions;
+    expect(afterFirst - before).toBe(2); // both mailboxes tried
+
+    env.clock.now = new Date(NOW.getTime() + 5 * 60_000);
+    await syncDue(env.ctx, 120_000);
+    expect(mail.sessions - afterFirst).toBe(1); // only the healthy one
+
+    env.clock.now = new Date(NOW.getTime() + 31 * 60_000);
+    const beforeRetry = mail.sessions;
+    await syncDue(env.ctx, 120_000);
+    expect(mail.sessions - beforeRetry).toBe(2); // the dead one gets its slow retry
   });
 });
