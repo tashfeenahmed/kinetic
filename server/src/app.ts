@@ -50,6 +50,11 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
   app.addContentTypeParser('multipart/form-data', { parseAs: 'string' }, (_req, body, done) => done(null, { raw: body }));
   app.decorateRequest('auth', null);
 
+  // No other site may frame the app (clickjacking); the app's own srcDoc previews are unaffected.
+  app.addHook('onSend', async (_req, reply) => {
+    reply.header('x-frame-options', 'SAMEORIGIN');
+  });
+
   app.addHook('onRequest', async (req) => {
     if (!req.url.startsWith('/api/')) return;
     req.auth = authenticate(ctx, req);
@@ -99,6 +104,8 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
   visitorRoutes(app, ctx);
 
   app.get('/healthz', { config: { public: true } }, () => ({ ok: true }));
+  // A private app: keep the login page, tracking links and unsubscribe pages out of search results.
+  app.get('/robots.txt', { config: { public: true } }, (_req, reply) => reply.type('text/plain').send('User-agent: *\nDisallow: /\n'));
 
   if (existsSync(WEB_DIST)) {
     // wildcard routing serves files added after startup (e.g. after a rebuild).
