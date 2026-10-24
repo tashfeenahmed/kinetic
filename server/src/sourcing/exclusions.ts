@@ -9,6 +9,7 @@
  */
 import type { StatementSync } from 'node:sqlite';
 import { nowIso, type Db } from '../db/db.ts';
+import { LIKE_ESCAPE, contains } from '../lib/like.ts';
 import { detectKind, ID_KINDS, isFreemail, normalize, rowIds, type IdKind } from './normalize.ts';
 
 export interface ExclusionList { id: number; workspace_id: number; name: string; created_at: string; updated_at: string }
@@ -85,7 +86,7 @@ export function listEntries(db: Db, workspaceId: number, listId: number, q: { ki
   const where = ['list_id = ?', 'workspace_id = ?'];
   const params: (string | number)[] = [listId, workspaceId];
   if (q.kind) { where.push('kind = ?'); params.push(q.kind); }
-  if (q.search) { where.push('value LIKE ?'); params.push(`%${q.search.toLowerCase()}%`); }
+  if (q.search) { where.push(`value LIKE ? ${LIKE_ESCAPE}`); params.push(contains(q.search.toLowerCase())); }
   const total = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM exclusion_entries WHERE ${where.join(' AND ')}`, params)!.n;
   const data = db.all(`SELECT kind, value FROM exclusion_entries WHERE ${where.join(' AND ')} ORDER BY kind, value LIMIT ? OFFSET ?`, [...params, q.limit, q.offset]);
   return { data, total };

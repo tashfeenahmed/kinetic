@@ -6,6 +6,7 @@ import type { Row } from '../db/db.ts';
 import { auth, bool, canWrite, defineRoutes, HttpError, idParam, notFound, pageQuery, paginate, parse } from '../http.ts';
 import { emit } from '../events.ts';
 import { dealFromReply, undoDealFromReply } from '../engine/deals.ts';
+import { LIKE_ESCAPE, contains } from '../lib/like.ts';
 import { newMessageId, referenceChain } from '../engine/compose.ts';
 import { ensureThread } from '../engine/threads.ts';
 import { isSyncing, storeAttachments, unsubscribeLead } from '../engine/inbox.ts';
@@ -107,7 +108,7 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
     if (q.lead_id) { where.push('r.lead_id = ?'); params.push(q.lead_id); }
     const labels = q.label?.split(',').map((x) => x.trim()).filter(Boolean) ?? [];
     if (labels.length) { where.push(`COALESCE(r.label, r.category) IN (${labels.map(() => '?').join(',')})`); params.push(...labels); }
-    if (q.search) { where.push('(r.from_email LIKE ? OR r.from_name LIKE ? OR r.subject LIKE ? OR r.body_text LIKE ?)'); params.push(...Array(4).fill(`%${q.search}%`)); }
+    if (q.search) { where.push(`(r.from_email LIKE ? ${LIKE_ESCAPE} OR r.from_name LIKE ? ${LIKE_ESCAPE} OR r.subject LIKE ? ${LIKE_ESCAPE} OR r.body_text LIKE ? ${LIKE_ESCAPE})`); params.push(...Array(4).fill(contains(q.search))); }
     // One row per conversation: the newest matching message.
     const sql = `SELECT r.*, s.email AS sender_email, c.name AS campaign_name,
         (SELECT COUNT(*) FROM replies r2 WHERE r2.thread_id = r.thread_id) AS thread_count
@@ -359,7 +360,7 @@ export function inboxRoutes(app: FastifyInstance, ctx: Ctx) {
     if (q.kind !== 'all') { where.push('s.kind = ?'); params.push(q.kind); }
     else where.push(`s.kind != 'test'`);
     if (q.sender_email_id) { where.push('s.sender_email_id = ?'); params.push(q.sender_email_id); }
-    if (q.search) { where.push('(s.to_email LIKE ? OR s.subject LIKE ?)'); params.push(`%${q.search}%`, `%${q.search}%`); }
+    if (q.search) { where.push(`(s.to_email LIKE ? ${LIKE_ESCAPE} OR s.subject LIKE ? ${LIKE_ESCAPE})`); params.push(contains(q.search), contains(q.search)); }
     return paginate(ctx,
       `SELECT s.id, s.kind, s.campaign_id, s.lead_id, s.thread_id, s.to_email, s.subject, s.opens, s.clicks, s.bounced, s.sent_at, s.sender_email_id,
          se.email AS sender_email, c.name AS campaign_name, substr(s.body_text, 1, 200) AS preview,
