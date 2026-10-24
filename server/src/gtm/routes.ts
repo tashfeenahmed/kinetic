@@ -19,6 +19,7 @@ import { SETTINGS_META } from './settingsMeta.ts';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { unwrap, stringify } from './lib/template.ts';
+import { csvSafe } from '../lib/csv.ts';
 import { filterExcluded } from '../sourcing/exclusions.ts';
 import { isSourcingMode, sourcingFind } from '../sourcing/routes.ts';
 import { appendNewRows, runSource } from '../sourcing/sources.ts';
@@ -472,7 +473,7 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
     }
     const records = rows.map((r) => cols.map((c) => {
       const cell: any = r.cells[c.id];
-      return cell ? stringify(unwrap(cell.value)) : '';
+      return csvSafe(cell ? stringify(unwrap(cell.value)) : '');
     }));
     return toCsv([cols.map((c) => c.name), ...records]);
   };
