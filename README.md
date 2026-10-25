@@ -16,7 +16,7 @@ wired straight into cold email: campaigns, warmup, a master inbox and an AI agen
   <img alt="Node 24+" src="https://img.shields.io/badge/node-24%2B-3b5bfd?style=flat-square&logo=node.js&logoColor=white" />
   <img alt="SQLite" src="https://img.shields.io/badge/database-SQLite-0f172a?style=flat-square&logo=sqlite&logoColor=white" />
   <img alt="Runs on a Raspberry Pi" src="https://img.shields.io/badge/runs%20on-Raspberry%20Pi-f97316?style=flat-square&logo=raspberrypi&logoColor=white" />
-  <img alt="Tests" src="https://img.shields.io/badge/tests-452%20passing-22c55e?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-453%20passing-22c55e?style=flat-square" />
   <img alt="API routes" src="https://img.shields.io/badge/REST%20API-385%20routes-fbbf24?style=flat-square" />
 </p>
 

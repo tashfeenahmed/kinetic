@@ -20,6 +20,7 @@ import { domainOf } from '../lib/dns.ts';
 import { escapeHtml } from '../lib/html.ts';
 import { aiConfig, chat } from '../engine/replyAi.ts';
 import { headline, sameHeadline, type CellChange } from './engine/store.ts';
+import { Settings } from './settings.ts';
 
 export const DIGEST_HOUR = 8;
 const MAX_CHANGE_JSON = 4_000;
@@ -357,11 +358,14 @@ export function renderDigest(digest: Digest, opts: { publicUrl: string; workspac
 // Sending
 // ---------------------------------------------------------------------------
 
-/** The workspace's time zone: the one most of its campaigns send in, else UTC. */
+const validZone = (tz?: string | null) => { try { return !!tz && !!new Intl.DateTimeFormat('en', { timeZone: tz }); } catch { return false; } };
+
+/** ALERT_DIGEST_TIMEZONE (Integrations), else the zone most of the workspace's campaigns send in, else UTC. */
 export function workspaceTimeZone(ctx: Ctx, workspaceId: number): string {
+  const set = (ctx.gtm?.settings ?? new Settings(ctx.db)).get('ALERT_DIGEST_TIMEZONE')?.trim();
+  if (validZone(set)) return set!;
   const r = ctx.db.get<{ tz: string }>(`SELECT schedule_timezone tz FROM campaigns WHERE workspace_id = ? GROUP BY schedule_timezone ORDER BY COUNT(*) DESC LIMIT 1`, [workspaceId]);
-  try { if (r?.tz) { new Intl.DateTimeFormat('en', { timeZone: r.tz }); return r.tz; } } catch { /* unknown zone */ }
-  return 'UTC';
+  return validZone(r?.tz) ? r!.tz : 'UTC';
 }
 
 export function localDayHour(now: Date, timeZone: string): { day: string; hour: number } {

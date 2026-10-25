@@ -139,6 +139,18 @@ describe('sending the digest', () => {
     expect(s.mail.sent).toHaveLength(1);
   });
 
+  it('uses the time zone set under Integrations over the campaigns\' one', async () => {
+    const s = setup('2026-10-24T11:30:00Z'); // 07:30 in New York, 20:30 in Tokyo
+    s.db.run(`UPDATE campaigns SET schedule_timezone = 'Asia/Tokyo'`);
+    new Settings(s.db).set('ALERT_DIGEST_TIMEZONE', 'America/New_York');
+    s.queue(october()[0]);
+    await runAlertDigests(s.ctx, { useAi: false });
+    expect(s.db.get('SELECT COUNT(*) n FROM alert_digest_runs')).toEqual({ n: 0 });
+    s.at('2026-10-24T12:30:00Z'); // 08:30 in New York
+    await runAlertDigests(s.ctx, { useAi: false });
+    expect(s.db.get('SELECT day, status FROM alert_digest_runs')).toEqual({ day: '2026-10-24', status: 'sent' });
+  });
+
   it('stays quiet on a day with nothing worth a look', async () => {
     const s = setup('2026-10-24T08:00:00Z');
     for (const i of october().slice(2, 6)) s.queue(i);
