@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowUp, BookOpen, ChevronDown, ChevronRight, ExternalLink, Globe, Hand, MessageSquareText, PanelLeftClose, PanelLeft,
+  ArrowUp, BookOpen, ChevronDown, ChevronRight, ExternalLink, Globe, Hand, PanelLeftClose, PanelLeft,
   Plus, Search, ShieldAlert, Square, Table2, Trash2, Wrench,
 } from 'lucide-react';
 import { api, errorMessage } from '../../lib/api.ts';
@@ -111,9 +111,7 @@ function NewChat({ historyOpen, toggleHistory }: { historyOpen: boolean; toggleH
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10">
         <div className="w-full max-w-[680px]">
           <div className="mb-6 text-center">
-            <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-xl bg-zinc-900 text-white"><MessageSquareText className="size-5" /></div>
             <h1 className="text-[22px] font-semibold tracking-tight text-zinc-900">What should we build?</h1>
-            <p className="mt-1 text-[13.5px] text-zinc-500">The agent builds tables, finds and enriches prospects, writes campaigns and triages replies — it asks before anything that sends, deletes or spends.</p>
           </div>
           {config.data && !config.data.aiReady && (
             <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900">
