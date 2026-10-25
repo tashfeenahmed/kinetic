@@ -230,7 +230,7 @@ function StepsEditor({ campaign: c }: { campaign: Campaign }) {
       </div>
 
       <div className="space-y-4">
-        <div className="rounded-lg border border-zinc-200 bg-white p-4 text-[13px]">
+        <div className="rounded-2xl border border-zinc-200 bg-white p-4 text-[13px]">
           <div className="mb-3 font-semibold text-zinc-900">Daily caps</div>
           <Field label="Invites per day" hint="Also limited by your global LinkedIn limits."><Input type="number" min={1} max={100} value={s.daily_invites} onChange={(e) => setS({ ...s, daily_invites: Number(e.target.value) || 0 })} /></Field>
           <Field label="Messages per day" className="mt-3"><Input type="number" min={1} max={150} value={s.daily_messages} onChange={(e) => setS({ ...s, daily_messages: Number(e.target.value) || 0 })} /></Field>
@@ -245,7 +245,7 @@ function StepsEditor({ campaign: c }: { campaign: Campaign }) {
 
 function StepCard({ icon, title, children, right, muted }: { icon: ReactNode; title: string; children: ReactNode; right?: ReactNode; muted?: boolean }) {
   return (
-    <div className={cx('rounded-lg border border-zinc-200 bg-white p-4 text-[13px] text-zinc-600', muted && 'opacity-60')}>
+    <div className={cx('rounded-2xl border border-zinc-200 bg-white p-4 text-[13px] text-zinc-600', muted && 'opacity-60')}>
       <div className="mb-2 flex items-center gap-2">
         <span className="flex size-7 items-center justify-center rounded-md bg-zinc-100 text-zinc-700">{icon}</span>
         <span className="flex-1 font-medium text-zinc-900">{title}</span>
@@ -297,7 +297,7 @@ function LeadsTab({ campaign: c }: { campaign: Campaign }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-zinc-200 bg-white p-4">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
         <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-zinc-900"><Filter className="size-4 text-zinc-400" />Review gate</div>
         <p className="mb-3 text-[12.5px] text-zinc-500">Keep only the leads that match. Comma-separated keywords; empty = no filter. You can also include/exclude leads one by one below.</p>
         <div className="grid gap-3 sm:grid-cols-4">

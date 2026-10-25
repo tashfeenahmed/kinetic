@@ -56,7 +56,7 @@ export function Catalogue() {
               const dim = p.needs_extension && !paired;
               return (
                 <button key={p.id} onClick={() => setOpen(p)}
-                  className={cx('group flex flex-col rounded-lg border border-zinc-200 bg-white p-3.5 text-left transition hover:border-zinc-300 hover:shadow-sm', dim && 'opacity-60 hover:opacity-100')}>
+                  className={cx('group flex flex-col rounded-2xl border border-zinc-200 bg-white p-3.5 text-left transition hover:border-zinc-300 hover:shadow-sm', dim && 'opacity-60 hover:opacity-100')}>
                   <div className="flex items-start gap-2.5">
                     <NetworkIcon network={p.network} size={26} />
                     <div className="min-w-0 flex-1">

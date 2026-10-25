@@ -64,7 +64,7 @@ function SavedSearches() {
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white">
+    <div className="rounded-2xl border border-slate-200 bg-white">
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
         <div className="text-[13.5px] text-slate-500">Save a search from the ⋯ menu in <Link to="/" className="font-medium text-slate-800 hover:underline">Find new prospects</Link>, or create one here.</div>
         <Button size="sm" variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>New saved search</Button>
@@ -161,7 +161,7 @@ function Exclusions() {
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white">
+    <div className="rounded-2xl border border-slate-200 bg-white">
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
         <div className="text-[13.5px] text-slate-500">Applied to Find prospects, table imports from sources and saved searches.</div>
         <Button size="sm" variant="primary" icon={<Plus className="size-4" />} onClick={() => setNaming({ name: '' })}>New list</Button>

@@ -63,7 +63,7 @@ export function StatsTab({ campaign }: { campaign: Campaign }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+      <div className="grid grid-cols-2 gap-4 rounded-2xl border border-slate-200 bg-white p-5 md:grid-cols-4 xl:grid-cols-7">
         <Stat label="Sent" value={fmtNumber(s.emails_sent)} sub={`${plural(s.total_leads, 'lead')} total`} />
         <Stat label="Contacted" value={fmtNumber(s.total_leads_contacted)} sub={`${fmtPct(s.progress_percentage)} finished`} />
         <Stat label="Opened" value={campaign.open_tracking ? fmtPct(s.unique_opens_per_contact_percentage) : '—'} sub={campaign.open_tracking ? plural(s.unique_opens_per_contact, 'lead') : 'Tracking off'} />

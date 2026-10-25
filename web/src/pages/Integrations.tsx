@@ -91,7 +91,7 @@ export function IntegrationsPage() {
             <div className="grid gap-4 pb-5 sm:grid-cols-2 xl:grid-cols-3">
               {TOOLS.map((t) => {
                 const body = (
-                  <div className="h-full rounded-xl border border-slate-200 p-4 transition-colors hover:border-slate-300">
+                  <div className="h-full rounded-2xl border border-slate-200 p-4 transition-colors hover:border-slate-300">
                     <div className="flex items-center gap-2.5">
                       <BrandIcon domain={t.domain} fallback={t.icon} size={32} />
                       <div className="font-semibold text-slate-900">{t.name}</div>
@@ -101,7 +101,7 @@ export function IntegrationsPage() {
                 );
                 return t.to ? <Link key={t.name} to={t.to}>{body}</Link> : <div key={t.name}>{body}</div>;
               })}
-              <div className="flex flex-col justify-center gap-2 rounded-xl border border-dashed border-slate-300 p-4">
+              <div className="flex flex-col justify-center gap-2 rounded-2xl border border-dashed border-slate-300 p-4">
                 <Link to="/developers/api" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:underline">Create an API token <ArrowRight className="size-4" /></Link>
                 <Link to="/developers/webhooks" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:underline">Set up webhooks <ArrowRight className="size-4" /></Link>
                 <Link to="/developers/docs" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:underline">Read the docs <ArrowRight className="size-4" /></Link>

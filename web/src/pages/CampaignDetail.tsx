@@ -48,7 +48,7 @@ function LaunchChecklist({ campaign }: { campaign: Campaign }) {
   ];
   const ready = check.data.length === 0;
   return (
-    <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 px-5 py-4">
+    <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="text-sm font-semibold text-slate-900">{ready ? 'Ready to launch' : 'Before you launch'}</div>

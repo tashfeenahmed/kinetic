@@ -267,7 +267,7 @@ export function LeadsPage() {
                 ))}
               </tbody>
             </Table>
-            <Pagination meta={leads.data?.meta} onPage={(p) => { setPage(p); setSelected(new Set()); }} />
+            <Pagination sticky meta={leads.data?.meta} onPage={(p) => { setPage(p); setSelected(new Set()); }} />
           </>
         )}
       </Card>

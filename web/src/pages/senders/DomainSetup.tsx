@@ -194,7 +194,7 @@ function DomainWizard({ zones, trackingTarget, initial, review, onClose, onDone 
               ))}
             </div>
           </div>
-          <div className="rounded-xl border border-dashed border-slate-300 p-4">
+          <div className="rounded-2xl border border-dashed border-slate-300 p-4">
             <div className="text-sm font-medium text-slate-700">Add a new domain to Cloudflare</div>
             <p className="mt-0.5 text-[13px] text-slate-500">Bought it elsewhere (Namecheap, GoDaddy…)? Kinetic adds it to Cloudflare, then you switch its nameservers at your registrar.</p>
             <div className="mt-3 flex gap-2">
@@ -327,7 +327,7 @@ export function ActionsTable({ actions }: { actions: Action[] }) {
   const tone = { create: 'green', update: 'yellow', delete: 'red', keep: 'gray' } as const;
   const label = { create: 'Add', update: 'Change', delete: 'Remove', keep: 'Keep' } as const;
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200">
+    <div className="overflow-x-auto rounded-2xl border border-slate-200">
       <table className="w-full text-left text-[13px]">
         <thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="px-3 py-2">Action</th><th className="px-3 py-2">Record</th><th className="px-3 py-2">Name</th><th className="px-3 py-2">Value</th></tr></thead>
         <tbody className="divide-y divide-slate-100">

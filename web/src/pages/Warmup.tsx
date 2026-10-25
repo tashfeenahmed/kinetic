@@ -76,7 +76,7 @@ export function WarmupPage() {
         <div className="mb-6"><Alert tone="yellow">Turn on warmup for at least 2 mailboxes — they need each other to exchange emails.</Alert></div>
       )}
 
-      <div className="mb-8 grid grid-cols-2 gap-6 lg:grid-cols-4">
+      <div className="mb-8 grid grid-cols-2 gap-6 rounded-2xl border border-slate-200 bg-white p-5 lg:grid-cols-4">
         <Stat label="Warming" value={fmtNumber(totals.warming)} />
         <Stat label="Sent (7 days)" value={fmtNumber(totals.sent)} />
         <Stat label="Inbox placement" value={totals.inboxRate === null ? '—' : fmtPct(totals.inboxRate)} tone={totals.inboxRate !== null && totals.inboxRate < 90 ? 'red' : undefined} />

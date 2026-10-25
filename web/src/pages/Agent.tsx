@@ -1,5 +1,5 @@
 import { useNavigate, useParams, useSearchParams } from 'react-router';
-import { BookOpen, MessageSquare, MessageSquareText } from 'lucide-react';
+import { BookOpen, MessageSquare } from 'lucide-react';
 import { cx } from '../components/ui.tsx';
 import { AgentChat } from './agent/Chat.tsx';
 import { AgentSkills } from './agent/Skills.tsx';
@@ -19,7 +19,6 @@ export function AgentPage() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-200/80 px-4">
-        <span className="flex items-center gap-2 text-[14px] font-semibold text-zinc-900"><MessageSquareText className="size-4" />Agent</span>
         <div className="flex gap-0.5 rounded-lg bg-zinc-100 p-0.5">
           {tab('chat', 'Chat', MessageSquare)}
           {tab('skills', 'Skills', BookOpen)}

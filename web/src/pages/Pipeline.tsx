@@ -73,7 +73,7 @@ export function PipelinePage() {
                 <section key={s.id}
                   onDragOver={(e) => { e.preventDefault(); setOver(s.id); }} onDragLeave={() => setOver(null)}
                   onDrop={(e) => { e.preventDefault(); setOver(null); const id = Number(e.dataTransfer.getData('text/deal')); const d = all.find((x) => x.id === id); if (d && d.stage !== s.id) update.mutate({ id, stage: s.id }); }}
-                  className={cx('flex min-h-40 flex-col rounded-xl border bg-slate-50/60 p-2', over === s.id ? 'border-brand-400 bg-brand-50/40' : 'border-slate-200')}>
+                  className={cx('flex min-h-40 flex-col rounded-2xl border bg-slate-50/60 p-2', over === s.id ? 'border-brand-400 bg-brand-50/40' : 'border-slate-200')}>
                   <header className="mb-2 flex items-center justify-between px-1.5 pt-1">
                     <span className="flex items-center gap-2 text-[13px] font-medium text-slate-800"><Badge tone={s.tone} dot>{s.label}</Badge><span className="text-slate-400">{items.length}</span></span>
                     {total > 0 && <span className="text-xs text-slate-500">{fmtNumber(total)}</span>}
@@ -100,7 +100,7 @@ function DealCard({ deal: d, onRemove }: { deal: Deal; onRemove: () => void }) {
   };
   return (
     <article draggable onDragStart={(e) => e.dataTransfer.setData('text/deal', String(d.id))}
-      className="cursor-grab rounded-lg border border-slate-200 bg-white p-3 shadow-sm active:cursor-grabbing">
+      className="cursor-grab rounded-xl border border-slate-200 bg-white p-3 shadow-sm active:cursor-grabbing">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13.5px] font-medium text-slate-900">{d.lead.company || fullName(d.lead)}</div>

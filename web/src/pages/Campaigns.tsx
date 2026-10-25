@@ -138,32 +138,32 @@ export function CampaignsPage() {
   const filtered = !!search || !!status;
 
   return (
-    <Page>
+    <Page wide>
       <PageHeader
         title="Campaigns"
         subtitle="Multi-step email sequences sent from your mailboxes"
         actions={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>New campaign</Button>}
       />
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-          <Input className="pl-9" placeholder="Search campaigns" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
-        </div>
-        <div className="flex gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1">
-          {STATUSES.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => { setStatus(s.id); setPage(1); }}
-              className={cx('whitespace-nowrap rounded-lg px-3 py-1 text-sm font-medium', status === s.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900')}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <Card padded={false}>
+        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 lg:flex-row lg:items-center">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+            <Input className="pl-9" placeholder="Search campaigns" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+          </div>
+          <div className="flex h-9 items-center gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1">
+            {STATUSES.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => { setStatus(s.id); setPage(1); }}
+                className={cx('h-7 whitespace-nowrap rounded-md px-3 text-sm font-medium', status === s.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900')}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {list.isLoading ? <Loading /> : rows.length === 0 ? (
           filtered ? (
             <EmptyState icon={<Search className="size-5" />} title="No campaigns match" description="Try a different search or status." />
@@ -241,7 +241,7 @@ export function CampaignsPage() {
                 ))}
               </tbody>
             </Table>
-            <Pagination meta={list.data?.meta} onPage={setPage} />
+            <Pagination sticky meta={list.data?.meta} onPage={setPage} />
           </>
         )}
       </Card>
