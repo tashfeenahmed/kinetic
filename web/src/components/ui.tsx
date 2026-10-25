@@ -3,7 +3,7 @@ import {
   type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, Check, ChevronDown, CheckCircle2, Info, Loader2, X } from 'lucide-react';
+import { AlertCircle, Check, ChevronDown, ChevronLeft, ChevronRight, CheckCircle2, Info, Loader2, X } from 'lucide-react';
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');
 
@@ -276,18 +276,36 @@ export const Td = ({ children, className, onClick }: { children?: ReactNode; cla
   <td onClick={onClick} className={cx('border-b border-slate-100 px-4 py-3 align-middle text-slate-700', className)}>{children}</td>
 );
 
+/** Pages to show: first, last and two either side of the current one; gaps become "…". */
+function pageList(current: number, last: number): (number | null)[] {
+  const keep = new Set([1, last, current - 1, current, current + 1].filter((p) => p >= 1 && p <= last));
+  const out: (number | null)[] = [];
+  for (const p of [...keep].sort((a, b) => a - b)) {
+    const prev = out.at(-1);
+    if (typeof prev === 'number' && p - prev === 2) out.push(prev + 1);
+    else if (typeof prev === 'number' && p - prev > 2) out.push(null);
+    out.push(p);
+  }
+  return out;
+}
+
 export function Pagination({ meta, onPage }: { meta?: { current_page: number; last_page: number; total: number; per_page: number }; onPage: (p: number) => void }) {
   if (!meta || meta.total === 0) return null;
   const from = (meta.current_page - 1) * meta.per_page + 1;
   const to = Math.min(meta.total, meta.current_page * meta.per_page);
+  const step = 'flex size-8 items-center justify-center rounded-lg text-[13px] font-medium';
   return (
-    <div className="flex items-center justify-between px-4 py-3 text-[13px] text-slate-600">
+    <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-[13px] text-slate-600">
       <span>Showing {from.toLocaleString()} to {to.toLocaleString()} of {meta.total.toLocaleString()} results</span>
       {meta.last_page > 1 && (
-        <div className="flex gap-2">
-          <Button size="sm" disabled={meta.current_page <= 1} onClick={() => onPage(meta.current_page - 1)}>Previous</Button>
-          <Button size="sm" disabled={meta.current_page >= meta.last_page} onClick={() => onPage(meta.current_page + 1)}>Next</Button>
-        </div>
+        <nav className="flex items-center gap-1" aria-label="Pagination">
+          <button className={cx(step, 'text-slate-500 hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-40')} disabled={meta.current_page <= 1} onClick={() => onPage(meta.current_page - 1)} aria-label="Previous page"><ChevronLeft className="size-4" /></button>
+          {pageList(meta.current_page, meta.last_page).map((p, i) => p === null
+            ? <span key={`gap${i}`} className="flex size-8 items-center justify-center text-slate-400">…</span>
+            : <button key={p} onClick={() => onPage(p)} aria-current={p === meta.current_page ? 'page' : undefined}
+                className={cx(step, p === meta.current_page ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100')}>{p}</button>)}
+          <button className={cx(step, 'text-slate-500 hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-40')} disabled={meta.current_page >= meta.last_page} onClick={() => onPage(meta.current_page + 1)} aria-label="Next page"><ChevronRight className="size-4" /></button>
+        </nav>
       )}
     </div>
   );
