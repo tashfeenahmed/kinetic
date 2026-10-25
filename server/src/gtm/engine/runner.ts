@@ -14,7 +14,8 @@ import * as integ from '../providers/integrations.ts';
 import type { Ctx, EnrichInput, Hit } from '../providers/types.ts';
 import { runAgent } from './agent.ts';
 import type { OutreachBridge } from '../outreach.ts';
-import { RUNNABLE, type Column, type Store } from './store.ts';
+import type { AlertSource } from '../alertDigest.ts';
+import { RUNNABLE, sameHeadline, type CellChange, type Column, type Store } from './store.ts';
 import { Links } from './links.ts';
 import { Functions } from './functions.ts';
 
@@ -225,9 +226,10 @@ export class Engine {
     if (changed) {
       this.cascade(j.tableId, j.rowId, [col.name]);
       this.links.changed(j.tableId, [col.name], true);
-      if (col.type === 'signal' && before != null && this.onSignalChange) {
+      const after = this.store.cell(j.rowId, j.columnId)?.value;
+      if (col.type === 'signal' && before != null && !sameHeadline(before, after) && this.onSignalChange) {
         try {
-          this.onSignalChange({ workspaceId: this.store.table(j.tableId).workspace_id, tableId: j.tableId, rowId: j.rowId, column: col, from: before, to: this.store.cell(j.rowId, j.columnId)?.value });
+          this.onSignalChange({ workspaceId: this.store.table(j.tableId).workspace_id, tableId: j.tableId, rowId: j.rowId, column: col, from: before, to: after });
         } catch (e: any) { this.store.log('warn', 'events', `signal webhook: ${e.message}`, j); }
       }
     }
@@ -308,7 +310,7 @@ export class Engine {
       }
       case 'action':
         if (cfg.kind === 'send_to_table') return this.links.send(cfg, row, j, this.workspaceOf(j));
-        return this.action(cfg, row, this.workspaceOf(j), j.tableId);
+        return this.action(cfg, row, this.workspaceOf(j), j.tableId, { rowId: j.rowId, changes });
       case 'lookup': return this.links.lookup(cfg, row, j, this.workspaceOf(j));
       case 'function': return this.functions.runColumn(cfg, row, { ...j, workspaceId: this.workspaceOf(j) });
       default:
@@ -365,7 +367,7 @@ export class Engine {
   }
 
   /** Slack, then ntfy push, then an email digest to the workspace admins; the first that works wins. */
-  private async alert(text: string, slack: { channel?: string; webhookUrl?: string }, workspaceId?: number): Promise<Hit> {
+  private async alert(text: string, slack: { channel?: string; webhookUrl?: string }, workspaceId?: number, source?: AlertSource): Promise<Hit> {
     const failed: string[] = [];
     if (integ.slackReady(this.settings, slack)) {
       try { return await integ.slackPost(this.settings, { text, ...slack }); } catch (e) { failed.push((e as Error).message); }
@@ -375,19 +377,20 @@ export class Engine {
     }
     if (this.outreach && workspaceId) {
       try {
-        const r = this.outreach.emailAlert(workspaceId, text);
+        const r = this.outreach.emailAlert(workspaceId, text, source);
         return { value: 'emailed', data: { via: 'email', from: r.from, to: r.to, ...(failed.length ? { errors: failed } : {}) } };
       } catch (e) { failed.push((e as Error).message); }
     }
     throw new Error(failed.join(' · ') || 'Set a Slack webhook or an ntfy topic under Integrations');
   }
 
-  private async action(cfg: any, row: Record<string, unknown>, workspaceId?: number, tableId?: number): Promise<Outcome> {
+  private async action(cfg: any, row: Record<string, unknown>, workspaceId?: number, tableId?: number, at?: { rowId: number; changes: CellChange[] }): Promise<Outcome> {
     const fields = (cfg.fields ?? []).map((f: any) => ({ name: f.name, value: renderValue(f.value ?? '', row) }));
     let hit: Hit;
     switch (cfg.kind) {
       case 'slack':
-        hit = await this.alert(render(cfg.text ?? '', row), { channel: cfg.channel || undefined, webhookUrl: cfg.webhookUrl || undefined }, workspaceId);
+        hit = await this.alert(render(cfg.text ?? '', row), { channel: cfg.channel || undefined, webhookUrl: cfg.webhookUrl || undefined }, workspaceId,
+          tableId && at ? { tableId, rowId: at.rowId, row, changes: at.changes, aboutChanges: /_changes/.test(cfg.text ?? '') } : undefined);
         break;
       case 'webhook': {
         const body = cfg.body?.trim() ? renderBody(cfg.body, row) : Object.fromEntries(Object.entries(row).map(([k, v]) => [k, v && typeof v === 'object' && 'value' in (v as any) ? (v as any).value : v]));

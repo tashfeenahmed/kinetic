@@ -6,7 +6,7 @@
 import type { Ctx } from '../context.ts';
 import { attachLeads, upsertLeads, type ExistingBehavior, type LeadSource } from '../routes/leads.ts';
 import { domainOf } from '../lib/dns.ts';
-import { randomUUID } from 'node:crypto';
+import { alertRecipients, alertSender, queueAlert, type AlertSource } from './alertDigest.ts';
 import { DEAL_STATUS, type DealStage } from '../engine/deals.ts';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -39,57 +39,22 @@ export interface LeadStatus {
   deal: { id: number; stage: string; value: number | null; currency: string | null } | null;
 }
 
-/** Alert emails per workspace per day, so a noisy table can't flood an inbox or a mailbox's quota. */
-const ALERT_EMAILS_PER_DAY = 10;
-const ALERT_DIGEST_MS = 60_000;
-
 export class OutreachBridge {
   private ctx: Ctx;
-  private digests = new Map<number, { lines: string[]; timer: NodeJS.Timeout }>();
-  private sentToday = new Map<string, number>();
   constructor(ctx: Ctx) {
     this.ctx = ctx;
   }
 
   /**
-   * Last-resort alert channel: email the workspace admins from one of its connected
-   * mailboxes. Alerts within a minute go out together as one digest. Throws when
-   * there is no mailbox or no admin to send to.
+   * Last-resort alert channel: queue the alert for the workspace admins' morning email
+   * digest (see alertDigest.ts). Throws when there is no mailbox or no admin to send to.
    */
-  emailAlert(workspaceId: number, line: string): { to: string[]; from: string } {
-    const { db } = this.ctx;
-    const to = db.all<{ email: string }>(`SELECT u.email FROM workspace_members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? AND m.role = 'admin' ORDER BY u.id`, [workspaceId]).map((u) => u.email);
-    const sender = db.get(`SELECT * FROM sender_emails WHERE workspace_id = ? AND status = 'Connected' ORDER BY id LIMIT 1`, [workspaceId]);
+  emailAlert(workspaceId: number, line: string, source?: AlertSource): { to: string[]; from: string } {
+    const to = alertRecipients(this.ctx, workspaceId);
+    const sender = alertSender(this.ctx, workspaceId);
     if (!sender || !to.length) throw new Error('No Slack, ntfy or connected mailbox to send this alert to');
-    const d = this.digests.get(workspaceId);
-    if (d) d.lines.push(line);
-    else {
-      const timer = setTimeout(() => this.flushAlerts(workspaceId), ALERT_DIGEST_MS);
-      timer.unref?.();
-      this.digests.set(workspaceId, { lines: [line], timer });
-    }
+    queueAlert(this.ctx, workspaceId, line, source);
     return { to, from: sender.email };
-  }
-
-  private flushAlerts(workspaceId: number) {
-    const d = this.digests.get(workspaceId);
-    this.digests.delete(workspaceId);
-    if (!d) return;
-    const day = `${workspaceId}:${this.ctx.now().toISOString().slice(0, 10)}`;
-    const used = this.sentToday.get(day) ?? 0;
-    if (used >= ALERT_EMAILS_PER_DAY) { this.ctx.log.warn({ workspaceId }, 'alert email skipped: daily limit reached'); return; }
-    this.sentToday.set(day, used + 1);
-    const { db } = this.ctx;
-    const sender = db.get(`SELECT * FROM sender_emails WHERE workspace_id = ? AND status = 'Connected' ORDER BY id LIMIT 1`, [workspaceId]);
-    const to = db.all<{ email: string }>(`SELECT u.email FROM workspace_members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? AND m.role = 'admin'`, [workspaceId]).map((u) => u.email);
-    if (!sender || !to.length) return;
-    const plain = d.lines.map((l) => l.replace(/:[a-z_]+:\s*/g, '').replace(/\*([^*\n]+)\*/g, '$1'));
-    const subject = plain.length === 1 ? `Kinetic alert: ${plain[0].split('\n')[0].slice(0, 120)}` : `Kinetic: ${plain.length} signal alerts`;
-    const text = `${plain.join('\n\n')}\n\n(Sent by Kinetic because no Slack or ntfy is set up. Add one under Integrations to get these there instead.)`;
-    this.ctx.mail.send(sender, {
-      from: { name: 'Kinetic alerts', email: sender.email }, to: to.join(', '), subject, text,
-      messageId: `${randomUUID()}@${domainOf(sender.email)}`,
-    }).catch((e) => this.ctx.log.warn({ err: e }, 'alert email failed'));
   }
 
   /** Create or update the lead, then optionally attach it to a campaign and/or list. */

@@ -331,14 +331,28 @@ async function websiteChange(input: SignalInput, ctx: Ctx): Promise<Hit | null> 
   if (!url) return null;
   const page = await fetchFirst(input.target ? [url] : siteVariants(url));
   const text = page.text.replace(/\s+/g, ' ').trim();
-  const hash = createHash('sha256').update(text).digest('hex').slice(0, 16);
   const prev = (ctx.prev as any)?.data;
+  // A bot wall or error page is not the site changing: keep the last real reading.
+  if (prev?.hash && looksBlocked(page.status, page.title, text)) {
+    ctx.log(`${page.url}: page looks blocked or broken (HTTP ${page.status}), keeping the last reading`);
+    return { value: prev.hash, data: prev };
+  }
+  const hash = createHash('sha256').update(text).digest('hex').slice(0, 16);
   let added: string[] = [];
   if (prev?.text && prev.hash !== hash) {
     const before = new Set(String(prev.text).split(/(?<=[.!?])\s+/));
     added = text.split(/(?<=[.!?])\s+/).filter((s) => s.length > 20 && !before.has(s)).slice(0, 20);
   }
   return { value: hash, data: { url: page.url, status: page.status, title: page.title, hash, changed: !!prev?.hash && prev.hash !== hash, added, text: text.slice(0, 20_000) } };
+}
+
+const BLOCKED_RE = /just a moment|attention required|checking your browser|enable javascript|access denied|are you a robot|captcha|request blocked|403 forbidden|404 not found|page not found|service unavailable|bad gateway|account suspended|site is under maintenance/i;
+
+/** Cloudflare challenges, error pages and near-empty responses. */
+export function looksBlocked(status: number | undefined, title: string | undefined, text: string): boolean {
+  if (status && status >= 400) return true;
+  if (text.length < 200) return true;
+  return BLOCKED_RE.test(title ?? '') || (text.length < 2000 && BLOCKED_RE.test(text));
 }
 
 /** https://x, https://www.x, http://x: small business sites often answer on only one. */
