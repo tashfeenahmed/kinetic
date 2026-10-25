@@ -35,6 +35,22 @@ import { dealRoutes } from './routes/deals.ts';
 
 const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'web', 'dist');
 
+// Scripts only from the app itself. Inline styles stay allowed (the UI and email previews use them),
+// and images may come from anywhere because email previews show remote images on request.
+// srcDoc previews inherit this policy on top of their own stricter one.
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' data: https: http:",
+  "img-src 'self' data: blob: https: http:",
+  "connect-src 'self'",
+  "frame-src 'self'",
+  "frame-ancestors 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+].join('; ');
+
 export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promise<FastifyInstance> {
   const app = Fastify({
     logger: opts.logger ? { level: ctx.config.logLevel } : false,
@@ -51,8 +67,10 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
   app.decorateRequest('auth', null);
 
   // No other site may frame the app (clickjacking); the app's own srcDoc previews are unaffected.
-  app.addHook('onSend', async (_req, reply) => {
+  app.addHook('onSend', async (req, reply) => {
     reply.header('x-frame-options', 'SAMEORIGIN');
+    // The API docs page loads its viewer from a CDN, so it keeps no policy.
+    if (!req.url.startsWith('/api/reference')) reply.header('content-security-policy', CSP);
   });
 
   app.addHook('onRequest', async (req) => {
