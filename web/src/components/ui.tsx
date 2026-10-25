@@ -153,7 +153,7 @@ export function Badge({ tone = 'gray', children, className, dot }: { tone?: Tone
 export function Card({ children, className, title, actions, description, padded = true }: { children: ReactNode; className?: string; title?: ReactNode; actions?: ReactNode; description?: ReactNode; padded?: boolean }) {
   return (
     // Unpadded cards hold tables and lists edge to edge inside the border.
-    <section className={cx('rounded-2xl border border-slate-200 bg-white', !padded && 'overflow-hidden', className)}>
+    <section className={cx('rounded-2xl border border-slate-200 bg-white', !padded && 'overflow-clip', className)}>
       {(title || actions) && (
         <header className={cx('flex items-start justify-between gap-4 px-5 pt-4', padded ? 'pb-0' : 'pb-3')}>
           <div>
@@ -289,13 +289,14 @@ function pageList(current: number, last: number): (number | null)[] {
   return out;
 }
 
-export function Pagination({ meta, onPage }: { meta?: { current_page: number; last_page: number; total: number; per_page: number }; onPage: (p: number) => void }) {
+/** `sticky` pins the bar to the bottom of the window while the list scrolls under it. */
+export function Pagination({ meta, onPage, sticky }: { meta?: { current_page: number; last_page: number; total: number; per_page: number }; onPage: (p: number) => void; sticky?: boolean }) {
   if (!meta || meta.total === 0) return null;
   const from = (meta.current_page - 1) * meta.per_page + 1;
   const to = Math.min(meta.total, meta.current_page * meta.per_page);
   const step = 'flex size-8 items-center justify-center rounded-lg text-[13px] font-medium';
   return (
-    <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-[13px] text-slate-600">
+    <div className={cx('flex items-center justify-between border-t border-slate-100 px-4 py-3 text-[13px] text-slate-600', sticky && 'sticky bottom-0 z-10 border-slate-200 bg-white/95 backdrop-blur')}>
       <span>Showing {from.toLocaleString()} to {to.toLocaleString()} of {meta.total.toLocaleString()} results</span>
       {meta.last_page > 1 && (
         <nav className="flex items-center gap-1" aria-label="Pagination">
