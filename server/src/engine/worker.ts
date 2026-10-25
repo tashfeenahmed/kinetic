@@ -10,6 +10,7 @@ import { checkPlacementTests } from './placement.ts';
 import { visitorsJob } from '../visitors/service.ts';
 import { sequenceJobs } from './sequenceJobs.ts';
 import { runDueSearches } from '../sourcing/savedSearches.ts';
+import { runAlertDigests } from '../gtm/alertDigest.ts';
 import { classifyPending } from './replyAi.ts';
 import { refreshEmailProviders } from './emailProviders.ts';
 import { companionTick } from '../companion/worker.ts';
@@ -60,6 +61,7 @@ export function jobs(ctx: Ctx): Job[] {
     { name: 'visitors', everyMs: 60_000 * k, run: visitorsJob },
     ...sequenceJobs(k),
     { name: 'saved-searches', everyMs: 60_000 * k, run: runDueSearches },
+    { name: 'alert-digest', everyMs: 5 * 60_000 * k, run: (c) => runAlertDigests(c) },
     { name: 'reply-ai', everyMs: 15_000 * k, run: (c) => classifyPending(c) },
     { name: 'email-providers', everyMs: 5 * 60_000 * k, run: (c) => refreshEmailProviders(c) },
     { name: 'companion', everyMs: 30_000 * k, run: companionTick },

@@ -4,6 +4,7 @@ import { Store } from '../src/gtm/engine/store.ts';
 import { Settings } from '../src/gtm/settings.ts';
 import { Bus } from '../src/gtm/events.ts';
 import { Engine } from '../src/gtm/engine/runner.ts';
+import { sendDigest } from '../src/gtm/alertDigest.ts';
 import { OutreachBridge } from '../src/gtm/outreach.ts';
 import { pageContacts } from '../src/gtm/lib/html.ts';
 import { linkedinHeadline, signalKind } from '../src/gtm/providers/signals.ts';
@@ -67,18 +68,17 @@ describe('alert fallbacks', () => {
     return { ws, mail, store, settings, outreach, engine, t, r, alert, settle };
   }
 
-  it('emails the admins one digest when neither Slack nor ntfy is set up', async () => {
+  it('queues the alert for the admins\' morning email when neither Slack nor ntfy is set up', async () => {
     const s = setup();
     s.engine.run(s.t, { force: true });
     await s.settle();
     expect(s.store.cell(s.r, s.alert)).toMatchObject({ status: 'done' });
-    expect((s.store.cell(s.r, s.alert)?.value as any).value).toBe('emailed');
-    s.outreach.emailAlert(s.ws, 'second change');
-    (s.outreach as any).flushAlerts(s.ws);
-    await new Promise((res) => setTimeout(res, 0));
+    expect((s.store.cell(s.r, s.alert)?.value as any)).toMatchObject({ value: 'emailed', data: { to: ['owner@acme.test'], from: 'sales@acme.test' } });
+    expect(s.mail.sent).toHaveLength(0); // nothing goes out straight away
+    const r = await sendDigest({ db: s.store.db, mail: s.mail, log: silentLogger, now: () => new Date('2026-10-15T09:00:00Z'), config: {} } as unknown as Ctx, s.ws, '2026-10-15', { useAi: false });
+    expect(r?.status).toBe('sent');
     expect(s.mail.sent).toHaveLength(1);
-    expect(s.mail.sent[0].msg).toMatchObject({ to: 'owner@acme.test', subject: 'Kinetic: 2 signal alerts', from: { email: 'sales@acme.test' } });
-    expect(s.mail.sent[0].msg.text).toContain('Acme changed');
+    expect(s.mail.sent[0].msg).toMatchObject({ to: 'owner@acme.test', subject: 'Acme changed', from: { name: 'Kinetic', email: 'sales@acme.test' } });
     expect(s.mail.sent[0].msg.text).not.toContain(':satellite_antenna:');
     s.engine.stop();
   });

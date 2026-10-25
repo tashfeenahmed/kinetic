@@ -18,6 +18,21 @@ export interface TableRec { id: number; workspace_id: number; name: string; webh
 
 const parse = (s: string | null) => (s == null ? null : JSON.parse(s));
 
+export interface CellChange { name: string; type: ColumnType; kind?: string; from: unknown; to: unknown }
+
+/** The value a cell shows: `{ value, data }` results read as their `value`. */
+export function headline(v: unknown): unknown {
+  return v && typeof v === 'object' && !Array.isArray(v) && 'value' in v ? (v as { value: unknown }).value : v;
+}
+
+const blank = (v: unknown) => v == null || v === '' || (Array.isArray(v) && !v.length);
+
+export function sameHeadline(a: unknown, b: unknown): boolean {
+  const x = headline(a), y = headline(b);
+  if (blank(x) && blank(y)) return true;
+  return JSON.stringify(x) === JSON.stringify(y);
+}
+
 export class Store {
   readonly db: Db;
   constructor(db: Db) {
@@ -221,11 +236,18 @@ export class Store {
     return out;
   }
 
-  /** Cells in a row whose value changed from a previous value after `since` (ISO time). */
-  recentChanges(rowId: number, cols: Column[], since: string): { name: string; from: unknown; to: unknown }[] {
+  /**
+   * Cells in a row whose value changed from a previous value after `since` (ISO time).
+   * Only the headline value counts: a signal whose extra data moved (counts, flags, cursors)
+   * but whose value reads the same is not a change.
+   */
+  recentChanges(rowId: number, cols: Column[], since: string): CellChange[] {
     const rows = this.db.all('SELECT column_id, value, prev_value FROM gtm_cells WHERE row_id = ? AND prev_value IS NOT NULL AND changed_at > ?', [rowId, since]);
-    const byId = new Map(cols.map((c) => [c.id, c.name]));
-    return rows.filter((r) => byId.has(r.column_id)).map((r) => ({ name: byId.get(r.column_id)!, from: parse(r.prev_value), to: parse(r.value) }));
+    const byId = new Map(cols.map((c) => [c.id, c]));
+    return rows.filter((r) => byId.has(r.column_id)).map((r) => {
+      const c = byId.get(r.column_id)!;
+      return { name: c.name, type: c.type, kind: c.type === 'signal' ? c.config?.kind : undefined, from: parse(r.prev_value), to: parse(r.value) };
+    }).filter((c) => !sameHeadline(c.from, c.to));
   }
 
   /**
