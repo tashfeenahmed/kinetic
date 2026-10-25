@@ -152,10 +152,10 @@ export function Badge({ tone = 'gray', children, className, dot }: { tone?: Tone
 
 export function Card({ children, className, title, actions, description, padded = true }: { children: ReactNode; className?: string; title?: ReactNode; actions?: ReactNode; description?: ReactNode; padded?: boolean }) {
   return (
-    // Unpadded cards hold tables and lists: drawn flat, like EmailBison's plain tables.
-    <section className={cx(padded ? 'rounded-lg border border-slate-200 bg-white' : 'bg-white', className)}>
+    // Unpadded cards hold tables and lists edge to edge inside the border.
+    <section className={cx('rounded-2xl border border-slate-200 bg-white', !padded && 'overflow-hidden', className)}>
       {(title || actions) && (
-        <header className={cx('flex items-start justify-between gap-4 pt-4', padded ? 'px-5 pb-0' : 'pb-3')}>
+        <header className={cx('flex items-start justify-between gap-4 px-5 pt-4', padded ? 'pb-0' : 'pb-3')}>
           <div>
             {title && <h3 className="text-[15px] font-semibold text-slate-900">{title}</h3>}
             {description && <p className="mt-0.5 text-[13px] text-slate-500">{description}</p>}

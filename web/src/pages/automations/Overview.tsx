@@ -29,7 +29,7 @@ export function Overview() {
       {status.data?.paused && <Alert tone="yellow" title="All automations are paused">Resume them on the <Link className="underline" to="/automations/limits">Limits & safety</Link> tab.</Alert>}
       {s.pending_approvals > 0 && <Alert tone="blue" title={`${s.pending_approvals} AI comment${s.pending_approvals === 1 ? '' : 's'} waiting for approval`} action={<Link to="/automations/approvals" className="shrink-0 text-[13px] font-medium underline">Review</Link>} />}
 
-      <div className="grid grid-cols-2 gap-4 rounded-lg border border-zinc-200 bg-white p-5 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 rounded-2xl border border-zinc-200 bg-white p-5 sm:grid-cols-5">
         <Stat label="Extension" value={devices ? (online ? 'Online' : 'Offline') : 'Not paired'} sub={devices ? `${devices} browser${devices === 1 ? '' : 's'}` : <Link to="/automations/extension" className="underline">Install</Link>} tone={devices && !online ? 'red' : undefined} />
         <Stat label="Running" value={s.jobs.running + s.jobs.queued} sub={`${s.jobs.queued} queued`} />
         <Stat label="Paused" value={s.jobs.paused} />

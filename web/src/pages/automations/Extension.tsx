@@ -105,7 +105,7 @@ function DeviceCard({ d, onChange }: { d: Device; onChange: () => void }) {
   };
   const pauses = Object.entries(d.site_pauses ?? {}).filter(([, until]) => until && Date.parse(until) > Date.now());
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-3.5 text-[13px]">
+    <div className="rounded-2xl border border-zinc-200 bg-white p-3.5 text-[13px]">
       <div className="flex items-center gap-2">
         <span className={cx('size-2 rounded-full', d.online ? 'bg-emerald-500' : 'bg-zinc-300')} />
         <span className="flex-1 truncate font-medium text-zinc-900">{d.name}</span>

@@ -47,7 +47,7 @@ function ApprovalCard({ a }: { a: Approval }) {
   });
   const pending = a.status === 'pending';
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4 text-[13px]">
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 text-[13px]">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <span className="font-medium text-zinc-900">{a.target.authorName ?? 'Post'}</span>
         {a.target.postUrl && <a href={a.target.postUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-zinc-500 hover:text-zinc-900">open post <ExternalLink className="size-3" /></a>}

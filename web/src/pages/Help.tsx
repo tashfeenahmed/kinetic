@@ -32,7 +32,7 @@ export function HelpPage() {
           { to: '/developers/api', icon: Code2, title: 'Developer API', text: 'Tokens, examples and the full API reference.' },
           { to: '/sending-schedule', icon: ServerCog, title: 'Sending Schedule', text: 'See what is booked, sent and failing today.' },
         ].map((c) => (
-          <Link key={c.to} to={c.to} className="rounded-xl border border-slate-200 bg-white p-5 transition-colors hover:border-brand-300 hover:bg-brand-50/40">
+          <Link key={c.to} to={c.to} className="rounded-2xl border border-slate-200 bg-white p-5 transition-colors hover:border-brand-300 hover:bg-brand-50/40">
             <c.icon className="size-5 text-brand-600" />
             <div className="mt-3 font-medium text-slate-900">{c.title}</div>
             <div className="mt-1 text-sm text-slate-500">{c.text}</div>

@@ -48,7 +48,7 @@ export function VisitorsPage() {
       {o && o.tracking.reachable && !o.tracking.https && <div className="mb-4"><Alert tone="yellow" title="Tracking URL is not HTTPS">{o.tracking.problem}</Alert></div>}
 
       {o && (
-        <div className="mb-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-zinc-200 bg-zinc-200 sm:grid-cols-5">
+        <div className="mb-5 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-200 sm:grid-cols-5">
           <Metric label="Sessions (24h)" value={fmtNumber(o.sessions_24h)} />
           <Metric label="Sessions (7d)" value={fmtNumber(o.sessions_7d)} sub={`${o.identified_rate}% identified`} />
           <Metric label="Companies (7d)" value={fmtNumber(o.companies_7d)} />

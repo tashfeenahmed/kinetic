@@ -65,7 +65,7 @@ export function SendingSchedulePage() {
     <Page wide>
       <PageHeader title="Sending Schedule" subtitle="Emails are booked when a campaign's window opens and spread across the day" />
 
-      <div className="mb-8 grid grid-cols-2 gap-6 lg:grid-cols-4">
+      <div className="mb-8 grid grid-cols-2 gap-6 rounded-2xl border border-slate-200 bg-white p-5 lg:grid-cols-4">
         <Stat label="Daily capacity" value={fmtNumber(summary.data?.capacity ?? 0)} />
         <Stat label="Sent today" value={fmtNumber(today?.sent ?? 0)} />
         <Stat label="Scheduled today" value={fmtNumber(today?.scheduled ?? 0)} />

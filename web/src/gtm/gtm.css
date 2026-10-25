@@ -110,7 +110,7 @@
   .page-inner { max-width: 1040px; margin: 0 auto; padding: 36px 40px 60px; }
   .page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
   .page-head .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
-  .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin: 14px 0; box-shadow: var(--shadow); }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; margin: 14px 0; box-shadow: var(--shadow); }
   .card > header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
   /* home */
   .hero { text-align: center; padding: 56px 0 28px; }
@@ -128,7 +128,7 @@
   .section-title { display: flex; align-items: center; justify-content: space-between; margin: 36px 0 10px; }
   .section-title h2 { font-size: 14px; }
   .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 10px; }
-  .tcard { border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: #fff; cursor: pointer; transition: border-color .12s, box-shadow .12s; display: flex; flex-direction: column; gap: 6px; min-height: 104px; text-align: left; height: auto; box-shadow: none; align-items: stretch; white-space: normal; font-weight: 400; }
+  .tcard { border: 1px solid var(--line); border-radius: 16px; padding: 14px; background: #fff; cursor: pointer; transition: border-color .12s, box-shadow .12s; display: flex; flex-direction: column; gap: 6px; min-height: 104px; text-align: left; height: auto; box-shadow: none; align-items: stretch; white-space: normal; font-weight: 400; }
   .tcard:hover { border-color: var(--line-strong); box-shadow: var(--shadow-lg); background: #fff; }
   .tcard .ti { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--bg-muted); color: var(--text-2); }
   .tcard b { font-weight: 600; font-size: 13.5px; }
@@ -140,7 +140,7 @@
   table.list tbody tr:hover { background: var(--bg-subtle); cursor: pointer; }
   table.list tr.error td { color: var(--err); }
   table.list tr.warn td { color: var(--warn); }
-  .empty-state { text-align: center; color: var(--muted); padding: 40px 0; border: 1px dashed var(--line-strong); border-radius: 12px; }
+  .empty-state { text-align: center; color: var(--muted); padding: 40px 0; border: 1px dashed var(--line-strong); border-radius: 16px; }
   /* table page */
   .table-page { display: flex; flex-direction: column; height: 100%; }
   .topbar { display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 14px 0 16px; border-bottom: 1px solid var(--line); flex: none; }
@@ -301,7 +301,7 @@
   .dot.ok { background: var(--ok); }
   .dot.off { background: #d4d4d8; }
   /* signals feed */
-  .feed { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .feed { border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
   .feed-item { display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); align-items: start; }
   .feed-item:last-child { border-bottom: none; }
   .feed-item:hover { background: var(--bg-subtle); }
@@ -330,7 +330,7 @@
 .gtm .settings.embedded .settings-head h1 { font-size: 18px; }
 
 .gtm .stat-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
-.gtm .stat-tile { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; color: var(--text); text-decoration: none; background: #fff; transition: border-color .12s, box-shadow .12s; }
+.gtm .stat-tile { border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; color: var(--text); text-decoration: none; background: #fff; transition: border-color .12s, box-shadow .12s; }
 .gtm .stat-tile:hover { border-color: var(--line-strong); box-shadow: var(--shadow); text-decoration: none; }
 .gtm .stat-tile span { font-size: 12px; color: var(--muted); }
 .gtm .stat-tile b { font-size: 20px; font-weight: 600; letter-spacing: -.02em; }

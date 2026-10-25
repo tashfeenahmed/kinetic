@@ -232,7 +232,7 @@ function short(v: unknown): string {
 
 function Stage({ to, icon: Icon, label, value, hint, tone, last }: { to: string; icon: typeof Users; label: string; value: number; hint: string; tone?: 'warn'; last?: boolean }) {
   return (
-    <Link to={to} className="group relative rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:border-slate-300 hover:shadow-sm">
+    <Link to={to} className="group relative rounded-2xl border border-slate-200 bg-white p-4 transition-colors hover:border-slate-300 hover:shadow-sm">
       <div className="flex items-center gap-2 text-[13px] text-slate-500"><Icon className="size-4" strokeWidth={1.75} />{label}</div>
       <div className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-900">{fmtNumber(value ?? 0)}</div>
       <div className={cx('mt-0.5 text-xs', tone === 'warn' ? 'text-red-600' : 'text-slate-400')}>{hint}</div>
@@ -267,7 +267,7 @@ function GetStarted({ counts }: { counts: { lists: number; domains: number; send
               <p className="mt-1 text-[13px] text-slate-500">{s.text}</p>
             </>
           );
-          const cls = cx('rounded-lg border p-3.5 transition-colors', s.done ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50');
+          const cls = cx('rounded-xl border p-3.5 transition-colors', s.done ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50');
           return s.to.startsWith('#') ? <a key={s.title} href={s.to} className={cls}>{inner}</a> : <Link key={s.title} to={s.to} className={cls}>{inner}</Link>;
         })}
       </div>
@@ -368,7 +368,7 @@ function Templates() {
           <div className="mt-0.5 text-[13px] text-slate-500">{t.desc}</div>
         </button>
       ))}
-      <Link to="/leads" className="flex items-center justify-between rounded-xl border border-dashed border-slate-300 p-4 text-sm font-medium text-slate-600 hover:border-slate-400 hover:text-slate-900 sm:col-span-2 lg:col-span-4">
+      <Link to="/leads" className="flex items-center justify-between rounded-2xl border border-dashed border-slate-300 p-4 text-sm font-medium text-slate-600 hover:border-slate-400 hover:text-slate-900 sm:col-span-2 lg:col-span-4">
         Already have leads? Open them in a table from the Leads page <ArrowRight className="size-4" />
       </Link>
     </div>

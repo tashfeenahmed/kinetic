@@ -347,7 +347,7 @@ function PauseCard({ msg, onAnswer }: { msg: AgentMessage; onAnswer: (id: number
     const r = pause.request;
     const body = r.body !== undefined ? JSON.stringify(r.body, null, 2) : '';
     return (
-      <div className="my-1.5 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+      <div className="my-1.5 rounded-2xl border border-amber-200 bg-amber-50/60 p-3">
         <div className="flex items-start gap-2">
           <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-600" />
           <div className="min-w-0 flex-1">
@@ -365,7 +365,7 @@ function PauseCard({ msg, onAnswer }: { msg: AgentMessage; onAnswer: (id: number
     );
   }
   return (
-    <div className="my-1.5 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+    <div className="my-1.5 rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm">
       <div className="flex items-start gap-2">
         <Hand className="mt-0.5 size-4 shrink-0 text-zinc-500" />
         <div className="min-w-0 flex-1">
