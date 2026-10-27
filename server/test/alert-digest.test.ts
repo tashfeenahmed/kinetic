@@ -122,38 +122,50 @@ describe('sending the digest', () => {
     return { db, mail, ctx, ws, queue, at: (s: string) => { t = new Date(s); } };
   }
 
-  it('sends once a day after 08:00 local, from a mailbox no campaign is using', async () => {
-    const s = setup('2026-10-24T06:30:00Z'); // 07:30 in Dublin
+  it('sends once a day when the alerts have settled, from a mailbox no campaign is using', async () => {
+    const s = setup('2026-10-24T22:10:00Z');
     for (const i of october()) s.queue(i);
+    s.at('2026-10-24T22:15:00Z'); // still settling
     await runAlertDigests(s.ctx, { useAi: false });
     expect(s.mail.sent).toHaveLength(0);
-    s.at('2026-10-24T07:05:00Z'); // 08:05
+    s.at('2026-10-24T22:21:00Z');
     await runAlertDigests(s.ctx, { useAi: false });
     expect(s.mail.sent).toHaveLength(1);
     expect(s.mail.sent[0].msg).toMatchObject({ to: 'owner@acme.test', from: { name: 'Kinetic', email: 'ops@acme.test' }, subject: 'DNG Greystones is hiring: 4 open roles, plus 2 more' });
     expect(s.db.get('SELECT status, worth_a_look, also_changed, skipped FROM alert_digest_runs')).toEqual({ status: 'sent', worth_a_look: 2, also_changed: 1, skipped: 9 });
     // Later alerts that day wait for tomorrow's digest.
     s.queue(october()[0]);
-    s.at('2026-10-24T15:00:00Z');
+    s.at('2026-10-24T22:50:00Z');
     await runAlertDigests(s.ctx, { useAi: false });
     expect(s.mail.sent).toHaveLength(1);
   });
 
-  it('uses the time zone set under Integrations over the campaigns\' one', async () => {
-    const s = setup('2026-10-24T11:30:00Z'); // 07:30 in New York, 20:30 in Tokyo
+  it('counts the day in the time zone set under Integrations over the campaigns\' one', async () => {
+    const s = setup('2026-10-24T01:45:00Z'); // 21:45 on the 23rd in New York, 10:45 on the 24th in Tokyo
     s.db.run(`UPDATE campaigns SET schedule_timezone = 'Asia/Tokyo'`);
     new Settings(s.db).set('ALERT_DIGEST_TIMEZONE', 'America/New_York');
     s.queue(october()[0]);
+    s.at('2026-10-24T02:00:00Z');
     await runAlertDigests(s.ctx, { useAi: false });
-    expect(s.db.get('SELECT COUNT(*) n FROM alert_digest_runs')).toEqual({ n: 0 });
-    s.at('2026-10-24T12:30:00Z'); // 08:30 in New York
-    await runAlertDigests(s.ctx, { useAi: false });
-    expect(s.db.get('SELECT day, status FROM alert_digest_runs')).toEqual({ day: '2026-10-24', status: 'sent' });
+    expect(s.db.get('SELECT day, status FROM alert_digest_runs')).toEqual({ day: '2026-10-23', status: 'sent' });
   });
 
-  it('stays quiet on a day with nothing worth a look', async () => {
+  it('still sends a night with only minor changes', async () => {
+    const s = setup('2026-10-24T22:10:00Z');
+    for (const i of october().slice(6, 8)) s.queue(i);
+    s.at('2026-10-24T22:30:00Z');
+    await runAlertDigests(s.ctx, { useAi: false });
+    const m = s.mail.sent[0].msg;
+    expect(m.subject).toBe('Forkin Earls (+1 more office) updated their website');
+    expect(m.text).toMatch(/^Nothing urgent, but 1 thing changed at your prospects\./);
+    expect(m.text).not.toContain('WORTH A LOOK');
+    expect(s.db.get('SELECT status, worth_a_look, also_changed FROM alert_digest_runs')).toEqual({ status: 'sent', worth_a_look: 0, also_changed: 1 });
+  });
+
+  it('stays quiet on a day where everything was noise', async () => {
     const s = setup('2026-10-24T08:00:00Z');
     for (const i of october().slice(2, 6)) s.queue(i);
+    s.at('2026-10-24T08:15:00Z');
     await runAlertDigests(s.ctx, { useAi: false });
     expect(s.mail.sent).toHaveLength(0);
     expect(s.db.get('SELECT status FROM alert_digest_runs')).toEqual({ status: 'quiet' });
@@ -164,6 +176,7 @@ describe('sending the digest', () => {
     const s = setup('2026-10-24T08:00:00Z');
     new Settings(s.db).set('OPENROUTER_API_KEY', 'k');
     for (const i of october()) s.queue(i);
+    s.at('2026-10-24T08:15:00Z');
     const asked: any[] = [];
     vi.stubGlobal('fetch', async (_u: unknown, init: any) => {
       const body = JSON.parse(init.body);
@@ -183,6 +196,7 @@ describe('sending the digest', () => {
   it('always sends alerts that are not change reports', async () => {
     const s = setup('2026-10-24T08:00:00Z');
     queueAlert(s.ctx, s.ws, 'New hot lead: Jo at Acme', { tableId: 1, rowId: 1, row: { Company: 'Acme' }, changes: [], aboutChanges: false });
+    s.at('2026-10-24T08:15:00Z');
     await runAlertDigests(s.ctx, { useAi: false });
     expect(s.mail.sent[0].msg.subject).toBe('New hot lead: Jo at Acme');
   });

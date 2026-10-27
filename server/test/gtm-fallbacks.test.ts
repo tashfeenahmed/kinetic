@@ -68,7 +68,7 @@ describe('alert fallbacks', () => {
     return { ws, mail, store, settings, outreach, engine, t, r, alert, settle };
   }
 
-  it('queues the alert for the admins\' morning email when neither Slack nor ntfy is set up', async () => {
+  it('queues the alert for the admins\' daily email when neither Slack nor ntfy is set up', async () => {
     const s = setup();
     s.engine.run(s.t, { force: true });
     await s.settle();

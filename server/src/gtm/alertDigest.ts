@@ -1,7 +1,8 @@
 /**
- * The morning signal digest. When a signal alert has no Slack or ntfy to go to, it is
+ * The daily signal digest. When a signal alert has no Slack or ntfy to go to, it is
  * queued here (alert_digest_items) instead of being emailed straight away. Once a day,
- * at 08:00 in the workspace's time zone, the queue is turned into one email:
+ * when a run of alerts has settled (nothing new queued for SETTLE_MS), the queue is
+ * turned into one email:
  *
  *   - noise is dropped: values that read the same, values that went blank, website
  *     "changes" with no new text or that several sites share (a bot wall), news that is
@@ -11,7 +12,7 @@
  *   - with an AI key set, one model call re-ranks the items and writes a short
  *     "why it matters" line for each one worth a look.
  *
- * No email goes out on a day with nothing worth a look.
+ * No email goes out on a day where everything was noise.
  */
 import { randomUUID } from 'node:crypto';
 import type { Ctx } from '../context.ts';
@@ -22,7 +23,8 @@ import { aiConfig, chat } from '../engine/replyAi.ts';
 import { headline, sameHeadline, type CellChange } from './engine/store.ts';
 import { Settings } from './settings.ts';
 
-export const DIGEST_HOUR = 8;
+/** How long the queue must sit still before it is sent, so one signal run lands in one email. */
+export const SETTLE_MS = 10 * 60_000;
 const MAX_CHANGE_JSON = 4_000;
 
 /** Where a queued alert came from: the row that changed and what changed in it. */
@@ -305,17 +307,20 @@ export function renderDigest(digest: Digest, opts: { publicUrl: string; workspac
   const tableUrl = (g: DigestGroup) => (g.tableId ? `${opts.publicUrl}/tables/${g.tableId}` : undefined);
   const top = digest.groups.flatMap((g) => g.entries.filter((e) => e.tier === 'top').map((e) => ({ g, e })));
   const minor = digest.groups.flatMap((g) => g.entries.filter((e) => e.tier === 'minor').map((e) => ({ g, e })));
-  const first = top[0];
+  const first = top[0] ?? minor[0];
   const rest = top.length + minor.length - 1;
   const subject = first
     ? sentence(first.g, first.e).replace(/\s+/g, ' ').slice(0, 110) + (rest > 0 ? `, plus ${rest} more` : '')
-    : 'Nothing worth a look today';
+    : 'Nothing changed today';
   const skippedLine = digest.skipped
     ? `Kinetic also skipped ${digest.skipped} change${digest.skipped === 1 ? '' : 's'} that looked like noise (${Object.entries(digest.skippedReasons).map(([r, n]) => `${n} ${r}`).join(', ')}).`
     : '';
 
-  const t: string[] = [`Good morning. ${top.length === 1 ? '1 company' : `${top.length} companies`} did something worth a look.`, ''];
-  t.push('WORTH A LOOK', '');
+  const intro = top.length
+    ? `${top.length === 1 ? '1 company' : `${top.length} companies`} did something worth a look.`
+    : `Nothing urgent, but ${minor.length === 1 ? '1 thing' : `${minor.length} things`} changed at your prospects.`;
+  const t: string[] = [intro, ''];
+  if (top.length) t.push('WORTH A LOOK', '');
   top.forEach(({ g, e }, i) => {
     t.push(`${i + 1}. ${e.kind === 'alert' ? e.what : `${displayName(g)}${g.domain ? ` (${g.domain})` : ''} ${e.what}`}`);
     for (const d of e.details) t.push(`   ${d}`);
@@ -334,8 +339,8 @@ export function renderDigest(digest: Digest, opts: { publicUrl: string; workspac
 
   const a = (href: string | undefined, label: string) => (href ? `<a href="${escapeHtml(href)}" style="color:#2563eb;text-decoration:none">${label}</a>` : '');
   const h: string[] = [`<div style="font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:600px">`,
-    `<p>Good morning. <b>${top.length === 1 ? '1 company' : `${top.length} companies`}</b> did something worth a look.</p>`,
-    `<h3 style="font-size:13px;letter-spacing:.06em;color:#64748b;margin:24px 0 8px">WORTH A LOOK</h3>`];
+    `<p>${escapeHtml(intro)}</p>`];
+  if (top.length) h.push(`<h3 style="font-size:13px;letter-spacing:.06em;color:#64748b;margin:24px 0 8px">WORTH A LOOK</h3>`);
   for (const { g, e } of top) {
     h.push(`<div style="margin:0 0 18px"><div>${e.kind === 'alert' ? escapeHtml(e.what) : `<b>${escapeHtml(displayName(g))}</b>${g.domain ? ` <span style="color:#64748b">${escapeHtml(g.domain)}</span>` : ''} ${escapeHtml(e.what)}`}</div>`);
     for (const d of e.details) h.push(`<div style="color:#334155;font-size:14px">${escapeHtml(d)}</div>`);
@@ -383,13 +388,13 @@ export function alertSender(ctx: Ctx, workspaceId: number): Row | undefined {
     ORDER BY EXISTS (SELECT 1 FROM campaign_sender_emails cs JOIN campaigns c ON c.id = cs.campaign_id WHERE cs.sender_email_id = s.id AND c.status = 'active'), s.id LIMIT 1`, [workspaceId]);
 }
 
-/** Worker job: send each workspace's digest once its local time passes 08:00. */
+/** Worker job: send each workspace's digest once a day, as soon as its queue has settled. */
 export async function runAlertDigests(ctx: Ctx, opts: { useAi?: boolean } = {}) {
   const now = ctx.now();
-  const pending = ctx.db.all<{ workspace_id: number }>('SELECT DISTINCT workspace_id FROM alert_digest_items WHERE digest_day IS NULL');
-  for (const { workspace_id: ws } of pending) {
-    const { day, hour } = localDayHour(now, workspaceTimeZone(ctx, ws));
-    if (hour < DIGEST_HOUR) continue;
+  const pending = ctx.db.all<{ workspace_id: number; last: string }>('SELECT workspace_id, MAX(created_at) last FROM alert_digest_items WHERE digest_day IS NULL GROUP BY workspace_id');
+  for (const { workspace_id: ws, last } of pending) {
+    if (now.getTime() - Date.parse(last) < SETTLE_MS) continue;
+    const { day } = localDayHour(now, workspaceTimeZone(ctx, ws));
     if (ctx.db.get('SELECT 1 FROM alert_digest_runs WHERE workspace_id = ? AND day = ?', [ws, day])) continue;
     await sendDigest(ctx, ws, day, opts).catch((err) => ctx.log.warn({ err, workspaceId: ws }, 'alert digest failed'));
   }
@@ -409,7 +414,7 @@ export async function sendDigest(ctx: Ctx, workspaceId: number, day: string, opt
       ctx.db.run(`UPDATE alert_digest_items SET digest_day = ? WHERE id IN (${rows.map(() => '?').join(',')})`, [day, ...rows.map((r) => r.id)]);
     });
   };
-  if (!digest.top) { record('quiet'); return { status: 'quiet' as const, digest, mail }; }
+  if (!digest.top && !digest.minor) { record('quiet'); return { status: 'quiet' as const, digest, mail }; }
   const to = alertRecipients(ctx, workspaceId);
   const sender = alertSender(ctx, workspaceId);
   if (!to.length || !sender) { record('failed', 'No admin or connected mailbox to send from'); return { status: 'failed' as const, digest, mail }; }
