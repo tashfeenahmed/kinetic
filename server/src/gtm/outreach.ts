@@ -46,7 +46,7 @@ export class OutreachBridge {
   }
 
   /**
-   * Last-resort alert channel: queue the alert for the workspace admins' morning email
+   * Last-resort alert channel: queue the alert for the workspace admins' daily email
    * digest (see alertDigest.ts). Throws when there is no mailbox or no admin to send to.
    */
   emailAlert(workspaceId: number, line: string, source?: AlertSource): { to: string[]; from: string } {
