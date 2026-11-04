@@ -8,7 +8,13 @@ import { Badge, Button, Card, Checkbox, EmptyState, Input, Loading, Modal, Selec
 import { SenderStatus, providerLabel } from '../../components/status.tsx';
 import type { Campaign } from './types.ts';
 
-interface AttachedSender { id: number; name: string; email: string; status: string; daily_limit: number; provider: string; warmup_enabled: number; sent_in_campaign: number }
+interface AttachedSender {
+  id: number; name: string; email: string; status: string; daily_limit: number; provider: string; warmup_enabled: number; sent_in_campaign: number;
+  /** Warmup sends planned today; they come out of daily_limit. */
+  warmup_today: number;
+  /** daily_limit minus warmup_today: what this mailbox can send for campaigns today. */
+  campaign_capacity: number;
+}
 interface Sender { id: number; name: string; email: string; status: string; daily_limit: number; provider: string; tags: { id: number; name: string }[] }
 
 function AddSendersModal({ campaign, attached, onClose }: { campaign: Campaign; attached: Set<number>; onClose: () => void }) {
@@ -100,12 +106,18 @@ export function SendersTab({ campaign }: { campaign: Campaign }) {
   };
   if (q.isLoading) return <Loading />;
   const rows = q.data ?? [];
-  const capacity = rows.filter((r) => r.status === 'Connected').reduce((n, r) => n + r.daily_limit, 0);
+  const connected = rows.filter((r) => r.status === 'Connected');
+  const limits = connected.reduce((n, r) => n + r.daily_limit, 0);
+  const warmup = connected.reduce((n, r) => n + r.warmup_today, 0);
+  const capacity = connected.reduce((n, r) => n + r.campaign_capacity, 0);
+  const breakdown = warmup > 0
+    ? `mailbox limits ${fmtNumber(limits)} minus ${fmtNumber(warmup)} warmup, campaign limit ${fmtNumber(campaign.max_emails_per_day)}`
+    : `mailbox limits ${fmtNumber(limits)}, campaign limit ${fmtNumber(campaign.max_emails_per_day)}`;
 
   return (
     <Card
       title={`${rows.length} sender email${rows.length === 1 ? '' : 's'}`}
-      description={rows.length ? `Up to ${fmtNumber(Math.min(capacity, campaign.max_emails_per_day))} emails/day from this campaign (mailbox limits ${fmtNumber(capacity)}, campaign limit ${fmtNumber(campaign.max_emails_per_day)}).` : undefined}
+      description={rows.length ? `Up to ${fmtNumber(Math.min(capacity, campaign.max_emails_per_day))} emails/day from this campaign (${breakdown}).` : undefined}
       actions={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>Add sender emails</Button>}
       padded={false}
     >
@@ -115,7 +127,7 @@ export function SendersTab({ campaign }: { campaign: Campaign }) {
       ) : (
         <Table>
           <thead>
-            <tr><Th>Email</Th><Th>Status</Th><Th>Provider</Th><Th className="text-right">Daily limit</Th><Th className="text-right">Sent in campaign</Th><Th /></tr>
+            <tr><Th>Email</Th><Th>Status</Th><Th>Provider</Th><Th className="text-right">Daily limit</Th><Th className="text-right">For campaigns</Th><Th className="text-right">Sent in campaign</Th><Th /></tr>
           </thead>
           <tbody>
             {rows.map((s) => (
@@ -127,6 +139,10 @@ export function SendersTab({ campaign }: { campaign: Campaign }) {
                 <Td><SenderStatus status={s.status} /></Td>
                 <Td><Badge>{providerLabel(s.provider)}</Badge></Td>
                 <Td className="text-right tabular-nums">{fmtNumber(s.daily_limit)}</Td>
+                <Td className="text-right tabular-nums">
+                  {fmtNumber(s.campaign_capacity)}
+                  {s.warmup_today > 0 && <div className="text-xs text-slate-500">{fmtNumber(s.warmup_today)} warmup</div>}
+                </Td>
                 <Td className="text-right tabular-nums">{fmtNumber(s.sent_in_campaign)}</Td>
                 <Td className="text-right"><Button size="sm" variant="ghost" icon={<Trash2 className="size-3.5" />} onClick={() => remove(s)}>Remove</Button></Td>
               </tr>

@@ -128,6 +128,17 @@ describe('campaign lifecycle', () => {
     expect(plan(env.ctx).planned).toBe(2); // only 8 sends of capacity today
   });
 
+  it('reports campaign capacity net of today\'s warmup', async () => {
+    const { campaign, senders } = await setupCampaign({ senders: 2, dailyLimit: 50 });
+    // First mailbox has been warming for a month, so it is at its 20/day warmup cap; the second isn't warming.
+    const monthAgo = new Date(MONDAY_10AM_NY.getTime() - 30 * 86_400_000).toISOString();
+    env.ctx.db.run('UPDATE sender_emails SET warmup_enabled = 1, warmup_daily_limit = 20, warmup_started_at = ? WHERE id = ?', [monthAgo, senders[0].id]);
+    const r = await env.api('GET', `/api/campaigns/${campaign.id}/sender-emails`);
+    const byId = new Map((r.body.data as any[]).map((s) => [s.id, s]));
+    expect(byId.get(senders[0].id)).toMatchObject({ daily_limit: 50, warmup_today: 20, campaign_capacity: 30 });
+    expect(byId.get(senders[1].id)).toMatchObject({ daily_limit: 50, warmup_today: 0, campaign_capacity: 50 });
+  });
+
   it('caps sends per receiving domain', async () => {
     const s = await addSender('alex@bear.test');
     const c = (await env.api('POST', '/api/campaigns', { name: 'Domains' })).body.data;
