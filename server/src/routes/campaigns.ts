@@ -5,6 +5,7 @@ import type { Ctx } from '../context.ts';
 import type { Row } from '../db/db.ts';
 import { auth, badRequest, bool, canWrite, defineRoutes, HttpError, idList, idParam, notFound, pageQuery, paginate, parse } from '../http.ts';
 import { cancelScheduled, campaignSchedule, loadSteps } from '../engine/sequencer.ts';
+import { rampTarget, warmupTimezone } from '../engine/warmup.ts';
 import { composeCampaignEmail } from '../engine/compose.ts';
 import { LIKE_ESCAPE, contains } from '../lib/like.ts';
 import { BUILTIN_VARIABLES, buildVariables, missingVariables, render, varKey } from '../lib/template.ts';
@@ -555,11 +556,19 @@ export function campaignRoutes(app: FastifyInstance, ctx: Ctx) {
   cl.get('/api/campaigns/:id/sender-emails', 'Campaign email accounts', (req) => {
     const a = auth(req);
     const c = getCampaign(a.workspaceId, idParam(req));
+    const rows = db.all(
+      `SELECT s.id, s.name, s.email, s.status, s.daily_limit, s.provider, s.warmup_enabled, s.warmup_daily_limit, s.warmup_started_at,
+         (SELECT COUNT(*) FROM sent_emails x WHERE x.sender_email_id = s.id AND x.campaign_id = ?) AS sent_in_campaign
+       FROM sender_emails s JOIN campaign_sender_emails cs ON cs.sender_email_id = s.id WHERE cs.campaign_id = ? ORDER BY s.email`, [c.id, c.id]);
+    // Warmup mail comes out of the same daily limit as campaign mail (see planCampaign), so
+    // report what is actually left for campaigns rather than the raw mailbox limit.
+    const now = ctx.now();
+    const tz = warmupTimezone(ctx);
     return {
-      data: db.all(
-        `SELECT s.id, s.name, s.email, s.status, s.daily_limit, s.provider, s.warmup_enabled,
-           (SELECT COUNT(*) FROM sent_emails x WHERE x.sender_email_id = s.id AND x.campaign_id = ?) AS sent_in_campaign
-         FROM sender_emails s JOIN campaign_sender_emails cs ON cs.sender_email_id = s.id WHERE cs.campaign_id = ? ORDER BY s.email`, [c.id, c.id]),
+      data: rows.map((s) => {
+        const warmup_today = s.warmup_enabled ? rampTarget(s, now, tz) : 0;
+        return { ...s, warmup_today, campaign_capacity: Math.max(0, s.daily_limit - warmup_today) };
+      }),
     };
   });
   const senderIds = z.object({ sender_email_ids: idList });
