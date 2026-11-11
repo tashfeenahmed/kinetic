@@ -1,4 +1,5 @@
-import { Suspense, useEffect, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -102,10 +103,10 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
         <ChevronsUpDown className={cx('size-3.5 shrink-0 text-zinc-400 transition-opacity duration-200', collapsed && 'opacity-0')} />
       </button>
 
-      {open && (
+      {open && createPortal(
         <>
-          <div className="fixed inset-0 z-40" onMouseDown={() => setOpen(false)} />
-          <div role="menu" className="fixed z-50 max-h-[calc(100vh-16px)] w-60 overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg scroll-thin"
+          <div className="fixed inset-0 z-[1040]" onMouseDown={() => setOpen(false)} />
+          <div role="menu" className="fixed z-[1050] max-h-[calc(100vh-16px)] w-60 overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg scroll-thin"
             style={anchor ? (collapsed ? { left: anchor.right + 8, bottom: window.innerHeight - anchor.bottom } : { left: anchor.left, bottom: window.innerHeight - anchor.top + 4 }) : undefined}>
             <div className="border-b border-zinc-100 px-3 pb-2 pt-1.5">
               <div className="truncate text-[13px] font-medium text-zinc-900">{me?.name}</div>
@@ -141,7 +142,8 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
             <div className="my-1 border-t border-zinc-100" />
             <button role="menuitem" onClick={logout} className={row}><LogOut className="size-4 text-zinc-500" /> Log out</button>
           </div>
-        </>
+        </>,
+        document.body,
       )}
 
       <Modal open={creating} onClose={() => setCreating(false)} title="New workspace" description="Workspaces keep tables, leads, campaigns and mailboxes separate — one per client or brand." size="sm"
@@ -172,10 +174,16 @@ function NavItem({ to, label, icon: Icon, end, collapsed, badge, count }: { to: 
 /** A sidebar section that can be folded away; remembered per browser. */
 function useSection(id: string, activeInside: boolean) {
   const key = `k:nav:${id}`;
-  const [open, setOpen] = useState(() => { try { return localStorage.getItem(key) !== 'closed'; } catch { return true; } });
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(key) !== 'closed' || activeInside; } catch { return true; } });
   const toggle = () => setOpen((o) => { try { localStorage.setItem(key, o ? 'closed' : 'open'); } catch { /* private mode */ } return !o; });
-  // Never hide the page you're on.
-  return { open: open || activeInside, toggle };
+  // Navigating into a folded section unfolds it (so the page you're on is visible), but you can
+  // still fold the section you're on: the toggle always wins until you navigate in again.
+  const wasInside = useRef(activeInside);
+  useEffect(() => {
+    if (activeInside && !wasInside.current) setOpen(true);
+    wasInside.current = activeInside;
+  }, [activeInside]);
+  return { open, toggle };
 }
 
 /** Section heading; collapses to a short rule so the items below don't move. Click to fold the section. */
@@ -281,10 +289,11 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
         )}
       </div>
 
-      {menu && (
+      {/* Portalled to <body> so page content (tables, sticky headers) can never cover it. */}
+      {menu && createPortal(
         <>
-          <div className="fixed inset-0 z-40" onMouseDown={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }} />
-          <div className="fixed z-50 w-44 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg" style={{ left: menu.x, top: Math.min(menu.y, window.innerHeight - 100) }}>
+          <div className="fixed inset-0 z-[1040]" onMouseDown={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }} />
+          <div className="fixed z-[1050] w-44 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg" style={{ left: menu.x, top: Math.min(menu.y, window.innerHeight - 100) }}>
             <button className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-zinc-700 hover:bg-zinc-50" onClick={() => { setRenaming({ id: menu.id, name: menu.name }); setMenu(null); }}>
               <Pencil className="size-3.5" /> Rename
             </button>
@@ -292,7 +301,8 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
               <Trash2 className="size-3.5" /> Delete
             </button>
           </div>
-        </>
+        </>,
+        document.body,
       )}
       <Modal open={!!renaming} onClose={() => setRenaming(null)} title="Rename table" size="sm"
         footer={<><Button onClick={() => setRenaming(null)}>Cancel</Button><Button variant="primary" loading={rename.isPending} disabled={!renaming?.name.trim()} onClick={() => renaming && rename.mutate(renaming)}>Rename</Button></>}>
