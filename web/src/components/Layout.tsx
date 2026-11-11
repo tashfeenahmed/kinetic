@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Users, Send, Inbox, AtSign, Flame, Clock, Puzzle, Code2, ChevronDown, Settings, HelpCircle, LogOut,
-  PanelLeftClose, PanelLeft, Check, Plus, Pencil, Trash2, ChevronsUpDown, ChevronRight, Menu as MenuIcon, X, Home as HomeIcon, Radar, Table2, Eye, MessageSquareText, BookOpen, Bot, Kanban, } from 'lucide-react';
+  PanelLeftClose, PanelLeft, Check, Plus, Pencil, Trash2, ChevronsUpDown, ChevronRight, Menu as MenuIcon, X, Home as HomeIcon, Radar, Table2, Eye, MessageSquareText, BookOpen, Bot, Kanban, Webhook, } from 'lucide-react';
 import { useGtmTables } from '../gtm/lib/queries';
 import { RouteErrorBoundary } from './RouteErrorBoundary.tsx';
 import { api } from '../lib/api.ts';
@@ -29,10 +29,11 @@ const SETUP_NAV = [
   { to: '/signals', label: 'Signals', icon: Radar },
 ];
 
+// Developer pages and Integrations live in the account menu, out of the main nav.
 const DEV_NAV = [
-  { to: '/developers/docs', label: 'Documentation' },
-  { to: '/developers/api', label: 'Developer API' },
-  { to: '/developers/webhooks', label: 'Webhooks & Listeners' },
+  { to: '/developers/docs', label: 'Documentation', icon: BookOpen },
+  { to: '/developers/api', label: 'Developer API', icon: Code2 },
+  { to: '/developers/webhooks', label: 'Webhooks & Listeners', icon: Webhook },
 ];
 
 /** Kinetic mark: a rounded square of four horizontal stripes. */
@@ -104,13 +105,20 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onMouseDown={() => setOpen(false)} />
-          <div role="menu" className="fixed z-50 w-60 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg"
+          <div role="menu" className="fixed z-50 max-h-[calc(100vh-16px)] w-60 overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg scroll-thin"
             style={anchor ? (collapsed ? { left: anchor.right + 8, bottom: window.innerHeight - anchor.bottom } : { left: anchor.left, bottom: window.innerHeight - anchor.top + 4 }) : undefined}>
             <div className="border-b border-zinc-100 px-3 pb-2 pt-1.5">
               <div className="truncate text-[13px] font-medium text-zinc-900">{me?.name}</div>
               <div className="truncate text-[12px] text-zinc-500">{me?.email}</div>
             </div>
-            <div className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Workspaces</div>
+            <div className="flex items-center justify-between py-1 pl-3 pr-2 pt-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Workspaces</span>
+              <button aria-label="New workspace" onClick={() => { setOpen(false); setCreating(true); }}
+                className="group/new relative rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
+                <Plus className="size-3.5" />
+                <span role="tooltip" className="pointer-events-none absolute right-0 top-full z-10 mt-1 whitespace-nowrap rounded-md bg-zinc-900 px-2 py-1 text-[11.5px] font-medium normal-case tracking-normal text-white opacity-0 shadow-sm transition-opacity delay-150 group-hover/new:opacity-100 group-focus-visible/new:opacity-100">New workspace</span>
+              </button>
+            </div>
             <div className="max-h-48 overflow-y-auto">
               {workspaces.isLoading && <div className="px-3 py-1.5 text-[13px] text-zinc-400">Loading…</div>}
               {workspaces.data?.map((w) => (
@@ -121,10 +129,15 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
                 </button>
               ))}
             </div>
-            <button role="menuitem" onClick={() => { setOpen(false); setCreating(true); }} className={row}><Plus className="size-4 text-zinc-500" /> New workspace</button>
             <div className="my-1 border-t border-zinc-100" />
             <button role="menuitem" onClick={() => go('/settings')} className={row}><Settings className="size-4 text-zinc-500" /> Settings</button>
+            <button role="menuitem" onClick={() => go('/integrations')} className={row}><Puzzle className="size-4 text-zinc-500" /> Integrations</button>
             <button role="menuitem" onClick={() => go('/help')} className={row}><HelpCircle className="size-4 text-zinc-500" /> Help & Support</button>
+            <div className="my-1 border-t border-zinc-100" />
+            <div className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Developers</div>
+            {DEV_NAV.map((d) => (
+              <button key={d.to} role="menuitem" onClick={() => go(d.to)} className={row}><d.icon className="size-4 text-zinc-500" /> {d.label}</button>
+            ))}
             <div className="my-1 border-t border-zinc-100" />
             <button role="menuitem" onClick={logout} className={row}><LogOut className="size-4 text-zinc-500" /> Log out</button>
           </div>
@@ -168,7 +181,7 @@ function useSection(id: string, activeInside: boolean) {
 /** Section heading; collapses to a short rule so the items below don't move. Click to fold the section. */
 function SectionLabel({ children, action, collapsed, open, onToggle }: { children: ReactNode; action?: ReactNode; collapsed: boolean; open?: boolean; onToggle?: () => void }) {
   return (
-    <div className="group/sec relative flex h-[38px] items-end justify-between whitespace-nowrap px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-[.06em] text-zinc-400">
+    <div className="group/sec relative flex h-[38px] shrink-0 items-end justify-between whitespace-nowrap px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-[.06em] text-zinc-400">
       {onToggle && !collapsed ? (
         <button onClick={onToggle} aria-expanded={open} className={cx('-ml-1 flex items-center gap-1 rounded px-1 uppercase tracking-[.06em] hover:text-zinc-600', fade(collapsed))}>
           {children}
@@ -185,7 +198,6 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
   const { me, refresh } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [devOpen, setDevOpen] = useState(location.pathname.startsWith('/developers'));
   const qc = useQueryClient();
   const unread = useQuery({
     queryKey: ['unread-count'],
@@ -233,7 +245,7 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
         </button>
       </div>
       {/* Padding lives inside the scroller, so the active item's ring and shadow aren't clipped. */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-2 pb-2 scroll-thin">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-2 pb-2 scroll-thin [&>*]:shrink-0">
         <nav className="mt-1 flex flex-col gap-px pt-px">
           <NavItem to="/" end label="Home" icon={HomeIcon} collapsed={collapsed} />
           <NavItem to="/agent" label="Agent" icon={MessageSquareText} collapsed={collapsed} />
@@ -269,25 +281,6 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
         )}
       </div>
 
-      <nav className="flex flex-col gap-px border-t border-zinc-200/80 px-2 py-2">
-        <NavItem to="/integrations" label="Integrations" icon={Puzzle} collapsed={collapsed} />
-        {collapsed ? (
-          <NavItem to="/developers/api" label="Developers" icon={Code2} collapsed />
-        ) : (
-          <>
-            <button onClick={() => setDevOpen((o) => !o)} className={itemClass(false)}>
-              <Code2 className="size-4" strokeWidth={1.75} />
-              <span className="flex-1 text-left">Developers</span>
-              {devOpen ? <ChevronDown className="size-3.5 text-zinc-400" /> : <ChevronRight className="size-3.5 text-zinc-400" />}
-            </button>
-            {devOpen && DEV_NAV.map((d) => (
-              <NavLink key={d.to} to={d.to} className={({ isActive }) => cx('ml-[26px] flex h-7 items-center rounded-[7px] px-2 text-[13px]', isActive ? 'bg-white font-medium text-zinc-900 shadow-sm ring-1 ring-zinc-200' : 'text-zinc-600 hover:bg-zinc-200/50 hover:text-zinc-900')}>
-                {d.label}
-              </NavLink>
-            ))}
-          </>
-        )}
-      </nav>
       {menu && (
         <>
           <div className="fixed inset-0 z-40" onMouseDown={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }} />
