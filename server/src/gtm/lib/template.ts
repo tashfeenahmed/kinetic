@@ -13,6 +13,7 @@ export function render(template: string, row: RowValues): string {
 
 /** Like render, but a template that is exactly one token keeps the raw value (object, number…). */
 export function renderValue(template: string, row: RowValues): unknown {
+  if (typeof template !== 'string') return template; // a typed value (number, boolean...) saved in place of a template
   const m = template.trim().match(/^\{\{\s*([^}]+?)\s*\}\}$/);
   if (m) return resolveRef(m[1], row);
   return render(template, row);

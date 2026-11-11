@@ -133,17 +133,24 @@ describe('background sync of a Disconnected mailbox', () => {
     }) as any;
     const status = () => env.ctx.db.get('SELECT status FROM sender_emails WHERE id = ?', [s.id]).status;
 
+    // A bare "Login failed." is ambiguous (Outlook says it to healthy mailboxes too): the first one only notes it.
+    await syncDue(env.ctx, 120_000);
+    expect(status()).toBe('Connected');
+    expect(env.ctx.db.get('SELECT last_error FROM sender_emails WHERE id = ?', [s.id]).last_error).toBe('Login failed.');
+
+    // Refused again within the grace window: now it is disconnected.
+    env.clock.now = new Date(NOW.getTime() + 3 * 60_000);
     const before = mail.sessions;
     await syncDue(env.ctx, 120_000);
     expect(status()).toBe('Disconnected');
     const afterFirst = mail.sessions;
     expect(afterFirst - before).toBe(2); // both mailboxes tried
 
-    env.clock.now = new Date(NOW.getTime() + 5 * 60_000);
+    env.clock.now = new Date(NOW.getTime() + 8 * 60_000);
     await syncDue(env.ctx, 120_000);
     expect(mail.sessions - afterFirst).toBe(1); // only the healthy one
 
-    env.clock.now = new Date(NOW.getTime() + 31 * 60_000);
+    env.clock.now = new Date(NOW.getTime() + 34 * 60_000);
     const beforeRetry = mail.sessions;
     await syncDue(env.ctx, 120_000);
     expect(mail.sessions - beforeRetry).toBe(2); // the dead one gets its slow retry

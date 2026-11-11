@@ -190,3 +190,40 @@ describe('health warnings (auto-pause off, the default)', () => {
     expect(sender(id).health_warning).toBeNull();
   });
 });
+
+describe('mailboxes that cannot send', () => {
+  let k = 0;
+  const warm = (from: number, to: number, status: 'failed' | 'sent', at: Date, error: string | null = null) =>
+    env.ctx.db.insert('warmup_emails', { from_sender_id: from, to_sender_id: to, message_id: `w${++k}@x.test`, subject: 'hi', scheduled_at: at.toISOString(), status, error, sent_at: status === 'sent' ? at.toISOString() : null });
+
+  it('warns (without pausing) when every send times out, and clears once mail goes out again', async () => {
+    await env.api('PATCH', '/api/workspaces/v1.1/master-inbox-settings', { auto_pause_senders: true });
+    const id = await addSender();
+    const other = await addSender('sam@north.test');
+    env.ctx.db.update('sender_emails', id, { smtp_server: 'smtp.gmail.com', smtp_port: 465 });
+    for (let i = 3; i >= 1; i--) warm(id, other, 'failed', new Date(NOW.getTime() - i * 3_600_000), 'Connection timeout');
+
+    const r = await refreshSenderHealth(env.ctx, sender(id));
+    expect(r.paused).toBe(false);
+    expect(r.score).toBe(60);
+    expect(sender(id)).toMatchObject({ status: 'Connected', paused_reason: null });
+    expect(sender(id).health_warning).toMatch(/^Sending is failing — 3 emails failed in the last 24 hours and none went out since: the mail server \(smtp\.gmail\.com:465\) can't be reached/);
+    expect(env.ctx.db.all(`SELECT * FROM events WHERE type = 'SENDER_HEALTH_WARNING'`)).toHaveLength(1);
+
+    warm(id, other, 'sent', new Date(NOW.getTime() - 60_000));
+    expect((await refreshSenderHealth(env.ctx, sender(id))).score).toBe(100);
+    expect(sender(id).health_warning).toBeNull();
+  });
+
+  it('ignores a couple of failures, or failures followed by a successful send', async () => {
+    const id = await addSender();
+    const other = await addSender('sam@north.test');
+    warm(id, other, 'failed', new Date(NOW.getTime() - 7_200_000), 'Connection timeout');
+    warm(id, other, 'failed', new Date(NOW.getTime() - 3_600_000), 'Connection timeout');
+    expect((await refreshSenderHealth(env.ctx, sender(id))).score).toBe(100);
+    warm(id, other, 'failed', new Date(NOW.getTime() - 1_800_000), '421 try again later');
+    warm(id, other, 'sent', new Date(NOW.getTime() - 60_000));
+    expect((await refreshSenderHealth(env.ctx, sender(id))).score).toBe(100);
+    expect(sender(id).health_warning).toBeNull();
+  });
+});

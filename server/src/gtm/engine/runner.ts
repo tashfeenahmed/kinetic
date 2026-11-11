@@ -465,11 +465,12 @@ function short(v: unknown): string {
   return s.length > 140 ? `${s.slice(0, 137)}…` : s || '∅';
 }
 
-function renderInputs(inputs: Record<string, string> | undefined, row: Record<string, unknown>) {
+export function renderInputs(inputs: Record<string, unknown> | undefined, row: Record<string, unknown>) {
   const out: Record<string, unknown> = {};
   for (const [k, tpl] of Object.entries(inputs ?? {})) {
-    if (!tpl) continue;
-    const v = stringify(renderValue(tpl, row)).trim();
+    if (tpl == null || tpl === '') continue;
+    // Inputs saved through the API can be plain numbers or booleans (e.g. "days": 180), not only templates.
+    const v = stringify(typeof tpl === 'string' ? renderValue(tpl, row) : tpl).trim();
     if (v) out[k] = v;
   }
   return out;

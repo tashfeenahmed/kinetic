@@ -128,6 +128,36 @@ function bounceWindow(ctx: Ctx, sender: Row, ms: number) {
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
+/**
+ * Why the mailbox can't send, or null: 3+ campaign or warmup sends failed in the last 24 hours
+ * and none has gone out since the latest failure. Login refusals are handled by the disconnect
+ * logic; this catches what that misses, like an SMTP port the host blocks (every send times out).
+ */
+export function sendTrouble(ctx: Ctx, sender: Row): string | null {
+  const since = new Date(ctx.now().getTime() - DAY_MS).toISOString();
+  const f = ctx.db.get<{ n: number; last: string | null }>(
+    `SELECT COUNT(*) n, MAX(at) last FROM (
+       SELECT scheduled_at at FROM scheduled_emails WHERE sender_email_id = ? AND status = 'failed' AND scheduled_at >= ?
+       UNION ALL SELECT scheduled_at FROM warmup_emails WHERE from_sender_id = ? AND status = 'failed' AND scheduled_at >= ?)`,
+    [sender.id, since, sender.id, since])!;
+  if (f.n < 3 || !f.last) return null;
+  const okSince = ctx.db.get<{ n: number }>(
+    `SELECT (SELECT COUNT(*) FROM sent_emails WHERE sender_email_id = ? AND sent_at > ?)
+          + (SELECT COUNT(*) FROM warmup_emails WHERE from_sender_id = ? AND status = 'sent' AND sent_at > ?) n`,
+    [sender.id, f.last, sender.id, f.last])!.n;
+  if (okSince) return null;
+  const err = ctx.db.get<{ error: string }>(
+    `SELECT error FROM (
+       SELECT error, scheduled_at at FROM scheduled_emails WHERE sender_email_id = ? AND status = 'failed' AND error IS NOT NULL
+       UNION ALL SELECT error, scheduled_at FROM warmup_emails WHERE from_sender_id = ? AND status = 'failed' AND error IS NOT NULL)
+     ORDER BY at DESC LIMIT 1`, [sender.id, sender.id])?.error ?? 'unknown error';
+  const unreachable = /timeout|timed out|ECONNREFUSED|ECONNRESET|EHOSTUNREACH|ENETUNREACH|ENOTFOUND/i.test(err);
+  const hint = unreachable
+    ? `: the mail server (${sender.smtp_server ?? 'SMTP'}:${sender.smtp_port ?? '?'}) can't be reached from this server. Check the SMTP host and port; some hosts block ports 25 and 465, so try 587 with STARTTLS`
+    : `: ${err.slice(0, 160)}`;
+  return `Sending is failing — ${f.n} emails failed in the last 24 hours and none went out since${hint}`;
+}
+
 /** Why the bounce kill switch should fire, or null. */
 function bounceTrigger(ctx: Ctx, sender: Row): string | null {
   const week = bounceWindow(ctx, sender, 7 * DAY_MS);
@@ -211,6 +241,9 @@ export async function refreshSenderHealth(ctx: Ctx, sender: Row): Promise<Health
     if (ipList.listed.length) hit(30, `Sending IP ${ip} is on a blocklist (${ipList.listed.join(', ')})`);
   }
 
+  const trouble = sendTrouble(ctx, sender);
+  if (trouble) hit(40, trouble);
+
   score = Math.max(0, Math.min(100, score));
   db.update('sender_emails', sender.id, { health_score: score, health_reasons: JSON.stringify(reasons), health_checked_at: ctx.now().toISOString() });
 
@@ -219,7 +252,9 @@ export async function refreshSenderHealth(ctx: Ctx, sender: Row): Promise<Health
   const newListing = domainList?.listed.length && !(fresh.resumed_at && domainList.listedSince && fresh.resumed_at >= domainList.listedSince);
   const reason = bounceTrigger(ctx, fresh) ?? (newListing ? `${domain} is on a blocklist (${domainList!.listed.join(', ')})` : null);
   const paused = reason ? autoPause(ctx, fresh, reason) : false;
-  if (!reason && fresh.health_warning) db.update('sender_emails', fresh.id, { health_warning: null });
+  // A mailbox that can't send at all always gets a warning (pausing it would hide the cause).
+  if (!reason && trouble && fresh.status === 'Connected') warnSender(ctx, fresh, trouble);
+  else if (!reason && fresh.health_warning) db.update('sender_emails', fresh.id, { health_warning: null });
   return { score, reasons, paused };
 }
 

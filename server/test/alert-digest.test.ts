@@ -140,6 +140,40 @@ describe('sending the digest', () => {
     expect(s.mail.sent).toHaveLength(1);
   });
 
+  it('falls back to another mailbox when the first one cannot send', async () => {
+    const s = setup('2026-10-24T22:21:00Z');
+    for (const i of october()) s.queue(i);
+    const send = s.mail.send.bind(s.mail);
+    s.mail.send = async (sender, msg) => { if (sender.email === 'ops@acme.test') throw new Error('Connection timeout'); return send(sender, msg); };
+    s.at('2026-10-24T23:00:00Z');
+    await runAlertDigests(s.ctx, { useAi: false });
+    expect(s.mail.sent.map((m) => m.sender.email)).toEqual(['nathan@acme.test']);
+    expect(s.db.get('SELECT status, attempts FROM alert_digest_runs')).toEqual({ status: 'sent', attempts: 1 });
+  });
+
+  it('keeps the alerts and retries later (up to 3 times a day) when no mailbox can send', async () => {
+    const s = setup('2026-10-24T20:00:00Z');
+    for (const i of october()) s.queue(i);
+    let failing = true;
+    const send = s.mail.send.bind(s.mail);
+    s.mail.send = async (sender, msg) => { if (failing) throw new Error('Connection timeout'); return send(sender, msg); };
+    s.at('2026-10-24T20:30:00Z');
+    await runAlertDigests(s.ctx, { useAi: false });
+    expect(s.db.get('SELECT status, attempts, error FROM alert_digest_runs')).toMatchObject({ status: 'failed', attempts: 1, error: expect.stringContaining('ops@acme.test: Connection timeout; nathan@acme.test: Connection timeout') });
+    expect(s.db.get('SELECT COUNT(*) n FROM alert_digest_items WHERE digest_day IS NULL').n).toBe(october().length);
+
+    s.at('2026-10-24T21:00:00Z'); // too soon for a retry
+    await runAlertDigests(s.ctx, { useAi: false });
+    expect(s.db.get('SELECT attempts FROM alert_digest_runs').attempts).toBe(1);
+
+    failing = false;
+    s.at('2026-10-24T21:31:00Z');
+    await runAlertDigests(s.ctx, { useAi: false });
+    expect(s.mail.sent).toHaveLength(1);
+    expect(s.db.get('SELECT status FROM alert_digest_runs').status).toBe('sent');
+    expect(s.db.get('SELECT COUNT(*) n FROM alert_digest_items WHERE digest_day IS NULL').n).toBe(0);
+  });
+
   it('counts the day in the time zone set under Integrations over the campaigns\' one', async () => {
     const s = setup('2026-10-24T01:45:00Z'); // 21:45 on the 23rd in New York, 10:45 on the 24th in Tokyo
     s.db.run(`UPDATE campaigns SET schedule_timezone = 'Asia/Tokyo'`);

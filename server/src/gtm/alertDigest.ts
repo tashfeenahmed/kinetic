@@ -382,11 +382,20 @@ export function alertRecipients(ctx: Ctx, workspaceId: number): string[] {
   return ctx.db.all<{ email: string }>(`SELECT u.email FROM workspace_members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? AND m.role = 'admin' ORDER BY u.id`, [workspaceId]).map((u) => u.email);
 }
 
-/** A connected mailbox to send alerts from, preferring one no active campaign is sending from. */
-export function alertSender(ctx: Ctx, workspaceId: number): Row | undefined {
-  return ctx.db.get(`SELECT s.* FROM sender_emails s WHERE s.workspace_id = ? AND s.status = 'Connected'
-    ORDER BY EXISTS (SELECT 1 FROM campaign_sender_emails cs JOIN campaigns c ON c.id = cs.campaign_id WHERE cs.sender_email_id = s.id AND c.status = 'active'), s.id LIMIT 1`, [workspaceId]);
+/** Connected mailboxes to send alerts from, in order: ones no active campaign is sending from first. */
+export function alertSenders(ctx: Ctx, workspaceId: number): Row[] {
+  return ctx.db.all(`SELECT s.* FROM sender_emails s WHERE s.workspace_id = ? AND s.status = 'Connected'
+    ORDER BY EXISTS (SELECT 1 FROM campaign_sender_emails cs JOIN campaigns c ON c.id = cs.campaign_id WHERE cs.sender_email_id = s.id AND c.status = 'active'), s.id`, [workspaceId]);
 }
+
+/** The first mailbox alerts would be sent from. */
+export function alertSender(ctx: Ctx, workspaceId: number): Row | undefined {
+  return alertSenders(ctx, workspaceId)[0];
+}
+
+/** A failed digest is tried again after this long, up to MAX_DIGEST_ATTEMPTS a day; its alerts are kept meanwhile. */
+const DIGEST_RETRY_MS = 60 * 60_000;
+const MAX_DIGEST_ATTEMPTS = 3;
 
 /** Worker job: send each workspace's digest once a day, as soon as its queue has settled. */
 export async function runAlertDigests(ctx: Ctx, opts: { useAi?: boolean } = {}) {
@@ -395,7 +404,8 @@ export async function runAlertDigests(ctx: Ctx, opts: { useAi?: boolean } = {}) 
   for (const { workspace_id: ws, last } of pending) {
     if (now.getTime() - Date.parse(last) < SETTLE_MS) continue;
     const { day } = localDayHour(now, workspaceTimeZone(ctx, ws));
-    if (ctx.db.get('SELECT 1 FROM alert_digest_runs WHERE workspace_id = ? AND day = ?', [ws, day])) continue;
+    const run = ctx.db.get<{ status: string; attempts: number; created_at: string }>('SELECT status, attempts, created_at FROM alert_digest_runs WHERE workspace_id = ? AND day = ?', [ws, day]);
+    if (run && (run.status !== 'failed' || run.attempts >= MAX_DIGEST_ATTEMPTS || now.getTime() - Date.parse(run.created_at) < DIGEST_RETRY_MS)) continue;
     await sendDigest(ctx, ws, day, opts).catch((err) => ctx.log.warn({ err, workspaceId: ws }, 'alert digest failed'));
   }
 }
@@ -409,21 +419,32 @@ export async function sendDigest(ctx: Ctx, workspaceId: number, day: string, opt
   const mail = renderDigest(digest, { publicUrl: ctx.config.publicUrl ?? '', workspaceName: ws?.name ?? 'Kinetic' });
   const record = (status: string, error?: string) => {
     ctx.db.tx(() => {
-      ctx.db.run(`INSERT OR REPLACE INTO alert_digest_runs (workspace_id, day, status, subject, items, worth_a_look, also_changed, skipped, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [workspaceId, day, status, status === 'sent' ? mail.subject : null, rows.length, digest.top, digest.minor, digest.skipped, error ?? null, ctx.now().toISOString()]);
-      ctx.db.run(`UPDATE alert_digest_items SET digest_day = ? WHERE id IN (${rows.map(() => '?').join(',')})`, [day, ...rows.map((r) => r.id)]);
+      const prev = ctx.db.get<{ attempts: number; status: string }>('SELECT attempts, status FROM alert_digest_runs WHERE workspace_id = ? AND day = ?', [workspaceId, day]);
+      const attempts = prev?.status === 'failed' ? prev.attempts + 1 : 1;
+      ctx.db.run(`INSERT OR REPLACE INTO alert_digest_runs (workspace_id, day, status, subject, items, worth_a_look, also_changed, skipped, error, created_at, attempts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [workspaceId, day, status, status === 'sent' ? mail.subject : null, rows.length, digest.top, digest.minor, digest.skipped, error ?? null, ctx.now().toISOString(), attempts]);
+      // A failed send keeps its alerts queued: the retry (or tomorrow's digest) still carries them.
+      if (status !== 'failed') ctx.db.run(`UPDATE alert_digest_items SET digest_day = ? WHERE id IN (${rows.map(() => '?').join(',')})`, [day, ...rows.map((r) => r.id)]);
     });
   };
   if (!digest.top && !digest.minor) { record('quiet'); return { status: 'quiet' as const, digest, mail }; }
   const to = alertRecipients(ctx, workspaceId);
-  const sender = alertSender(ctx, workspaceId);
-  if (!to.length || !sender) { record('failed', 'No admin or connected mailbox to send from'); return { status: 'failed' as const, digest, mail }; }
-  try {
-    await ctx.mail.send(sender, {
-      from: { name: 'Kinetic', email: sender.email }, to: to.join(', '), subject: mail.subject, text: mail.text, html: mail.html,
-      messageId: `${randomUUID()}@${domainOf(sender.email)}`,
-    });
-  } catch (e: any) { record('failed', String(e.message ?? e).slice(0, 500)); throw e; }
-  record('sent');
-  return { status: 'sent' as const, digest, mail };
+  const senders = alertSenders(ctx, workspaceId);
+  if (!to.length || !senders.length) { record('failed', 'No admin or connected mailbox to send from'); return { status: 'failed' as const, digest, mail }; }
+  // Try each connected mailbox in turn: one that can't reach its mail server shouldn't cost the day's digest.
+  const errors: string[] = [];
+  for (const sender of senders) {
+    try {
+      await ctx.mail.send(sender, {
+        from: { name: 'Kinetic', email: sender.email }, to: to.join(', '), subject: mail.subject, text: mail.text, html: mail.html,
+        messageId: `${randomUUID()}@${domainOf(sender.email)}`,
+      });
+      record('sent');
+      return { status: 'sent' as const, digest, mail };
+    } catch (e: any) {
+      errors.push(`${sender.email}: ${String(e?.message ?? e)}`);
+    }
+  }
+  record('failed', errors.join('; ').slice(0, 500));
+  throw new Error(`alert digest: every mailbox failed (${errors.join('; ')})`);
 }

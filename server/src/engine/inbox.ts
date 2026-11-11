@@ -11,7 +11,7 @@ import type { Row } from '../db/db.ts';
 import { emit } from '../events.ts';
 import { categorize, parseInbound, type InboundMessage } from '../mail/classify.ts';
 import { SPAM_FOLDER_NAMES } from '../mail/providers.ts';
-import { cancelScheduled, isAuthError, markDisconnected } from './sequencer.ts';
+import { cancelScheduled, isAuthError, noteAuthFailure } from './sequencer.ts';
 import { afterReplyStored } from './replyAi.ts';
 import { ensureThread } from './threads.ts';
 import { handleWarmupMessage, isWarmupMessage } from './warmup.ts';
@@ -67,7 +67,7 @@ async function runSync(ctx: Ctx, sender: Row): Promise<SyncResult> {
       }
       return n;
     });
-    const update: Row = { last_synced_at: ctx.now().toISOString(), last_error: null };
+    const update: Row = { last_synced_at: ctx.now().toISOString(), last_error: null, auth_failed_at: null };
     if (sender.status === 'Disconnected') {
       update.status = 'Connected';
       emit(ctx, sender.workspace_id, 'EMAIL_ACCOUNT_RECONNECTED', { sender_email_id: sender.id, email: sender.email }, { sender_email_id: sender.id });
@@ -77,7 +77,7 @@ async function runSync(ctx: Ctx, sender: Row): Promise<SyncResult> {
     const msg = String(err?.responseText ?? err?.message ?? err);
     error = msg;
     ctx.log.warn({ sender: sender.email, err: msg }, 'imap sync failed');
-    if (isAuthError(err)) markDisconnected(ctx, sender, msg);
+    if (isAuthError(err)) noteAuthFailure(ctx, sender, err, msg);
     else ctx.db.update('sender_emails', sender.id, { last_error: msg.slice(0, 500) });
   }
   return { processed, error };
