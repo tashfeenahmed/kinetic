@@ -1,6 +1,7 @@
 /**
- * Mailbox health: a 0-100 score with plain-English reasons, and the kill switch that pauses a
- * mailbox when its bounce rate spikes or its domain lands on a public blocklist.
+ * Mailbox health: a 0-100 score with plain-English reasons, and the kill switch that warns about
+ * (or, with auto-pause on, pauses) a mailbox when its bounce rate spikes or its domain lands on a
+ * public blocklist.
  *
  * Inputs: campaign bounce rate (7 days, counted only since the last manual resume), warmup inbox
  * rate, inbox placement tests (30 days), free DNS blocklists for the domain and any pinned sending
@@ -136,15 +137,30 @@ function bounceTrigger(ctx: Ctx, sender: Row): string | null {
   return null;
 }
 
-/** Pauses a connected mailbox on its own, records why and tells webhooks. False if not paused. */
+/**
+ * The kill switch fired. With auto-pause on, the mailbox stops sending; with it off (the default
+ * for new workspaces), it keeps sending and carries a warning. Returns true only when it paused.
+ */
 function autoPause(ctx: Ctx, sender: Row, reason: string): boolean {
   if (sender.status !== 'Connected') return false;
   const ws = ctx.db.get('SELECT auto_pause_senders FROM workspaces WHERE id = ?', [sender.workspace_id]);
-  if (!ws?.auto_pause_senders) return false;
+  if (!ws?.auto_pause_senders) {
+    warnSender(ctx, sender, reason);
+    return false;
+  }
   pauseSender(ctx, sender, reason);
   emit(ctx, sender.workspace_id, 'SENDER_AUTO_PAUSED', { sender_email_id: sender.id, sender_email: sender.email, reason }, { sender_email_id: sender.id });
   ctx.log.warn({ sender: sender.id, reason }, 'mailbox paused automatically');
   return true;
+}
+
+/** Sets (or refreshes the text of) a mailbox's health warning; the event fires only when it first appears. */
+function warnSender(ctx: Ctx, sender: Row, reason: string) {
+  if (sender.health_warning === reason) return;
+  ctx.db.update('sender_emails', sender.id, { health_warning: reason });
+  if (sender.health_warning) return;
+  emit(ctx, sender.workspace_id, 'SENDER_HEALTH_WARNING', { sender_email_id: sender.id, sender_email: sender.email, reason }, { sender_email_id: sender.id });
+  ctx.log.warn({ sender: sender.id, reason }, 'mailbox health warning');
 }
 
 /** Cheap check after a hard bounce: no DNS, just the bounce thresholds. */
@@ -203,6 +219,7 @@ export async function refreshSenderHealth(ctx: Ctx, sender: Row): Promise<Health
   const newListing = domainList?.listed.length && !(fresh.resumed_at && domainList.listedSince && fresh.resumed_at >= domainList.listedSince);
   const reason = bounceTrigger(ctx, fresh) ?? (newListing ? `${domain} is on a blocklist (${domainList!.listed.join(', ')})` : null);
   const paused = reason ? autoPause(ctx, fresh, reason) : false;
+  if (!reason && fresh.health_warning) db.update('sender_emails', fresh.id, { health_warning: null });
   return { score, reasons, paused };
 }
 

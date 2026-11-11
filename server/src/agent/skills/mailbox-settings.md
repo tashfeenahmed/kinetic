@@ -33,10 +33,13 @@ Microsoft 365 admin to approve the app for the whole organisation.
   Keep new mailboxes at 20–30 cold emails a day; raise slowly and only when warmup health is good.
 - Bulk signatures: `PATCH /api/sender-emails/signatures/bulk` `{ "sender_email_ids": [..], "email_signature": "<p>{SENDER_NAME}</p>" }`.
 - Pause a mailbox: `PATCH /api/sender-emails/{id}/pause`; resume it: `PATCH /api/sender-emails/{id}/resume`.
-  Kinetic also pauses a mailbox on its own when bounces spike (≥ 5% over 7 days with 20+ sends, or 3+ bounces and ≥ 10%
-  in 24h) or its domain is on a blocklist: `paused_reason` says why and a `SENDER_AUTO_PAUSED` event fires. Fix the cause
-  (clean the list, check DNS) before resuming; a resume ignores the bounces and listing that caused the pause. Workspace
-  switch: `auto_pause_senders` on `PATCH /api/workspaces/v1.1/master-inbox-settings`.
+  When bounces spike (≥ 5% over 7 days with 20+ sends, or 3+ bounces and ≥ 10% in 24h) or its domain is on a blocklist,
+  Kinetic flags the mailbox. By default it keeps sending: `health_warning` says why and a `SENDER_HEALTH_WARNING` event
+  fires (the warning clears once the trigger no longer holds). With the workspace switch `auto_pause_senders` on
+  (`PATCH /api/workspaces/v1.1/master-inbox-settings`) it pauses instead: `paused_reason` says why and a
+  `SENDER_AUTO_PAUSED` event fires. Fix the cause (clean the list, check DNS) before resuming; a resume ignores the
+  bounces and listing that caused the pause. Leads whose email domain cannot receive mail (no such domain, no MX/A) are
+  skipped before sending and marked bounced, so they never count against a mailbox.
 - Move mailboxes to another workspace: `POST /api/sender-emails/move-to-another-workspace-bulk` (approval).
 
 ## Sending IP routes (proxies)

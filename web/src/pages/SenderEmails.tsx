@@ -170,6 +170,7 @@ export function SenderEmailsPage() {
         <SenderStatus status={s.status} />
         {s.status === 'Disconnected' && s.last_error && <div className="mt-0.5 max-w-56 truncate text-xs text-red-600" title={s.last_error}>{s.last_error}</div>}
         {s.status === 'Paused' && s.paused_reason && <div className="mt-0.5 max-w-56 truncate text-xs text-amber-700" title={s.paused_reason}>Paused automatically: {s.paused_reason}</div>}
+        {s.status === 'Connected' && s.health_warning && <div className="mt-0.5 max-w-56 truncate text-xs text-amber-700" title={s.health_warning}>Warning: {s.health_warning}</div>}
         {s.health_score != null && (
           <div className="mt-0.5" title={s.health_reasons.length ? s.health_reasons.join('\n') : 'No problems found'}>
             <Badge tone={s.health_score >= 90 ? 'green' : s.health_score >= 70 ? 'yellow' : 'red'}>Health {s.health_score}</Badge>

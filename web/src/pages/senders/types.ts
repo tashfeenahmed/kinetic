@@ -22,6 +22,8 @@ export interface Sender {
   health_reasons: string[];
   /** Set when Kinetic paused the mailbox itself (bounce spike or blocklist). */
   paused_reason: string | null;
+  /** Set when the bounce/blocklist alarm fired but auto-pause is off: the mailbox keeps sending. */
+  health_warning: string | null;
   last_synced_at: string | null;
   egress_route_id: number | null;
   egress_route: { id: number; name: string } | null;
