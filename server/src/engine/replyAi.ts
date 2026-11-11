@@ -83,10 +83,11 @@ function emptyReason(d: any): string {
 export async function chat(ctx: Ctx, o: { model: string; system: string; user: string; maxTokens?: number; temperature?: number }): Promise<{ content: string; costUsd: number }> {
   const ai = aiConfig(ctx);
   if (!ai.configured) throw new Error('Set OPENROUTER_API_KEY on the Integrations page, or AI_BASE_URL for a local model');
-  const call = () => getJson(`${ai.base}/chat/completions`, {
+  const maxTokens = o.maxTokens ?? 400;
+  const call = (max = maxTokens) => getJson(`${ai.base}/chat/completions`, {
     headers: ai.local ? {} : { authorization: `Bearer ${ai.key}`, 'HTTP-Referer': 'http://localhost/kineticsand', 'X-Title': 'kineticsand' },
     json: {
-      model: o.model, temperature: o.temperature ?? 0, max_tokens: o.maxTokens ?? 400,
+      model: o.model, temperature: o.temperature ?? 0, max_tokens: max,
       messages: [{ role: 'system', content: o.system }, { role: 'user', content: o.user }],
       ...(ai.local ? {} : { usage: { include: true } }),
     },
@@ -94,9 +95,11 @@ export async function chat(ctx: Ctx, o: { model: string; system: string; user: s
   });
   let d = await call();
   let cost = Number(d?.usage?.cost ?? 0);
-  // Gateways occasionally answer with an empty message; one immediate retry usually gets text.
-  if (typeof d?.choices?.[0]?.message?.content !== 'string' || !d.choices[0].message.content.trim()) {
-    d = await call();
+  // One immediate retry: for an empty message (gateways do that now and then), or an answer cut off
+  // at the token cap (models that think before answering can spend the whole cap) — with more room.
+  const cutOff = d?.choices?.[0]?.finish_reason === 'length';
+  if (cutOff || typeof d?.choices?.[0]?.message?.content !== 'string' || !d.choices[0].message.content.trim()) {
+    d = await call(cutOff ? Math.max(maxTokens * 3, 1200) : maxTokens);
     cost += Number(d?.usage?.cost ?? 0);
   }
   const content = d?.choices?.[0]?.message?.content;
@@ -122,7 +125,7 @@ export async function classifyReply(ctx: Ctx, reply: Row, opts: { model: string;
     const hit = ctx.db.get<{ result: string }>('SELECT result FROM reply_ai_cache WHERE key = ?', [key]);
     if (hit) return JSON.parse(hit.result);
   }
-  const { content } = await chat(ctx, { model: opts.model, system: CLASSIFY_SYSTEM, user, maxTokens: 400 });
+  const { content } = await chat(ctx, { model: opts.model, system: CLASSIFY_SYSTEM, user, maxTokens: 800 });
   const parsed = parseClassification(content);
   if (!parsed) throw new Error(`Unreadable model answer: ${content.slice(0, 200)}`);
   ctx.db.run('INSERT OR REPLACE INTO reply_ai_cache (key, result, created_at) VALUES (?, ?, ?)', [key, JSON.stringify(parsed), ctx.now().toISOString()]);
