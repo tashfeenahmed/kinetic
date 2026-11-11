@@ -37,6 +37,7 @@ beforeEach(async () => {
       if (u.endsWith('/chat/completions')) {
         aiCalls.push({ url: u, body: JSON.parse(init.body) });
         const next = answers.length ? answers.shift()! : new Error('no answer queued');
+        if (next === 'CUT') return new Response(JSON.stringify({ choices: [{ message: { content: '{"category": "inter' }, finish_reason: 'length' }], usage: { completion_tokens: 800 } }), { status: 200 });
         if (next === null) return new Response(JSON.stringify({ choices: [{ message: { content: null }, finish_reason: 'stop' }], provider: 'TestProvider', usage: { completion_tokens: 0 } }), { status: 200 });
         if (next instanceof Error) return new Response(JSON.stringify({ error: { message: next.message } }), { status: 500 });
         return new Response(JSON.stringify({ choices: [{ message: { content: next } }], usage: { prompt_tokens: 100, completion_tokens: 40 } }), { status: 200 });
@@ -145,6 +146,15 @@ describe('AI reply sorting', () => {
     const list = await env.api('GET', `/api/replies?folder=inbox&label=meeting_request&campaign_id=${campaign.id}`);
     expect(list.body.data).toHaveLength(1);
     expect(list.body.data[0]).toMatchObject({ label: 'meeting_request', ai_summary: 'Wants a call next week and pricing.' });
+  });
+
+  it('retries an answer cut off at the token cap with more room', async () => {
+    const { sender } = await setup(1);
+    const a = await receive(sender, 0, 'Who is this?');
+    answers.push('CUT', ai({ category: 'more_info', summary: 'Asks who we are.' }));
+    await classifyPending(env.ctx);
+    expect(aiCalls.map((c) => c.body.max_tokens)).toEqual([800, 2400]);
+    expect(replyRow(a.id)).toMatchObject({ ai_status: 'done', label: 'more_info' });
   });
 
   it('retries an empty model answer at once, then retries a failed reply later (a few times)', async () => {
