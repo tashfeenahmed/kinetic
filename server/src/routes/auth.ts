@@ -151,6 +151,8 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
 
 /** Default tags and schedule template every new workspace starts with. */
 export function seedWorkspaceDefaults(ctx: Ctx, workspaceId: number) {
+  // Bounce spikes and blocklist hits warn by default; pausing the mailbox is opt-in.
+  ctx.db.run('UPDATE workspaces SET auto_pause_senders = 0 WHERE id = ?', [workspaceId]);
   for (const name of ['Google', 'Microsoft', 'Custom']) {
     ctx.db.run('INSERT OR IGNORE INTO tags (workspace_id, name, is_default) VALUES (?, ?, 1)', [workspaceId, name]);
   }

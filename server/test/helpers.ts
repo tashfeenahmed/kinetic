@@ -10,6 +10,14 @@ import { silentLogger, type Ctx } from '../src/context.ts';
 import type { Config } from '../src/config.ts';
 import type { MailGateway, OutgoingMessage, SendResult } from '../src/mail/gateway.ts';
 import type { Row } from '../src/db/db.ts';
+import { setRecipientResolver, type RecipientResolver } from '../src/engine/recipientDomain.ts';
+
+/** Every recipient domain accepts mail unless a test says otherwise; no real DNS in tests. */
+export const acceptAllDomains: RecipientResolver = {
+  async resolveMx(d: string) { return [{ exchange: `mx.${d}`, priority: 10 }]; },
+  async resolve4() { return ['192.0.2.1']; },
+  async resolve6() { return []; },
+};
 
 /** In-memory gateway that records sends and can be told to fail. */
 export class FakeMail implements MailGateway {
@@ -41,6 +49,7 @@ export interface TestEnv {
 }
 
 export async function makeEnv(opts: { mail?: MailGateway | ((db: Db) => MailGateway); now?: Date; fetch?: typeof fetch } = {}): Promise<TestEnv> {
+  setRecipientResolver(acceptAllDomains);
   const dir = mkdtempSync(join(tmpdir(), 'kinetic-test-'));
   const key = randomBytes(32);
   setEncryptionKey(key);

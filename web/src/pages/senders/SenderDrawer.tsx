@@ -89,6 +89,9 @@ export function SenderDrawer({ senderId, onClose }: { senderId: number | null; o
           {s.status === 'Paused' && s.paused_reason && (
             <Alert tone="yellow" title="Paused automatically">{s.paused_reason}. Resume it once the cause is fixed.</Alert>
           )}
+          {s.status === 'Connected' && s.health_warning && (
+            <Alert tone="yellow" title="This mailbox needs attention">{s.health_warning}. It is still sending: clean the lead list (or check the blocklist) before the bounces hurt its reputation.</Alert>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button size="sm" icon={<Stethoscope className="size-4" />} onClick={() => actions.testConnection(s)}>Test connection</Button>
             <Button size="sm" icon={<RefreshCw className="size-4" />} onClick={() => actions.syncNow(s)}>Sync now</Button>

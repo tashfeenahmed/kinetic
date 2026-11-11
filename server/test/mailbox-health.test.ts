@@ -81,6 +81,10 @@ describe('blocklist answers', () => {
 });
 
 describe('auto-pause', () => {
+  beforeEach(async () => {
+    await env.api('PATCH', '/api/workspaces/v1.1/master-inbox-settings', { auto_pause_senders: true });
+  });
+
   it('pauses a mailbox whose domain is listed, cancels its slots and alerts', async () => {
     const id = await addSender();
     const c = (await env.api('POST', '/api/campaigns', { name: 'Q4' })).body.data;
@@ -154,5 +158,35 @@ describe('auto-pause', () => {
     const r = await refreshSenderHealth(env.ctx, sender(id));
     expect(r).toMatchObject({ paused: false, score: 50 });
     expect(sender(id).status).toBe('Connected');
+  });
+});
+
+describe('health warnings (auto-pause off, the default)', () => {
+  const warningEvents = () => env.ctx.db.all(`SELECT * FROM events WHERE type = 'SENDER_HEALTH_WARNING'`);
+
+  it('new workspaces warn instead of pausing', async () => {
+    expect((await env.api('GET', '/api/workspaces/v1.1/master-inbox-settings')).body.data.auto_pause_senders).toBeFalsy();
+  });
+
+  it('keeps a bouncing mailbox sending, warns once, and clears the warning when bounces settle', async () => {
+    const id = await addSender();
+    const ids = sends(id, 10, 2);
+    const s = sender(id);
+    await processInbound(env.ctx, s, await parseInbound(dsn(s.email, ids[2]!, 'lead3@client.test')), { client: null, folder: 'INBOX', kind: 'inbox', uid: 1 });
+    expect(sender(id)).toMatchObject({ status: 'Connected', paused_reason: null, health_warning: '3 emails bounced in the last 24 hours (30% of 10)' });
+    expect(autoPausedEvents()).toHaveLength(0);
+    expect(warningEvents()).toHaveLength(1);
+
+    // Still firing on the hourly check: the text refreshes, no second event.
+    sends(id, 2);
+    expect((await refreshSenderHealth(env.ctx, sender(id))).paused).toBe(false);
+    expect(sender(id).health_warning).toBe('3 emails bounced in the last 24 hours (25% of 12)');
+    expect(warningEvents()).toHaveLength(1);
+    expect((await env.api('GET', `/api/sender-emails/${id}`)).body.data.health_warning).toBe('3 emails bounced in the last 24 hours (25% of 12)');
+
+    // A week later the bounces are out of both windows.
+    env.clock.now = new Date(NOW.getTime() + 8 * 86_400_000);
+    await refreshSenderHealth(env.ctx, sender(id));
+    expect(sender(id).health_warning).toBeNull();
   });
 });

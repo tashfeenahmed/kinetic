@@ -13,6 +13,7 @@ import type { Row } from '../db/db.ts';
 import { emit } from '../events.ts';
 import { localDayStart, openWindow, type SendSchedule } from '../lib/schedule.ts';
 import { domainOf } from '../lib/dns.ts';
+import { checkRecipientDomain } from './recipientDomain.ts';
 import { chooseVariant, composeCampaignEmail } from './compose.ts';
 import { checkEmail } from '../lib/emailCheck.ts';
 import { ensureThread } from './threads.ts';
@@ -276,6 +277,21 @@ async function sendSlot(ctx: Ctx, slot: Row): Promise<'sent' | 'failed' | 'cance
   // A slot that slipped well past its window (e.g. the app was stopped) is re-planned instead.
   const late = ctx.now().getTime() - Date.parse(slot.scheduled_at);
   if (late > 30 * 60_000 && !openWindow(campaignSchedule(campaign), ctx.now())) return cancel('missed sending window');
+
+  // A recipient domain that cannot receive mail is a certain hard bounce: drop the lead before it
+  // costs the mailbox reputation (and trips its bounce alarm).
+  const rcpt = await checkRecipientDomain(ctx, lead.email);
+  if (rcpt.verdict === 'dead') {
+    const reason = `recipient ${rcpt.why}`;
+    db.tx(() => {
+      cancel(reason);
+      db.run(`UPDATE leads SET status = 'bounced', updated_at = ? WHERE id = ?`, [ctx.now().toISOString(), lead.id]);
+      db.run(`UPDATE campaign_leads SET status = 'bounced', next_due_at = NULL WHERE lead_id = ? AND status IN ('pending','in_sequence')`, [lead.id]);
+      cancelScheduled(ctx, { leadId: lead.id }, reason);
+    });
+    ctx.log.info({ slot: slot.id, lead: lead.id, reason }, 'lead skipped before sending');
+    return 'cancelled';
+  }
 
   let previous: Row | null = cl.current_step > 0
     ? db.get('SELECT * FROM sent_emails WHERE campaign_lead_id = ? ORDER BY id DESC LIMIT 1', [cl.id]) ?? null
