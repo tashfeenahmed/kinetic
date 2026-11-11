@@ -5,7 +5,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Ctx } from '../context.ts';
-import type { Auth } from '../http.ts';
+import { routeDocs, type Auth } from '../http.ts';
 import { webSearch } from '../gtm/providers/search.ts';
 import { readPage } from '../gtm/engine/agent.ts';
 import { fnTool } from './llm.ts';
@@ -141,6 +141,18 @@ export function grantApproval(env: Pick<ToolEnv, 'approvals'>, r: ApiRequest): s
   return token;
 }
 
+/** The route's declared body schema rejects this body: a short reason, else null (no schema, or it passes). */
+export function invalidBody(method: string, pathname: string, body: unknown): string | null {
+  // The most literal matching route wins (e.g. /bulk over /:id), the way the router picks it.
+  const doc = routeDocs
+    .filter((r) => r.method === method && new RegExp(`^${r.url.replace(/:[^/]+/g, '[^/]+')}$`).test(pathname))
+    .sort((a, b) => (a.url.match(/:/g)?.length ?? 0) - (b.url.match(/:/g)?.length ?? 0))[0];
+  if (!doc?.body) return null;
+  const res = doc.body.safeParse(body ?? {});
+  if (res.success) return null;
+  return res.error.issues.slice(0, 3).map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; ');
+}
+
 export async function apiTool(args: any, env: ToolEnv, approvalToken?: string): Promise<ToolOutcome> {
   const method = String(args.method ?? 'GET').toUpperCase();
   let raw = String(args.path ?? '').trim();
@@ -157,6 +169,9 @@ export async function apiTool(args: any, env: ToolEnv, approvalToken?: string): 
   const verdict = classify(method, pathname, body, { db: env.ctx.db, settings, workspaceId: env.workspaceId });
   if (verdict.kind === 'deny') return fail(`Blocked: ${verdict.reason}`, `${label} → blocked`);
   if (verdict.kind === 'approve' && !env.autoApprove) {
+    // Don't ask the user to approve a request the route would reject anyway.
+    const invalid = invalidBody(method, pathname, body);
+    if (invalid) return fail(`HTTP 422 (checked before asking for approval)\n${invalid}`, `${label} → 422 ${invalid}`.slice(0, 200));
     const key = approvalToken ? env.approvals.get(approvalToken) : undefined;
     if (approvalToken) env.approvals.delete(approvalToken);
     if (key !== requestKey(req)) return { kind: 'pause', label: `${label} — needs your approval`, pause: { type: 'approval', reason: verdict.reason, request: req } };

@@ -20,7 +20,7 @@ const MONDAY_10AM_NY = new Date('2026-10-12T14:00:00Z');
 let env: TestEnv;
 let mail: FakeMail;
 /** Queue of model answers (strings) or errors; every OpenRouter call takes the next one. */
-let answers: (string | Error)[];
+let answers: (string | Error | null)[]; // null = an empty message (content: null)
 let aiCalls: { url: string; body: any }[];
 let other: { url: string; body: string }[];
 
@@ -36,7 +36,8 @@ beforeEach(async () => {
       const u = String(url);
       if (u.endsWith('/chat/completions')) {
         aiCalls.push({ url: u, body: JSON.parse(init.body) });
-        const next = answers.shift() ?? new Error('no answer queued');
+        const next = answers.length ? answers.shift()! : new Error('no answer queued');
+        if (next === null) return new Response(JSON.stringify({ choices: [{ message: { content: null }, finish_reason: 'stop' }], provider: 'TestProvider', usage: { completion_tokens: 0 } }), { status: 200 });
         if (next instanceof Error) return new Response(JSON.stringify({ error: { message: next.message } }), { status: 500 });
         return new Response(JSON.stringify({ choices: [{ message: { content: next } }], usage: { prompt_tokens: 100, completion_tokens: 40 } }), { status: 200 });
       }
@@ -144,6 +145,36 @@ describe('AI reply sorting', () => {
     const list = await env.api('GET', `/api/replies?folder=inbox&label=meeting_request&campaign_id=${campaign.id}`);
     expect(list.body.data).toHaveLength(1);
     expect(list.body.data[0]).toMatchObject({ label: 'meeting_request', ai_summary: 'Wants a call next week and pricing.' });
+  });
+
+  it('retries an empty model answer at once, then retries a failed reply later (a few times)', async () => {
+    const { sender } = await setup(1);
+    const a = await receive(sender, 0, 'Who is this?');
+    answers.push(null, null);
+    await classifyPending(env.ctx);
+    expect(aiCalls).toHaveLength(2); // one immediate retry
+    expect(replyRow(a.id)).toMatchObject({ ai_status: 'failed', ai_attempts: 1 });
+    expect(replyRow(a.id).ai_error).toBe('The model returned no text (finish_reason: stop, provider: TestProvider, completion_tokens: 0)');
+
+    await classifyPending(env.ctx); // too soon for another try
+    expect(aiCalls).toHaveLength(2);
+
+    env.clock.now = new Date(env.clock.now.getTime() + 31 * 60_000);
+    answers.push(ai({ category: 'more_info', summary: 'Asks who we are.' }));
+    await classifyPending(env.ctx);
+    expect(replyRow(a.id)).toMatchObject({ ai_status: 'done', label: 'more_info' });
+
+    // Gives up after three failed tries.
+    const b = await receive(sender, 0, 'Another question?');
+    for (let i = 0; i < 3; i++) {
+      answers.push(null, null);
+      await classifyPending(env.ctx);
+      env.clock.now = new Date(env.clock.now.getTime() + 31 * 60_000);
+    }
+    expect(replyRow(b.id)).toMatchObject({ ai_status: 'failed', ai_attempts: 3 });
+    const calls = aiCalls.length;
+    await classifyPending(env.ctx);
+    expect(aiCalls.length).toBe(calls);
   });
 
   it('caches by message, falls back to rules on errors and without a key', async () => {

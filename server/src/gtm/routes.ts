@@ -327,14 +327,17 @@ export function gtmRoutes(app: FastifyInstance, ctx: Ctx) {
     };
   });
 
+  // `rowIds` / `row_ids` are accepted too: other row routes use those names, so callers mix them up.
+  const deleteRowsBody = z.preprocess((v: any) => (v && typeof v === 'object' && !Array.isArray(v) && v.ids === undefined ? { ...v, ids: v.rowIds ?? v.row_ids } : v),
+    z.object({ ids: z.array(z.number()) }));
   r.delete('/api/gtm/tables/:id/rows', 'Delete rows', async (req) => {
     const a = canWrite(req);
     const tableId = tableOf(req, a);
-    const body = z.object({ ids: z.array(z.number()) }).parse(req.body);
+    const body = deleteRowsBody.parse(req.body);
     store.deleteRows(body.ids.filter((rid) => store.rowTable(rid) === tableId));
     bus.publish({ type: 'rows', tableId });
     return { ok: true };
-  });
+  }, { body: deleteRowsBody });
 
   /** Edit input cells: [{rowId, columnId, value}]. */
   r.patch('/api/gtm/tables/:id/cells', 'Edit input cells', async (req) => {

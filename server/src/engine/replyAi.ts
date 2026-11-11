@@ -64,11 +64,26 @@ export const modelFor = (ctx: Ctx, ws: Row) => (ws.ai_reply_model as string) || 
 /** Is AI sorting active for this workspace (setting on and a key/local model available)? */
 export const aiSortingActive = (ctx: Ctx, ws: Row) => !!ws.ai_reply_sorting && aiConfig(ctx).configured;
 
+/** Why a completion carried no text, in a few words (the useful fields, not the whole response). */
+function emptyReason(d: any): string {
+  const c = d?.choices?.[0];
+  const parts = [
+    d?.error ? `error: ${String(d.error.message ?? JSON.stringify(d.error)).slice(0, 160)}` : '',
+    c?.finish_reason ? `finish_reason: ${c.finish_reason}` : '',
+    c?.native_finish_reason && c.native_finish_reason !== c.finish_reason ? `native: ${c.native_finish_reason}` : '',
+    c?.message?.refusal ? `refusal: ${String(c.message.refusal).slice(0, 160)}` : '',
+    d?.provider ? `provider: ${d.provider}` : '',
+    d?.model ? `model: ${d.model}` : '',
+    d?.usage?.completion_tokens != null ? `completion_tokens: ${d.usage.completion_tokens}` : '',
+  ].filter(Boolean);
+  return parts.length ? parts.join(', ') : `no choices in ${JSON.stringify(d).slice(0, 160)}`;
+}
+
 /** One chat completion; returns the assistant text. */
 export async function chat(ctx: Ctx, o: { model: string; system: string; user: string; maxTokens?: number; temperature?: number }): Promise<{ content: string; costUsd: number }> {
   const ai = aiConfig(ctx);
   if (!ai.configured) throw new Error('Set OPENROUTER_API_KEY on the Integrations page, or AI_BASE_URL for a local model');
-  const d = await getJson(`${ai.base}/chat/completions`, {
+  const call = () => getJson(`${ai.base}/chat/completions`, {
     headers: ai.local ? {} : { authorization: `Bearer ${ai.key}`, 'HTTP-Referer': 'http://localhost/kineticsand', 'X-Title': 'kineticsand' },
     json: {
       model: o.model, temperature: o.temperature ?? 0, max_tokens: o.maxTokens ?? 400,
@@ -77,9 +92,16 @@ export async function chat(ctx: Ctx, o: { model: string; system: string; user: s
     },
     timeoutMs: 60_000,
   });
+  let d = await call();
+  let cost = Number(d?.usage?.cost ?? 0);
+  // Gateways occasionally answer with an empty message; one immediate retry usually gets text.
+  if (typeof d?.choices?.[0]?.message?.content !== 'string' || !d.choices[0].message.content.trim()) {
+    d = await call();
+    cost += Number(d?.usage?.cost ?? 0);
+  }
   const content = d?.choices?.[0]?.message?.content;
-  if (typeof content !== 'string') throw new Error(`The model returned no text: ${JSON.stringify(d).slice(0, 200)}`);
-  return { content, costUsd: Number(d?.usage?.cost ?? 0) };
+  if (typeof content !== 'string' || !content.trim()) throw new Error(`The model returned no text (${emptyReason(d)})`);
+  return { content, costUsd: cost };
 }
 
 // ---------------------------------------------------------------------------
@@ -254,12 +276,17 @@ export function pauseLeadUntil(ctx: Ctx, leadId: number, date: string): string |
 }
 
 const CONCURRENCY = 4;
+const AI_MAX_ATTEMPTS = 3;
+const AI_RETRY_MS = 30 * 60_000;
 
 /** Worker job: classifies queued replies. Returns how many were processed. */
 export async function classifyPending(ctx: Ctx, limit = 24): Promise<{ classified: number; failed: number; skipped: number }> {
   const { db } = ctx;
   const out = { classified: 0, failed: 0, skipped: 0 };
-  const rows = db.all(`SELECT * FROM replies WHERE ai_status IN ('pending','refresh') ORDER BY id LIMIT ?`, [limit]);
+  // Failed ones are retried after a pause, a few times, so a flaky model answer doesn't leave a reply unsorted.
+  const retryBefore = new Date(ctx.now().getTime() - AI_RETRY_MS).toISOString();
+  const rows = db.all(`SELECT * FROM replies WHERE ai_status IN ('pending','refresh')
+    OR (ai_status = 'failed' AND ai_attempts < ? AND (ai_failed_at IS NULL OR ai_failed_at < ?)) ORDER BY id LIMIT ?`, [AI_MAX_ATTEMPTS, retryBefore, limit]);
   const wsCache = new Map<number, Row>();
   const one = async (reply: Row) => {
     const ws = wsCache.get(reply.workspace_id) ?? db.get('SELECT * FROM workspaces WHERE id = ?', [reply.workspace_id])!;
@@ -277,7 +304,7 @@ export async function classifyPending(ctx: Ctx, limit = 24): Promise<{ classifie
       out.classified++;
     } catch (e: any) {
       ctx.log.warn({ err: e?.message, reply: reply.id }, 'AI reply classification failed; keeping the rule label');
-      db.update('replies', reply.id, { ai_status: 'failed', ai_error: String(e?.message ?? e).slice(0, 500) });
+      db.update('replies', reply.id, { ai_status: 'failed', ai_error: String(e?.message ?? e).slice(0, 500), ai_attempts: (reply.ai_attempts ?? 0) + 1, ai_failed_at: ctx.now().toISOString() });
       out.failed++;
     }
   };

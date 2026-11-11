@@ -40,6 +40,9 @@ Microsoft 365 admin to approve the app for the whole organisation.
   `SENDER_AUTO_PAUSED` event fires. Fix the cause (clean the list, check DNS) before resuming; a resume ignores the
   bounces and listing that caused the pause. Leads whose email domain cannot receive mail (no such domain, no MX/A) are
   skipped before sending and marked bounced, so they never count against a mailbox.
+  A mailbox whose sends keep failing (3+ failed campaign/warmup sends in 24h, none sent since, e.g. an SMTP port the
+  host blocks) gets a `health_warning` starting "Sending is failing" whatever the auto-pause switch says. A bare
+  Outlook "Login failed." only marks a mailbox Disconnected when it repeats within 2 hours.
 - Move mailboxes to another workspace: `POST /api/sender-emails/move-to-another-workspace-bulk` (approval).
 
 ## Sending IP routes (proxies)

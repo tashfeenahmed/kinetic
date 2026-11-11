@@ -331,7 +331,7 @@ async function sendSlot(ctx: Ctx, slot: Row): Promise<'sent' | 'failed' | 'cance
     db.tx(() => {
       db.update('scheduled_emails', slot.id, { status: 'failed', error: msg.slice(0, 500) });
       backOff();
-      if (isAuthError(err)) markDisconnected(ctx, sender, msg);
+      if (isAuthError(err)) noteAuthFailure(ctx, sender, err, msg);
     });
     ctx.log.warn({ slot: slot.id, err: msg }, 'send failed');
     return 'failed';
@@ -394,6 +394,37 @@ export function isAuthError(err: any): boolean {
   // endpoint answers "OAuth token error (400): AADSTS…" when the sign-in needs the user again
   // (MFA required, consent revoked, password changed) — only a reconnect fixes those.
   return !!err?.authenticationFailed || /OAuth token error \(40[01]\)|interaction_required|EAUTH|\b535\b|\b534\b|AUTHENTICATIONFAILED|Invalid credentials|authentication failed|invalid_grant|Username and Password not accepted|Login failed/i.test(s);
+}
+
+/**
+ * Outlook's IMAP answers a refused login with a bare "Login failed." — but it also says that,
+ * now and then, to a perfectly good mailbox, which then works again minutes later.
+ */
+export function isAmbiguousAuthError(err: any): boolean {
+  const s = `${err?.code ?? ''} ${err?.responseCode ?? ''} ${err?.message ?? ''} ${err?.responseText ?? ''}`;
+  return /Login failed/i.test(s) && !err?.authenticationFailed
+    && !/OAuth token error|interaction_required|EAUTH|\b535\b|\b534\b|AUTHENTICATIONFAILED|Invalid credentials|authentication failed|invalid_grant|Username and Password not accepted/i.test(s);
+}
+
+/** Grace for ambiguous refusals: the mailbox is only disconnected if it is refused again within this window. */
+export const AUTH_GRACE_MS = 2 * 3_600_000;
+
+/**
+ * A login was refused. Definite refusals disconnect the mailbox straight away; an ambiguous one
+ * (see isAmbiguousAuthError) only when it repeats within AUTH_GRACE_MS. Returns true when disconnected.
+ */
+export function noteAuthFailure(ctx: Ctx, sender: Row, err: any, error: string): boolean {
+  if (sender.status === 'Disconnected') return true;
+  if (isAmbiguousAuthError(err)) {
+    const now = ctx.now();
+    const prev = sender.auth_failed_at ? Date.parse(sender.auth_failed_at) : NaN;
+    if (!(now.getTime() - prev < AUTH_GRACE_MS)) {
+      ctx.db.update('sender_emails', sender.id, { auth_failed_at: now.toISOString(), last_error: error.slice(0, 500) });
+      return false;
+    }
+  }
+  markDisconnected(ctx, sender, error);
+  return true;
 }
 
 export function markDisconnected(ctx: Ctx, sender: Row, error: string) {
