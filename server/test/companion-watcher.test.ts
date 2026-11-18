@@ -12,6 +12,66 @@ const post = (id: string, title: string) => ({ kind: 't3', data: { id, title, au
 const settle = () => new Promise((r) => setTimeout(r, 30));
 
 describe('watcher mode', () => {
+  it('retries a GitHub page after a profile rate limit without ingesting partial records', async () => {
+    let limited = true;
+    env = await makeEnv({
+      now: new Date('2026-10-12T10:00:00Z'),
+      fetch: (async (url: any) => {
+        const path = new URL(String(url)).pathname;
+        if (path.endsWith('/stargazers')) return Response.json([{ user: { login: 'fakedev', type: 'User' }, starred_at: '2024-06-01T10:00:00Z' }]);
+        if (limited) return Response.json({ message: 'rate limit exceeded' }, { status: 429 });
+        return Response.json({ login: 'fakedev', type: 'User', email: 'fake@dev.example' });
+      }) as typeof fetch,
+    });
+    const job = (await env.api('POST', '/api/automations/jobs', {
+      phantom: 'github.stargazers', params: { repo: 'acme/widgets', limit: 1 },
+    })).body.data;
+
+    await companionTick(env.ctx);
+    const task = () => env.ctx.db.get('SELECT status, attempts, results_count, cursor, error FROM companion_tasks WHERE job_id = ?', [job.id])!;
+    expect(task()).toMatchObject({ status: 'pending', attempts: 1, results_count: 0, error: expect.stringMatching(/GitHub rate limit/) });
+    expect((await env.api('GET', `/api/gtm/tables/${job.table_id}`)).body.rows).toHaveLength(0);
+
+    limited = false;
+    advance(env, 5 * 60_000 + 1);
+    await companionTick(env.ctx);
+    expect(task()).toMatchObject({ status: 'done', attempts: 2, results_count: 1, error: null });
+    expect((await env.api('GET', `/api/automations/jobs/${job.id}`)).body.data).toMatchObject({ status: 'completed', results_count: 1 });
+    expect((await env.api('GET', `/api/gtm/tables/${job.table_id}`)).body.rows).toHaveLength(1);
+  });
+
+  it('keeps the retry budget for a GitHub page after earlier pages succeed', async () => {
+    let limited = true;
+    env = await makeEnv({
+      now: new Date('2026-10-12T10:00:00Z'),
+      fetch: (async (url: any) => {
+        const u = new URL(String(url));
+        if (u.pathname.endsWith('/stargazers')) {
+          const page = Number(u.searchParams.get('page'));
+          const count = page < 3 ? 100 : 1;
+          return Response.json(Array.from({ length: count }, (_, i) => ({ user: { login: `fake-${(page - 1) * 100 + i}`, type: 'User' } })));
+        }
+        if (limited && u.pathname.endsWith('/fake-200')) return Response.json({ message: 'rate limit exceeded' }, { status: 429 });
+        return Response.json({ login: u.pathname.split('/').pop(), type: 'User' });
+      }) as typeof fetch,
+    });
+    const job = (await env.api('POST', '/api/automations/jobs', {
+      phantom: 'github.stargazers', params: { repo: 'acme/widgets', limit: 201 },
+    })).body.data;
+    const task = () => env.ctx.db.get('SELECT status, attempts, results_count, error FROM companion_tasks WHERE job_id = ?', [job.id])!;
+
+    await companionTick(env.ctx);
+    await companionTick(env.ctx);
+    expect(task()).toMatchObject({ status: 'pending', results_count: 200 });
+    await companionTick(env.ctx);
+    expect(task()).toMatchObject({ status: 'pending', attempts: 1, results_count: 200, error: expect.stringMatching(/GitHub rate limit/) });
+
+    limited = false;
+    advance(env, 5 * 60_000 + 1);
+    await companionTick(env.ctx);
+    expect(task()).toMatchObject({ status: 'done', attempts: 2, results_count: 201, error: null });
+  });
+
   it('re-runs a server-side Reddit scrape on schedule and adds only new posts, with alerts', async () => {
     let listing = [post('aaa1', 'First'), post('bbb2', 'Second')];
     const calls: { url: string; init: any }[] = [];

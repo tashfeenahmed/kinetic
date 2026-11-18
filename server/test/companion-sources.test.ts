@@ -106,6 +106,39 @@ describe('GitHub (server-side)', () => {
     expect(r.records[0]).toMatchObject({ login: 'fakedev', contributions: 120, location: 'Berlin' });
   });
 
+  it.each(['github.stargazers', 'github.contributors'])('reports a profile rate limit for %s', async (phantom) => {
+    mockFetch((u) => {
+      if (u.pathname.endsWith('/stargazers')) return github.stargazers;
+      if (u.pathname.endsWith('/contributors')) return github.contributors;
+      return new Response('{"message":"rate limit exceeded"}', { status: 429 });
+    });
+    await expect(runServerTask({ phantom, params: { repo: 'acme/widgets' }, target: {}, cursor: null, budget: 2, settings: settings() }))
+      .rejects.toThrow(/GitHub rate limit/);
+  });
+
+  it('reports a profile transport failure instead of returning a partial page', async () => {
+    mockFetch((u) => {
+      if (u.pathname.endsWith('/stargazers')) return github.stargazers;
+      throw new Error('connection reset');
+    });
+    await expect(runServerTask({ phantom: 'github.stargazers', params: { repo: 'acme/widgets' }, target: {}, cursor: null, budget: 1, settings: settings() }))
+      .rejects.toThrow('connection reset');
+  });
+
+  it('keeps a successful profile with no public email and skips bot lookups', async () => {
+    const calls = mockFetch((u) => (u.pathname.endsWith('/stargazers') ? github.stargazers : github.users[u.pathname.split('/').pop()!]));
+    const r = await runServerTask({ phantom: 'github.stargazers', params: { repo: 'acme/widgets' }, target: {}, cursor: null, budget: 10, settings: settings() });
+    expect(r.records.map((item) => item.login)).toEqual(['fakedev', 'mock-coder']);
+    expect(r.records[1]).not.toHaveProperty('email');
+    expect(calls.map((call) => call.url.pathname)).not.toContain('/users/dependabot%5Bbot%5D');
+  });
+
+  it('identifies a missing profile rather than reporting a missing repository', async () => {
+    mockFetch((u) => (u.pathname.endsWith('/stargazers') ? github.stargazers : new Response('{}', { status: 404 })));
+    await expect(runServerTask({ phantom: 'github.stargazers', params: { repo: 'acme/widgets' }, target: {}, cursor: null, budget: 1, settings: settings() }))
+      .rejects.toThrow(/GitHub.*profile.*fakedev/i);
+  });
+
   it('rejects a bad repo', async () => {
     await expect(runServerTask({ phantom: 'github.contributors', params: { repo: 'nope' }, target: {}, cursor: null, budget: 5, settings: settings() })).rejects.toThrow(/owner\/repo/);
   });

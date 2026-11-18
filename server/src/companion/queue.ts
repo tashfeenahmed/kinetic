@@ -283,8 +283,9 @@ export async function runServerTasks(ctx: Ctx, now: Date, max = 5): Promise<numb
       if (records.length) await ingestJobRecords(ctx, t, records, now);
       const count = t.results_count + records.length;
       const more = out.nextCursor != null && count < limit && records.length > 0;
-      ctx.db.run(`UPDATE companion_tasks SET status = ?, cursor = ?, results_count = ?, lease_expires_at = NULL, updated_at = ? WHERE id = ?`,
-        [more ? 'pending' : 'done', JSON.stringify(out.nextCursor ?? null), count, now.toISOString(), id]);
+      ctx.db.run(`UPDATE companion_tasks SET status = ?, cursor = ?, results_count = ?, attempts = CASE WHEN ? THEN 0 ELSE attempts END,
+        error = NULL, not_before = NULL, lease_expires_at = NULL, updated_at = ? WHERE id = ?`,
+        [more ? 'pending' : 'done', JSON.stringify(out.nextCursor ?? null), count, more ? 1 : 0, now.toISOString(), id]);
     } catch (e: any) {
       const retry = t.attempts + 1 < MAX_ATTEMPTS;
       ctx.db.run(`UPDATE companion_tasks SET status = ?, error = ?, not_before = ?, lease_expires_at = NULL, updated_at = ? WHERE id = ?`,
