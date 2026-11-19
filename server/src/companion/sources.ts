@@ -87,7 +87,10 @@ async function runGithub(input: ServerRunInput): Promise<ServerRunOutput> {
   const gh = (path: string, extra: Record<string, string> = {}, query?: Record<string, number>) =>
     getJson<any>(`${GH}${path}`, { headers: { ...headers, ...extra }, query }).catch((e) => {
       if (e instanceof HttpError && (e.status === 403 || e.status === 429)) throw new Error('GitHub rate limit reached (60/hour without a token) — add a free GITHUB_TOKEN on the Integrations page');
-      if (e instanceof HttpError && e.status === 404) throw new Error(`No GitHub repository ${repo.owner}/${repo.repo}`);
+      if (e instanceof HttpError && e.status === 404) {
+        if (path.startsWith('/users/')) throw new Error(`No GitHub profile for ${decodeURIComponent(path.slice('/users/'.length))}`);
+        throw new Error(`No GitHub repository ${repo.owner}/${repo.repo}`);
+      }
       throw e;
     });
   // Cursor = items consumed so far, so a small budget never skips people between pages.
@@ -101,9 +104,10 @@ async function runGithub(input: ServerRunInput): Promise<ServerRunOutput> {
   const items = (Array.isArray(batch) ? batch : []).slice(skip, skip + budget);
   const enriched: any[] = [];
   for (const item of items) {
-    const login = item?.user?.login ?? item?.login;
-    if (!login) continue;
-    const profile = await gh(`/users/${encodeURIComponent(login)}`).catch(() => null);
+    const user = item?.user ?? item;
+    const login = user?.login;
+    if (!login || user.type === 'Bot' || /\[bot\]$/.test(login)) continue;
+    const profile = await gh(`/users/${encodeURIComponent(login)}`);
     enriched.push(phantom === 'github.stargazers' ? { starred_at: item.starred_at, user: { ...(item.user ?? {}), ...(profile ?? {}) } } : { ...item, ...(profile ?? {}), contributions: item.contributions });
   }
   const r = parse('github.users', enriched);
